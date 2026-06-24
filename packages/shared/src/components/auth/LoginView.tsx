@@ -118,16 +118,6 @@ export function LoginView({
             )}
             {loginMode === "register" ? "注册并登录" : "登录"}
           </button>
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={isLoggingIn}
-            onClick={() => {
-              void handleDevLogin();
-            }}
-          >
-            开发登录
-          </button>
         </form>
       </section>
     </main>

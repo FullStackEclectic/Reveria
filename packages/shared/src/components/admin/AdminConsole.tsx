@@ -191,7 +191,17 @@ export function AdminConsole({
 
   // 5. 渲染超级管理员控制台
   return (
-    <div className="admin-console-wrapper" style={{ minHeight: "100vh", background: "#0f172a" }}>
+    <div 
+      className="admin-console-wrapper" 
+      style={{ 
+        minHeight: "100vh", 
+        background: "#0f172a",
+        color: "#f8fafc",
+        ["--rv-color-text-main" as any]: "#f8fafc",
+        ["--rv-color-text-muted" as any]: "#94a3b8",
+        ["--rv-color-border-thin" as any]: "rgba(255, 255, 255, 0.1)"
+      }}
+    >
       {onBack && (
         <div 
           className="admin-top-bar"

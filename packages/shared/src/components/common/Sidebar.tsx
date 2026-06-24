@@ -34,11 +34,6 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
-      <div className="logo-section">
-        <div className="logo-icon">R</div>
-        <span className="logo-text">Reveria</span>
-      </div>
-
       <div className="user-profile-section">
         <button
           className="user-profile-btn"
@@ -49,7 +44,15 @@ export function Sidebar({
             {(currentUser?.display_name || "US").slice(0, 2).toUpperCase()}
           </div>
           <div className="user-info">
-            <span className="username">{currentUser?.display_name || "未登录"}</span>
+            <div className="username-row">
+              <span className="username">{currentUser?.display_name || "未登录"}</span>
+              {currentUser && (
+                <span className="user-credits" title={`当前积分: ${formattedCredits}`}>
+                  <Coins size={12} className="credits-icon" />
+                  <span className="credits-text">{formattedCredits}</span>
+                </span>
+              )}
+            </div>
             <span className="role">
               {currentUser?.is_platform_admin ? "超级管理员" : "工作区成员"}
             </span>
@@ -87,21 +90,7 @@ export function Sidebar({
               <span>点数中心</span>
             </button>
 
-            {/* 商业版要求：仅在非桌面端（网页端）且当前用户为超级管理员时，才展现管理控制台入口 */}
-            {!isDesktop() && currentUser.is_platform_admin && (
-              <button
-                className="user-dropdown-item"
-                type="button"
-                onClick={() => {
-                  setIsUserDropdownOpen(false);
-                  setAdminMessage("");
-                  setActiveView("admin");
-                }}
-              >
-                <Settings size={14} />
-                <span>平台管理</span>
-              </button>
-            )}
+            {/* 独立的管理后台通过 /admin 提供，此处工作台不需要集成的管理页面入口 */}
 
             <div className="user-dropdown-divider" />
 

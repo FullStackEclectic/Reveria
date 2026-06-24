@@ -1,6 +1,6 @@
 module reveria/services/api
 
-go 1.26.2
+go 1.22
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect

@@ -627,6 +627,23 @@ export function AppCore() {
 
   const isNoSidebar = activeView === "projects" && projectsViewMode === "detail";
 
+  if (!currentUser) {
+    return (
+      <LoginView
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        loginMode={loginMode}
+        setLoginMode={setLoginMode}
+        loginMessage={loginMessage}
+        inviteToken={inviteToken}
+        invitedClaims={invitedClaims}
+        isLoggingIn={isLoggingIn}
+        handlePasswordAuth={handlePasswordAuth}
+        handleDevLogin={handleDevLogin}
+      />
+    );
+  }
+
   return (
     <main className={`app-shell ${isSidebarCollapsed ? "collapsed" : ""} ${isNoSidebar ? "no-sidebar" : ""}`}>
       {!isNoSidebar && (

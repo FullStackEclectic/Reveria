@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: reveria
       POSTGRES_PASSWORD: reveria
     ports:
-      - "55432:5432"
+      - "127.0.0.1:55432:5432"
     volumes:
       - reveria-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +16,43 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    networks:
+      - reveria-net
+
+  reveria-api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: reveria-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PORT=4100
+      - DATABASE_TYPE=postgres
+      - DATABASE_URL=host=reveria-postgres user=reveria password=reveria dbname=reveria port=5432 sslmode=disable
+    ports:
+      - "127.0.0.1:14100:4100"
+    volumes:
+      - ./services/api/uploads:/app/uploads
+    networks:
+      - reveria-net
+
+  reveria-web:
+    build:
+      context: .
+      dockerfile: apps/web-next/Dockerfile
+    container_name: reveria-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:14200:3000"
+    networks:
+      - reveria-net
 
 volumes:
   reveria-postgres-data:
+
+networks:
+  reveria-net:
+    driver: bridge
