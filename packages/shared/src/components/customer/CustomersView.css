@@ -1,0 +1,145 @@
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 6px;
+  color: #6b645d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.form-grid input,
+.form-grid textarea,
+.form-grid select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #dcd9d0;
+  border-radius: 8px;
+  background: #fbfaf7;
+  color: #111827;
+  padding: 0 10px;
+}
+
+.form-grid textarea {
+  padding: 10px 12px;
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus,
+.form-grid select:focus {
+  border-color: #0f766e;
+  outline: 2px solid rgba(15, 118, 110, 0.18);
+}
+
+.detail-form {
+  margin-bottom: 18px;
+}
+
+.wide-field,
+.form-grid button {
+  grid-column: 1 / -1;
+}
+
+.toggle-row {
+  display: flex !important;
+  grid-column: 1 / -1;
+  align-items: center;
+  min-height: 28px;
+  gap: 8px;
+}
+
+.toggle-row input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.entity-list {
+  display: grid;
+  gap: 8px;
+}
+
+.entity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 58px;
+  border: 1px solid #e6e0d4;
+  border-radius: 8px;
+  background: #fbfaf7;
+  padding: 0 12px;
+}
+
+.entity-row div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.entity-row strong,
+.entity-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-row strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.entity-row span {
+  color: #6b645d;
+  font-size: 12px;
+}
+
+.entity-row small {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.action-row {
+  gap: 12px;
+}
+
+.row-actions {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.mini-action-button {
+  min-height: 30px;
+  border: 1px solid #dcd9d0;
+  border-radius: 8px;
+  background: #fffefa;
+  color: #111827;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mini-action-button:hover {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.status-on {
+  color: #0f766e;
+}
+
+.status-off {
+  color: #8a6f48;
+}
+
+.compact-list {
+  margin-top: 2px;
+}

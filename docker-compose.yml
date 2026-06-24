@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: reveria-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reveria
+      POSTGRES_USER: reveria
+      POSTGRES_PASSWORD: reveria
+    ports:
+      - "55432:5432"
+    volumes:
+      - reveria-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reveria -d reveria"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  reveria-postgres-data:

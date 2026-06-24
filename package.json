@@ -1,0 +1,17 @@
+{
+  "name": "reveria",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "desktop:dev": "pnpm --filter @reveria/desktop dev",
+    "desktop:build": "pnpm --filter @reveria/desktop build",
+    "web:dev": "pnpm --filter @reveria/web-next dev",
+    "web:build": "pnpm --filter @reveria/web-next build",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/开发-全部启动.ps1",
+    "env:init": "powershell -ExecutionPolicy Bypass -File scripts/初始化-本地环境.ps1",
+    "env:check": "powershell -ExecutionPolicy Bypass -File scripts/检查-本地环境.ps1",
+    "smoke:task-loop": "powershell -ExecutionPolicy Bypass -File scripts/验收-任务闭环.ps1",
+    "smoke:phase-one": "powershell -ExecutionPolicy Bypass -File scripts/验收-第一阶段闭环.ps1",
+    "smoke:build": "powershell -ExecutionPolicy Bypass -File scripts/验证-打包发布.ps1"
+  }
+}

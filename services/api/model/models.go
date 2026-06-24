@@ -1,0 +1,286 @@
+package model
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// User 用户表
+type User struct {
+	ID           uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	Email        *string        `gorm:"type:varchar(255);uniqueIndex" json:"email"`
+	Phone        *string        `gorm:"type:varchar(32)" json:"phone"`
+	DisplayName  *string        `gorm:"type:varchar(100)" json:"display_name"`
+	PasswordHash string         `gorm:"type:varchar(255)" json:"-"` // 隐藏密码哈希
+	AvatarURL    *string        `gorm:"type:text" json:"avatar_url"`
+	Status          string         `gorm:"type:varchar(32);default:'active';index" json:"status"`
+	IsPlatformAdmin bool           `gorm:"default:false;not null" json:"is_platform_admin"` // 平台超管标记
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// Workspace 工作区表
+type Workspace struct {
+	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	Name            string         `gorm:"type:varchar(120);not null" json:"name"`
+	OwnerUserID     uuid.UUID      `gorm:"type:uuid" json:"owner_user_id"`
+	PlanID          *uuid.UUID     `gorm:"type:uuid" json:"plan_id"`
+	RechargeBalance int64          `gorm:"default:0;not null" json:"recharge_balance"`
+	GiftBalance     int64          `gorm:"default:0;not null" json:"gift_balance"`
+	RefundBalance   int64          `gorm:"default:0;not null" json:"refund_balance"`
+	StorageQuota    int64          `gorm:"default:0;not null" json:"storage_quota"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// WorkspaceMember 工作区成员关系表
+type WorkspaceMember struct {
+	ID                 uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID        uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_ws_user" json:"workspace_id"`
+	UserID             uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_ws_user" json:"user_id"`
+	Role               string    `gorm:"type:varchar(32);not null" json:"role"`
+	DailyCreditLimit   *int64    `json:"daily_credit_limit"`
+	MonthlyCreditLimit *int64    `json:"monthly_credit_limit"`
+	Status             string    `gorm:"type:varchar(32);default:'joined'" json:"status"`
+	JoinedAt           time.Time `json:"joined_at"`
+}
+
+// Customer 客户表
+type Customer struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID uuid.UUID `gorm:"type:uuid;index" json:"workspace_id"`
+	Name        string    `gorm:"type:varchar(160);not null;index" json:"name"`
+	Industry    *string   `gorm:"type:varchar(100)" json:"industry"`
+	ContactName *string   `gorm:"type:varchar(100)" json:"contact_name"`
+	ContactInfo *string   `gorm:"type:jsonb" json:"contact_info"` // json 字符串
+	Notes       *string   `gorm:"type:text" json:"notes"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// BrandKit 品牌库表
+type BrandKit struct {
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	CustomerID      *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	Name            string     `gorm:"type:varchar(160);not null" json:"name"`
+	LogoAssetID     *uuid.UUID `gorm:"type:uuid" json:"logo_asset_id"`
+	Colors          *string    `gorm:"type:jsonb" json:"colors"`
+	Fonts           *string    `gorm:"type:jsonb" json:"fonts"`
+	ToneOfVoice     *string    `gorm:"type:text" json:"tone_of_voice"`
+	VisualKeywords  *string    `gorm:"type:jsonb" json:"visual_keywords"`
+	ForbiddenWords  *string    `gorm:"type:jsonb" json:"forbidden_words"`
+	StylePrompt     *string    `gorm:"type:text" json:"style_prompt"`
+	Notes           *string    `gorm:"type:text" json:"notes"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Project 项目表
+type Project struct {
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	CustomerID      *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	BrandKitID      *uuid.UUID `gorm:"type:uuid" json:"brand_kit_id"`
+	Name            string     `gorm:"type:varchar(180);not null" json:"name"`
+	Brief           *string    `gorm:"type:text" json:"brief"`
+	TargetPlatforms *string    `gorm:"type:jsonb" json:"target_platforms"`
+	Status          string     `gorm:"type:varchar(32);default:'draft';index" json:"status"`
+	BudgetCredits   *int64     `json:"budget_credits"`
+	ConsumedCredits int64      `gorm:"default:0;not null" json:"consumed_credits"`
+	DueAt           *time.Time `json:"due_at"`
+	CreatedBy       *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Asset 素材/资产表
+type Asset struct {
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID  uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	ProjectID    uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	CustomerID   *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	AssetType    string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
+	Source       string     `gorm:"type:varchar(32);not null" json:"source"`
+	FileURL      string     `gorm:"type:text;not null" json:"file_url"`
+	ThumbnailURL *string    `gorm:"type:text" json:"thumbnail_url"`
+	Metadata     *string    `gorm:"type:jsonb" json:"metadata"`
+	CreatedBy    *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// GenerationTask 生成任务表
+type GenerationTask struct {
+	ID                    uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID           uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	ProjectID             uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	UserID                *uuid.UUID `gorm:"type:uuid" json:"user_id"`
+	TaskType              string     `gorm:"type:varchar(64);not null" json:"task_type"`
+	InputPayload          string     `gorm:"type:jsonb;not null" json:"input_payload"`
+	OutputPayload         *string    `gorm:"type:jsonb" json:"output_payload"`
+	SelectedModel         *string    `gorm:"type:varchar(160)" json:"selected_model"`
+	UpstreamTaskID        *string    `gorm:"type:varchar(120);index" json:"upstream_task_id"` // 12ZX-AI 的异步任务 ID
+	EstimatedCredits      int64      `gorm:"default:0;not null" json:"estimated_credits"`
+	FrozenCredits         int64      `gorm:"default:0;not null" json:"frozen_credits"`
+	FrozenGiftCredits     int64      `gorm:"default:0;not null" json:"frozen_gift_credits"`
+	FrozenRechargeCredits int64      `gorm:"default:0;not null" json:"frozen_recharge_credits"`
+	FrozenRefundCredits   int64      `gorm:"default:0;not null" json:"frozen_refund_credits"`
+	ActualCredits         int64      `gorm:"default:0;not null" json:"actual_credits"`
+	UpstreamCostCredits   int64      `gorm:"default:0;not null" json:"upstream_cost_credits"` // 站长调用主网关扣减额度
+	Status                string     `gorm:"type:varchar(32);default:'pending';index" json:"status"`
+	ErrorCode             *string    `gorm:"type:varchar(80)" json:"error_code"`
+	ErrorMessage          *string    `gorm:"type:text" json:"error_message"`
+	IdempotencyKey        *string    `gorm:"type:varchar(120)" json:"idempotency_key"`
+	CreatedAt             time.Time  `json:"created_at"`
+	StartedAt             *time.Time `json:"started_at"`
+	CompletedAt           *time.Time `json:"completed_at"`
+}
+
+// CreditTransaction 点数消费流水表
+type CreditTransaction struct {
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	UserID          *uuid.UUID `gorm:"type:uuid" json:"user_id"`
+	ProjectID       *uuid.UUID `gorm:"type:uuid" json:"project_id"`
+	TaskID          *uuid.UUID `gorm:"type:uuid;index" json:"task_id"`
+	TransactionType string     `gorm:"type:varchar(32);not null;index" json:"transaction_type"`
+	Amount          int64      `gorm:"not null" json:"amount"`
+	GiftAmount      int64      `gorm:"default:0;not null" json:"gift_amount"`
+	RechargeAmount  int64      `gorm:"default:0;not null" json:"recharge_amount"`
+	RefundAmount    int64      `gorm:"default:0;not null" json:"refund_amount"`
+	BalanceAfter    int64      `gorm:"not null" json:"balance_after"`
+	Reason          *string    `gorm:"type:text" json:"reason"`
+	OperatorID      *uuid.UUID `gorm:"type:uuid" json:"operator_id"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+// AuditLog 审计日志表
+type AuditLog struct {
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID    uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	OperatorID     *uuid.UUID `gorm:"type:uuid" json:"operator_id"`
+	Action         string     `gorm:"type:varchar(120);not null;index" json:"action"`
+	TargetType     *string    `gorm:"type:varchar(80)" json:"target_type"`
+	TargetID       *uuid.UUID `gorm:"type:uuid" json:"target_id"`
+	BeforeSnapshot *string    `gorm:"type:jsonb" json:"before_snapshot"`
+	AfterSnapshot  *string    `gorm:"type:jsonb" json:"after_snapshot"`
+	IP             *string    `gorm:"type:varchar(45)" json:"ip"`
+	UserAgent      *string    `gorm:"type:text" json:"user_agent"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+// ClientSettings 业务分站配置表
+type ClientSettings struct {
+	ID                    uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UpstreamAPIURL        string    `gorm:"type:varchar(255);not null" json:"upstream_api_url"`
+	UpstreamAPIKey        string    `gorm:"type:text;not null" json:"upstream_api_key"`
+	AllowUserRegister     bool      `gorm:"default:true;not null" json:"allow_user_register"`
+	GiftCreditsOnRegister int64     `gorm:"default:0;not null" json:"gift_credits_on_register"`
+	PriceRate             float64   `gorm:"type:numeric(4,2);default:1.00;not null" json:"price_rate"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+// Plan 订阅套餐表
+type Plan struct {
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name              string    `gorm:"type:varchar(100);not null" json:"name"`
+	PriceCents        int64     `gorm:"default:0;not null" json:"price_cents"`
+	MonthlyCredits    int64     `gorm:"default:0;not null" json:"monthly_credits"`
+	MaxMembers        int       `gorm:"default:1;not null" json:"max_members"`
+	StorageQuotaBytes int64     `gorm:"default:0;not null" json:"storage_quota_bytes"`
+	Features          string    `gorm:"type:jsonb;default:'{}';not null" json:"features"`
+	Enabled           bool      `gorm:"default:true;not null;index" json:"enabled"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// Order 充值/订阅订单表
+type Order struct {
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	PlanID          *uuid.UUID `gorm:"type:uuid" json:"plan_id"`
+	AmountCents     int64      `gorm:"default:0;not null" json:"amount_cents"`
+	PaymentProvider string     `gorm:"type:varchar(64);not null" json:"payment_provider"`
+	Status          string     `gorm:"type:varchar(32);default:'pending';index" json:"status"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// RechargeRecord 点数充值记录表
+type RechargeRecord struct {
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID  uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	OrderID      *uuid.UUID `gorm:"type:uuid" json:"order_id"`
+	CreditsAdded int64      `gorm:"not null" json:"credits_added"`
+	RechargeType string     `gorm:"type:varchar(32);not null" json:"recharge_type"`
+	OperatorID   *uuid.UUID `gorm:"type:uuid" json:"operator_id"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// GiftCreditBatch 赠送积分批次表
+type GiftCreditBatch struct {
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID `gorm:"type:uuid;index" json:"workspace_id"`
+	Amount          int64     `gorm:"not null" json:"amount"`
+	RemainingAmount int64     `gorm:"not null" json:"remaining_amount"`
+	ExpiredAt       time.Time `gorm:"index" json:"expired_at"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// WorkspaceInvitation 成员邀请表
+type WorkspaceInvitation struct {
+	ID          uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	Email       string     `gorm:"type:varchar(120);not null" json:"email"`
+	Role        string     `gorm:"type:varchar(32);not null" json:"role"`
+	Token       string     `gorm:"type:text;not null;index" json:"token"`
+	Status      string     `gorm:"type:varchar(32);default:'pending'" json:"status"`
+	InvitedBy   *uuid.UUID `gorm:"type:uuid" json:"invited_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+}
+
+// ProjectCanvas 项目无限画布表
+type ProjectCanvas struct {
+	ProjectID   uuid.UUID  `gorm:"type:uuid;primaryKey" json:"project_id"`
+	WorkspaceID uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	Canvas      string     `gorm:"type:jsonb;default:'{\"version\":1,\"items\":[]}'" json:"canvas"`
+	UpdatedBy   *uuid.UUID `gorm:"type:uuid" json:"updated_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// ProjectComment 项目评论表
+type ProjectComment struct {
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	ProjectID  uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	UserID     *uuid.UUID `gorm:"type:uuid" json:"user_id"`
+	ClientName *string    `gorm:"type:varchar(80)" json:"client_name"`
+	Content    string     `gorm:"type:text;not null" json:"content"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// TaskComment 任务评论表
+type TaskComment struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	TaskID    uuid.UUID `gorm:"type:uuid;index" json:"task_id"`
+	UserID    uuid.UUID `gorm:"type:uuid" json:"user_id"`
+	Content   string    `gorm:"type:text;not null" json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ProjectShare 项目分享表
+type ProjectShare struct {
+	ID        uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	ProjectID uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	Token     string     `gorm:"type:varchar(128);uniqueIndex;not null" json:"token"`
+	CreatedBy *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	Status    string     `gorm:"type:varchar(32);default:'active'" json:"status"`
+}

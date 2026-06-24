@@ -1,0 +1,16 @@
+target/
+node_modules/
+dist/
+.vite/
+.env
+.env.local
+*.log
+*.db
+*.sqlite
+*.sqlite3
+apps/desktop/src-tauri/gen/
+.next/
+apps/desktop/build/bin/
+*.exe
+
+

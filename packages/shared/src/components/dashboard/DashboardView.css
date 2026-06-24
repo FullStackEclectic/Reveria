@@ -1,0 +1,89 @@
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.metric,
+.panel {
+  border: 1px solid var(--rv-color-border-thin);
+  border-radius: var(--rv-radius-md);
+  background: var(--rv-color-bg-panel);
+  box-shadow: var(--rv-shadow-md);
+  transition: var(--rv-transition-default);
+}
+
+.metric:hover,
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--rv-shadow-lg);
+}
+
+.metric {
+  padding: 20px;
+}
+
+.metric span {
+  display: block;
+  color: var(--rv-color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.metric strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--rv-color-text-main);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 18px;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.75fr) minmax(420px, 1.25fr);
+  gap: 18px;
+}
+
+.two-column-grid {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+}
+
+.three-column-grid {
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+}
+
+.panel {
+  min-height: 320px;
+  padding: 18px;
+}
+
+.list-panel {
+  min-height: 520px;
+}
+
+.detail-panel {
+  grid-column: auto;
+  min-height: 520px;
+}
+
+.compact-panel {
+  min-height: 180px;
+}
+
+.detail-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}

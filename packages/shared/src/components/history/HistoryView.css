@@ -1,0 +1,48 @@
+.history-panel {
+  grid-column: 1 / -1;
+  min-height: 240px;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-row {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e6e0d4;
+  border-radius: 8px;
+  background: #fbfaf7;
+  padding: 12px;
+}
+
+.history-row div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-row strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.history-row span {
+  color: #6b645d;
+  font-size: 12px;
+}
+
+.history-row pre {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #e6e0d4;
+  border-radius: 8px;
+  background: #111827;
+  color: #f7f2e8;
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
