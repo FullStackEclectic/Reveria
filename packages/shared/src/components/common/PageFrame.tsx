@@ -3,7 +3,7 @@ import React, { ReactNode } from "react";
 interface PageFrameProps {
   action?: ReactNode;
   children: ReactNode;
-  eyebrow: string;
+  eyebrow?: string;
   status: string;
   title: string;
 }
@@ -19,7 +19,7 @@ export function PageFrame({
     <section className="workspace">
       <header className="topbar">
         <div>
-          <p className="eyebrow">{eyebrow}</p>
+          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
           <h2>{title}</h2>
           <p className="workspace-status">{status}</p>
         </div>

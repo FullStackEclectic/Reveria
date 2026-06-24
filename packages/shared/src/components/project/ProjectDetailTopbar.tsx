@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles, Undo, Redo } from "lucide-react";
 import { ProjectSummary, ProjectCanvasDocument, WorkspaceSummary } from "../../types";
 
 interface ProjectDetailTopbarProps {
@@ -29,6 +29,12 @@ interface ProjectDetailTopbarProps {
   isLeftDrawerOpen: boolean;
   isRightDrawerOpen: boolean;
   handleToggleRightTab: () => void;
+
+  // 撤销重做属性
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export function ProjectDetailTopbar({
@@ -57,6 +63,10 @@ export function ProjectDetailTopbar({
   isLeftDrawerOpen,
   isRightDrawerOpen,
   handleToggleRightTab,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
 }: ProjectDetailTopbarProps) {
   const boards = projectCanvas.boards || [];
   const activeBoard = boards.find((b) => b.id === activeBoardId) || { id: "default", name: "主画板" };
@@ -164,6 +174,30 @@ export function ProjectDetailTopbar({
             </div>
           )}
         </div>
+
+        <div className="rv-utility-divider" style={{ margin: "0 6px" }} />
+
+        {/* 撤销 & 重做按钮 */}
+        <button
+          className="rv-topbar-btn"
+          type="button"
+          disabled={!canUndo}
+          onClick={undo}
+          title="撤销 (Ctrl+Z)"
+          style={{ width: "32px", padding: 0, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? "pointer" : "not-allowed" }}
+        >
+          <Undo size={14} />
+        </button>
+        <button
+          className="rv-topbar-btn"
+          type="button"
+          disabled={!canRedo}
+          onClick={redo}
+          title="重做 (Ctrl+Y)"
+          style={{ width: "32px", padding: 0, opacity: canRedo ? 1 : 0.4, cursor: canRedo ? "pointer" : "not-allowed" }}
+        >
+          <Redo size={14} />
+        </button>
       </div>
 
       {/* 右侧：点数、状态、手动保存、导出下拉 */}

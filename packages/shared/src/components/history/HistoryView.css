@@ -5,44 +5,84 @@
 
 .history-list {
   display: grid;
-  gap: 10px;
+  gap: 16px;
 }
 
 .history-row {
-  display: grid;
-  gap: 10px;
-  border: 1px solid #e6e0d4;
-  border-radius: 8px;
-  background: #fbfaf7;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
 }
 
-.history-row div {
+.history-row:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.04);
+}
+
+.history-row-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px dashed #f5f5f4;
+  padding-bottom: 10px;
+}
+
+.history-row-header-left {
+  display: flex;
+  align-items: center;
 }
 
 .history-row strong {
-  color: #111827;
+  color: #1c1917;
   font-size: 14px;
+  font-weight: 700;
 }
 
-.history-row span {
-  color: #6b645d;
+.history-row span.meta-desc {
+  color: #78716c;
   font-size: 12px;
+  font-weight: 500;
 }
 
 .history-row pre {
   max-height: 260px;
   overflow: auto;
-  border: 1px solid #e6e0d4;
+  border: 1px solid #1e293b;
   border-radius: 8px;
-  background: #111827;
-  color: #f7f2e8;
+  background: #0f172a;
+  color: #cbd5e1;
   margin: 0;
   padding: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 滚动条美化 */
+.history-row pre::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.history-row pre::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 8px;
+}
+
+.history-row pre::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 8px;
+}
+
+.history-row pre::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }

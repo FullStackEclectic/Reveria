@@ -43,19 +43,26 @@ type UpdateBrandKitRequest struct {
 
 // ListBrandKits 获取品牌库列表 (GET /brand-kits)
 func ListBrandKits(c *gin.Context) {
-	workspaceIDStr := c.Query("workspace_id")
-	if workspaceIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "必须提供 workspace_id 参数"})
-		return
-	}
-
-	workspaceID, err := uuid.Parse(workspaceIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区 ID 格式有误"})
-		return
-	}
-
 	actorID := c.MustGet("user_id").(uuid.UUID)
+	workspaceIDStr := c.Query("workspace_id")
+	var workspaceID uuid.UUID
+	var err error
+
+	if workspaceIDStr == "" {
+		// 自动获取该用户加入的第一个工作区以兼容前端并行初始化
+		var memberRelation model.WorkspaceMember
+		if err := database.DB.Where("user_id = ? AND status = 'joined'", actorID).First(&memberRelation).Error; err != nil {
+			c.JSON(http.StatusOK, []model.BrandKit{})
+			return
+		}
+		workspaceID = memberRelation.WorkspaceID
+	} else {
+		workspaceID, err = uuid.Parse(workspaceIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区 ID 格式有误"})
+			return
+		}
+	}
 
 	if !hasWorkspaceRole(workspaceID, actorID, []string{"owner", "admin", "member"}) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限查看品牌库"})

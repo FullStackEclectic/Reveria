@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { AssetSummary, ProjectSummary, WorkspaceSummary, UserSummary } from "../../types";
 import { PageFrame } from "../common/PageFrame";
-import { formatFileSize, assetTitle, assetMimeType, assetUrl, uploadAsset, postJson, assetTypeFromMime } from "../../utils";
+import { formatFileSize, assetTitle, assetMimeType, assetUrl, uploadAsset, postJson, assetTypeFromMime, getAssetMetadata } from "../../utils";
 import "./AssetsView.css";
 
 
@@ -134,18 +134,18 @@ export function AssetsView({
   }
 
   function renderAssetFallback(assetType: string) {
-    const iconProps = { size: 30, strokeWidth: 1.5 };
+    const iconProps = { size: 28, strokeWidth: 1.8 };
     switch (assetType) {
       case "video":
         return (
-          <div className="asset-fallback-gradient video">
+          <div className="asset-fallback-modern video">
             <Video {...iconProps} />
             <span>视频资产</span>
           </div>
         );
       case "workflow_output":
         return (
-          <div className="asset-fallback-gradient workflow_output">
+          <div className="asset-fallback-modern workflow_output" style={{ color: "#6366f1", backgroundColor: "rgba(99, 102, 241, 0.05)" }}>
             <Sparkles {...iconProps} />
             <span>生成结果</span>
           </div>
@@ -153,14 +153,14 @@ export function AssetsView({
       case "pdf":
       case "document":
         return (
-          <div className="asset-fallback-gradient pdf">
+          <div className="asset-fallback-modern document">
             <FileText {...iconProps} />
             <span>PDF/文档</span>
           </div>
         );
       default:
         return (
-          <div className="asset-fallback-gradient other">
+          <div className="asset-fallback-modern other">
             <FolderOpen {...iconProps} />
             <span>其它素材</span>
           </div>
@@ -178,38 +178,41 @@ export function AssetsView({
   }
 
   return (
-    <PageFrame
-      eyebrow="素材库"
-      title="项目素材和生成资产"
-      status={`${assets.length} 个当前项目资产 · ${selectedProject?.name ?? "未选择项目"}`}
-    >
-      <div className="assets-layout-grid">
+    <section className="assets-workspace">
+      <div className="assets-modern-container">
         {/* 左栏：上传与登记控制面板 */}
-        <div className="assets-control-panel">
-          <div className="assets-tabs-wrapper">
+        <div className="assets-left-panel">
+          <div className="customer-panel-header" style={{ marginBottom: "16px" }}>
+            <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#1c1917", margin: "0 0 4px 0" }}>项目素材和生成资产</h3>
+            <span style={{ fontSize: "12px", color: "#78716c" }}>
+              {assets.length} 个当前项目资产 · {selectedProject?.name ?? "未选择项目"}
+            </span>
+          </div>
+
+          <div className="credits-tab-bar" style={{ borderBottom: "1px solid #f5f5f4", marginBottom: "20px" }}>
             <button
-              className={`assets-tab-btn ${activeTab === "upload" ? "active" : ""}`}
+              className={`credits-tab-capsule ${activeTab === "upload" ? "active" : ""}`}
               onClick={() => setActiveTab("upload")}
               type="button"
             >
-              <UploadCloud size={14} />
+              <UploadCloud size={14} style={{ marginRight: "4px", verticalAlign: "middle" }} />
               本地上传
             </button>
             <button
-              className={`assets-tab-btn ${activeTab === "link" ? "active" : ""}`}
+              className={`credits-tab-capsule ${activeTab === "link" ? "active" : ""}`}
               onClick={() => setActiveTab("link")}
               type="button"
             >
-              <Link2 size={14} />
-              登记链接
+              <Link2 size={14} style={{ marginRight: "4px", verticalAlign: "middle" }} />
+              登记外链
             </button>
           </div>
 
           {activeTab === "upload" ? (
             <form className="assets-form-group" onSubmit={handleImportAssets}>
               <div className="panel-header" style={{ marginBottom: "8px", padding: 0 }}>
-                <h3 style={{ fontSize: "14px", fontWeight: "bold", margin: 0 }}>上传本地素材</h3>
-                <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>将文件关联到当前创意项目</span>
+                <h3 style={{ fontSize: "14px", fontWeight: "bold", color: "#1c1917", margin: 0 }}>上传本地素材</h3>
+                <span style={{ fontSize: "11px", color: "#78716c" }}>将文件关联到当前创意项目</span>
               </div>
 
               <label className="assets-upload-dropzone">
@@ -250,7 +253,7 @@ export function AssetsView({
 
               <button
                 className="primary-button"
-                style={{ width: "100%", marginTop: "12px", minHeight: "36px" }}
+                style={{ width: "100%", marginTop: "12px", minHeight: "38px", borderRadius: "8px", fontWeight: "600" }}
                 type="submit"
                 disabled={!selectedProject || !selectedFiles.length || isImportingAssets}
               >
@@ -265,8 +268,8 @@ export function AssetsView({
           ) : (
             <form className="assets-form-group" onSubmit={handleRegisterAssetLink}>
               <div className="panel-header" style={{ marginBottom: "8px", padding: 0 }}>
-                <h3 style={{ fontSize: "14px", fontWeight: "bold", margin: 0 }}>登记外链资产</h3>
-                <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>登记网络参考图片、音视频等 URL</span>
+                <h3 style={{ fontSize: "14px", fontWeight: "bold", color: "#1c1917", margin: 0 }}>登记外链资产</h3>
+                <span style={{ fontSize: "11px", color: "#78716c" }}>登记网络参考图片、音视频等 URL</span>
               </div>
 
               <div className="assets-form-field">
@@ -316,11 +319,11 @@ export function AssetsView({
 
               <button
                 className="secondary-button"
-                style={{ width: "100%", marginTop: "12px", minHeight: "36px" }}
+                style={{ width: "100%", marginTop: "12px", minHeight: "38px", borderRadius: "8px", fontWeight: "600" }}
                 type="submit"
                 disabled={!selectedProject || !assetLinkForm.url}
               >
-                <Link2 size={14} />
+                <Link2 size={14} style={{ marginRight: "4px", verticalAlign: "middle" }} />
                 确认登记外链
               </button>
             </form>
@@ -347,6 +350,8 @@ export function AssetsView({
               {filteredAssets.map((asset) => {
                 const title = assetTitle(asset);
                 const isLocal = asset.source !== "link";
+                const meta = getAssetMetadata(asset);
+
                 return (
                   <div className="asset-card-modern" key={asset.id}>
                     {/* 悬停操作浮层 */}
@@ -357,7 +362,7 @@ export function AssetsView({
                         title="查看大图预览"
                         type="button"
                       >
-                        <Eye size={16} />
+                        <Eye size={15} />
                       </button>
                       
                       {asset.file_url && (
@@ -368,7 +373,7 @@ export function AssetsView({
                           target="_blank"
                           title="在新窗口下载/打开"
                         >
-                          <ExternalLink size={15} />
+                          <ExternalLink size={14} />
                         </a>
                       )}
 
@@ -379,7 +384,7 @@ export function AssetsView({
                         title="删除素材"
                         type="button"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
 
@@ -394,7 +399,7 @@ export function AssetsView({
                       <div className="meta-row">
                         <span>
                           {assetMimeType(asset)}
-                          {typeof asset.metadata.size === "number" && ` · ${formatFileSize(asset.metadata.size)}`}
+                          {typeof meta.size === "number" && ` · ${formatFileSize(meta.size)}`}
                         </span>
                         <span className={`tag-source ${isLocal ? "local" : "link"}`}>
                           {isLocal ? "本地" : "外链"}
@@ -408,12 +413,12 @@ export function AssetsView({
           ) : (
             <div className="assets-empty-state" style={{ marginTop: "40px" }}>
               <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="60" cy="60" r="48" fill="rgba(15, 118, 110, 0.03)" />
+                <circle cx="60" cy="60" r="48" fill="rgba(99, 102, 241, 0.03)" />
                 <rect x="42" y="38" width="36" height="44" rx="4" fill="#ffffff" stroke="rgba(185, 178, 165, 0.35)" strokeWidth="1.5" />
                 <line x1="50" y1="48" x2="70" y2="48" stroke="rgba(185, 178, 165, 0.25)" strokeWidth="1.5" strokeLinecap="round" />
                 <line x1="50" y1="56" x2="66" y2="56" stroke="rgba(185, 178, 165, 0.25)" strokeWidth="1.5" strokeLinecap="round" />
-                <circle cx="75" cy="75" r="18" fill="#ffffff" stroke="rgba(15, 118, 110, 0.15)" strokeWidth="1.5" />
-                <path d="M 71 75 L 79 75 M 75 71 L 75 79" stroke="var(--rv-color-primary)" strokeWidth="1.8" strokeLinecap="round" opacity="0.7" />
+                <circle cx="75" cy="75" r="18" fill="#ffffff" stroke="rgba(99, 102, 241, 0.15)" strokeWidth="1.5" />
+                <path d="M 71 75 L 79 75 M 75 71 L 75 79" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" opacity="0.7" />
               </svg>
               <h4>资产库空空如也</h4>
               <p>
@@ -425,6 +430,6 @@ export function AssetsView({
           )}
         </div>
       </div>
-    </PageFrame>
+    </section>
   );
 }

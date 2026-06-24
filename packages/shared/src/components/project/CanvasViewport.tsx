@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Sparkles, ZoomIn, ZoomOut, Maximize2, ImageIcon } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
-import { assetUrl, assetTitle } from "../../utils";
+import { CanvasItemCard, getCardColorStyle } from "./CanvasItemCard";
+import { CanvasSelectionOverlay } from "./CanvasSelectionOverlay";
 
 export interface CanvasViewportProps {
   projectCanvas: ProjectCanvasDocument;
@@ -10,6 +11,7 @@ export interface CanvasViewportProps {
   selectedItemId: string;
   setSelectedItemId: (id: string) => void;
   assets: AssetSummary[];
+  setAssets: React.Dispatch<React.SetStateAction<AssetSummary[]>>;
   readOnly?: boolean;
 
   // Viewport Position & Scale States
@@ -20,53 +22,58 @@ export interface CanvasViewportProps {
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number> | ((prev: number) => number)>;
 
-  // Callback to remove/update canvas item (only in write mode)
   removeCanvasItem?: (id: string) => void;
-
   setWorkflowRefAsset: (asset: AssetSummary | null) => void;
   setIsRightDrawerOpen: (open: boolean) => void;
+  workspaceId: string;
+  projectId: string;
+
+  // 历史撤销回调
+  pushToHistory?: (canvas: ProjectCanvasDocument) => void;
 }
 
-export function getCardColorStyle(colorTheme?: string) {
-  switch (colorTheme) {
-    case "amber":
-      return {
-        background: "rgba(254, 243, 199, 0.85)",
-        text: "hsl(30, 80%, 20%)",
-        border: "rgba(252, 211, 77, 0.5)",
-      };
-    case "emerald":
-      return {
-        background: "rgba(209, 250, 229, 0.85)",
-        text: "hsl(160, 80%, 15%)",
-        border: "rgba(110, 231, 183, 0.5)",
-      };
-    case "blue":
-      return {
-        background: "rgba(219, 234, 254, 0.85)",
-        text: "hsl(210, 80%, 20%)",
-        border: "rgba(147, 197, 253, 0.5)",
-      };
-    case "rose":
-      return {
-        background: "rgba(252, 228, 236, 0.85)",
-        text: "hsl(340, 80%, 20%)",
-        border: "rgba(244, 143, 177, 0.5)",
-      };
-    case "slate":
-      return {
-        background: "rgba(241, 245, 249, 0.85)",
-        text: "hsl(215, 25%, 20%)",
-        border: "rgba(203, 213, 225, 0.5)",
-      };
-    case "default":
-    default:
-      return {
-        background: "rgba(255, 255, 255, 0.95)",
-        text: "var(--rv-color-text-main)",
-        border: "var(--rv-color-border-thin)",
-      };
+// 连线首尾控制点计算函数
+function getConnectionPoints(from: CanvasItem, to: CanvasItem) {
+  const fromCx = from.x + from.w / 2;
+  const fromCy = from.y + from.h / 2;
+  const toCx = to.x + to.w / 2;
+  const toCy = to.y + to.h / 2;
+
+  const dx = toCx - fromCx;
+  const dy = toCy - fromCy;
+
+  let x1 = fromCx;
+  let y1 = fromCy;
+  let x2 = toCx;
+  let y2 = toCy;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 0) {
+      x1 = from.x + from.w;
+      y1 = from.y + from.h / 2;
+      x2 = to.x;
+      y2 = to.y + to.h / 2;
+    } else {
+      x1 = from.x;
+      y1 = from.y + from.h / 2;
+      x2 = to.x + to.w;
+      y2 = to.y + to.h / 2;
+    }
+  } else {
+    if (dy > 0) {
+      x1 = from.x + from.w / 2;
+      y1 = from.y + from.h;
+      x2 = to.x + to.w / 2;
+      y2 = to.y;
+    } else {
+      x1 = from.x + from.w / 2;
+      y1 = from.y;
+      x2 = to.x + to.w / 2;
+      y2 = to.y + to.h;
+    }
   }
+
+  return { x1, y1, x2, y2, dx, dy };
 }
 
 export function CanvasViewport({
@@ -76,6 +83,7 @@ export function CanvasViewport({
   selectedItemId,
   setSelectedItemId,
   assets,
+  setAssets,
   readOnly = false,
   panX,
   setPanX,
@@ -86,10 +94,19 @@ export function CanvasViewport({
   removeCanvasItem,
   setWorkflowRefAsset,
   setIsRightDrawerOpen,
+  workspaceId,
+  projectId,
+  pushToHistory,
 }: CanvasViewportProps) {
   const visibleItems = projectCanvas.items.filter(
     (item) => (item.board_id || "default") === activeBoardId
   );
+
+  const visibleConnections = (projectCanvas.connections || []).filter((conn) => {
+    const fromExists = visibleItems.some((i) => i.id === conn.fromItemId);
+    const toExists = visibleItems.some((i) => i.id === conn.toItemId);
+    return fromExists && toExists;
+  });
 
   const [spacePressed, setSpacePressed] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
@@ -100,6 +117,12 @@ export function CanvasViewport({
 
   const [processingItemId, setProcessingItemId] = useState("");
   const [processingType, setProcessingType] = useState<"remove-bg" | "upscale" | "erase" | "">("");
+
+  // 连线模式状态
+  const [connectionSourceId, setConnectionSourceId] = useState("");
+
+  // 对齐吸附线状态
+  const [activeGuides, setActiveGuides] = useState<{ type: "v" | "h"; value: number }[]>([]);
 
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const itemDragStart = useRef({ x: 0, y: 0, itemX: 0, itemY: 0 });
@@ -114,7 +137,7 @@ export function CanvasViewport({
         const asset = assets.find((a) => a.id === item.asset_id);
         if (asset && (asset.thumbnail_url || asset.file_url) && !realResolutions[asset.id]) {
           const img = new Image();
-          img.src = assetUrl(asset.thumbnail_url ?? asset.file_url ?? "");
+          img.src = asset.thumbnail_url ?? asset.file_url ?? "";
           img.onload = () => {
             setRealResolutions((prev) => ({
               ...prev,
@@ -148,49 +171,12 @@ export function CanvasViewport({
     };
   };
 
-  const handleMagicTool = (type: "remove-bg" | "upscale" | "erase", itemId: string) => {
-    setProcessingItemId(itemId);
-    setProcessingType(type);
-    
-    setTimeout(() => {
-      if (setProjectCanvas) {
-        setProjectCanvas((curr) => ({
-          ...curr,
-          items: curr.items.map((i) => {
-            if (i.id === itemId) {
-              let updatedTitle = i.title;
-              if (type === "remove-bg" && !i.title.includes("已去背景")) {
-                updatedTitle = `${i.title} (已去背景)`;
-              } else if (type === "upscale" && !i.title.includes("超分放大")) {
-                updatedTitle = `${i.title} (4K超分)`;
-              } else if (type === "erase" && !i.title.includes("已擦除")) {
-                updatedTitle = `${i.title} (AI消除)`;
-              }
-              return { ...i, title: updatedTitle };
-            }
-            return i;
-          }),
-        }));
-      }
-      setProcessingItemId("");
-      setProcessingType("");
-      alert(
-        type === "remove-bg"
-          ? "✨ AI 智能抠图去背景完成！"
-          : type === "upscale"
-          ? "🔍 AI 超分放大已生成高清 4K 原图！"
-          : "✏️ AI 智能消除重绘完成！"
-      );
-    }, 1500);
-  };
-
   const handleDrawSimilar = (asset: AssetSummary | null) => {
     if (!asset) return;
     setWorkflowRefAsset(asset);
     setIsRightDrawerOpen(true);
   };
 
-  // Listen to space bar to change pointer cursor
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInput =
@@ -216,54 +202,130 @@ export function CanvasViewport({
     };
   }, []);
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    if (e.ctrlKey) {
-      const zoomFactor = 1.05;
-      let nextZoom = zoom;
-      if (e.deltaY < 0) {
-        nextZoom = Math.min(3.0, zoom * zoomFactor);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  const zoomRef = useRef(zoom);
+  const panXRef = useRef(panX);
+  const panYRef = useRef(panY);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    panXRef.current = panX;
+  }, [panX]);
+  useEffect(() => {
+    panYRef.current = panY;
+  }, [panY]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      const currentZoom = zoomRef.current;
+      const currentPanX = panXRef.current;
+      const currentPanY = panYRef.current;
+
+      if (e.ctrlKey) {
+        const zoomFactor = 1.05;
+        let nextZoom = currentZoom;
+        if (e.deltaY < 0) {
+          nextZoom = Math.min(3.0, currentZoom * zoomFactor);
+        } else {
+          nextZoom = Math.max(0.1, currentZoom / zoomFactor);
+        }
+
+        const rect = viewport.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const canvasX = (mouseX - currentPanX) / currentZoom;
+        const canvasY = (mouseY - currentPanY) / currentZoom;
+
+        const updatePanX = mouseX - canvasX * nextZoom;
+        const updatePanY = mouseY - canvasY * nextZoom;
+
+        setPanX(updatePanX);
+        setPanY(updatePanY);
+        setZoom(nextZoom);
       } else {
-        nextZoom = Math.max(0.1, zoom / zoomFactor);
+        const speed = 1.0;
+        if (e.shiftKey) {
+          setPanX((prev) => prev - e.deltaY * speed);
+        } else {
+          setPanX((prev) => prev - e.deltaX * speed);
+          setPanY((prev) => prev - e.deltaY * speed);
+        }
       }
+    };
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const canvasX = (mouseX - panX) / zoom;
-      const canvasY = (mouseY - panY) / zoom;
-
-      // Safe update
-      const updatePanX = mouseX - canvasX * nextZoom;
-      const updatePanY = mouseY - canvasY * nextZoom;
-
-      setPanX(updatePanX);
-      setPanY(updatePanY);
-      setZoom(nextZoom);
-    } else {
-      const speed = 1.0;
-      if (e.shiftKey) {
-        setPanX((prev) => prev - e.deltaY * speed);
-      } else {
-        setPanX((prev) => prev - e.deltaX * speed);
-        setPanY((prev) => prev - e.deltaY * speed);
-      }
-    }
-  };
-
-  
+    viewport.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      viewport.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [setZoom, setPanX, setPanY]);
 
   const updateCanvasNote = (itemId: string, text: string) => {
     if (readOnly || !setProjectCanvas) return;
+    if (pushToHistory) pushToHistory(projectCanvas);
     setProjectCanvas((curr) => ({
       ...curr,
       items: curr.items.map((i) => (i.id === itemId ? { ...i, text } : i)),
     }));
   };
 
+  const onMouseDownCard = (e: React.MouseEvent, itemId: string) => {
+    if (spacePressed || e.button !== 0 || readOnly) return;
+    e.stopPropagation();
+
+    // 如果处于连线准备状态，则点击另一张卡片代表连线终点
+    if (connectionSourceId) {
+      if (connectionSourceId !== itemId) {
+        if (pushToHistory) pushToHistory(projectCanvas);
+        if (setProjectCanvas) {
+          setProjectCanvas((curr) => {
+            const nextConns = curr.connections ? [...curr.connections] : [];
+            const exists = nextConns.some(
+              (c) => c.fromItemId === connectionSourceId && c.toItemId === itemId
+            );
+            if (!exists) {
+              nextConns.push({
+                id: `conn-${Date.now()}`,
+                fromItemId: connectionSourceId,
+                toItemId: itemId,
+              });
+            }
+            return {
+              ...curr,
+              connections: nextConns,
+            };
+          });
+        }
+      }
+      setConnectionSourceId("");
+      return;
+    }
+
+    setSelectedItemId(itemId);
+    setDraggingCanvasItemId(itemId);
+    const item = projectCanvas.items.find((i) => i.id === itemId);
+    if (!item) return;
+
+    currentTempCoords.current = { x: item.x, y: item.y, w: item.w, h: item.h };
+    itemDragStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      itemX: item.x,
+      itemY: item.y,
+    };
+  };
+
   return (
     <div
+      ref={viewportRef}
       className={`canvas-viewport ${spacePressed ? "cursor-grab" : ""} ${
         isPanning ? "cursor-grabbing" : ""
       }`}
@@ -281,6 +343,7 @@ export function CanvasViewport({
         } else {
           if (e.target === e.currentTarget) {
             setSelectedItemId("");
+            setConnectionSourceId("");
           }
         }
       }}
@@ -298,20 +361,86 @@ export function CanvasViewport({
             const snapGrid = 8;
             const targetX = itemDragStart.current.itemX + dx;
             const targetY = itemDragStart.current.itemY + dy;
-            const snappedX = Math.round(targetX / snapGrid) * snapGrid;
-            const snappedY = Math.round(targetY / snapGrid) * snapGrid;
 
-            // 写入临时坐标
+            let snappedX = Math.round(targetX / snapGrid) * snapGrid;
+            let snappedY = Math.round(targetY / snapGrid) * snapGrid;
+
+            // --- 对齐吸附 Snapping 算法 ---
+            const otherItems = visibleItems.filter((i) => i.id !== draggingCanvasItemId);
+            const snapThreshold = 10;
+            const guides: typeof activeGuides = [];
+            let snappedToOtherX = false;
+            let snappedToOtherY = false;
+
+            for (const other of otherItems) {
+              const otherLeft = other.x;
+              const otherRight = other.x + other.w;
+              const otherCenterX = other.x + other.w / 2;
+              
+              const otherTop = other.y;
+              const otherBottom = other.y + other.h;
+              const otherCenterY = other.y + other.h / 2;
+
+              if (!snappedToOtherX) {
+                if (Math.abs(targetX - otherLeft) < snapThreshold) {
+                  snappedX = otherLeft;
+                  guides.push({ type: "v", value: otherLeft });
+                  snappedToOtherX = true;
+                } else if (Math.abs(targetX + item.w - otherRight) < snapThreshold) {
+                  snappedX = otherRight - item.w;
+                  guides.push({ type: "v", value: otherRight });
+                  snappedToOtherX = true;
+                } else if (Math.abs(targetX - otherRight) < snapThreshold) {
+                  snappedX = otherRight;
+                  guides.push({ type: "v", value: otherRight });
+                  snappedToOtherX = true;
+                } else if (Math.abs(targetX + item.w - otherLeft) < snapThreshold) {
+                  snappedX = otherLeft - item.w;
+                  guides.push({ type: "v", value: otherLeft });
+                  snappedToOtherX = true;
+                } else if (Math.abs(targetX + item.w / 2 - otherCenterX) < snapThreshold) {
+                  snappedX = otherCenterX - item.w / 2;
+                  guides.push({ type: "v", value: otherCenterX });
+                  snappedToOtherX = true;
+                }
+              }
+
+              if (!snappedToOtherY) {
+                if (Math.abs(targetY - otherTop) < snapThreshold) {
+                  snappedY = otherTop;
+                  guides.push({ type: "h", value: otherTop });
+                  snappedToOtherY = true;
+                } else if (Math.abs(targetY + item.h - otherBottom) < snapThreshold) {
+                  snappedY = otherBottom - item.h;
+                  guides.push({ type: "h", value: otherBottom });
+                  snappedToOtherY = true;
+                } else if (Math.abs(targetY - otherBottom) < snapThreshold) {
+                  snappedY = otherBottom;
+                  guides.push({ type: "h", value: otherBottom });
+                  snappedToOtherY = true;
+                } else if (Math.abs(targetY + item.h - otherTop) < snapThreshold) {
+                  snappedY = otherTop - item.h;
+                  guides.push({ type: "h", value: otherTop });
+                  snappedToOtherY = true;
+                } else if (Math.abs(targetY + item.h / 2 - otherCenterY) < snapThreshold) {
+                  snappedY = otherCenterY - item.h / 2;
+                  guides.push({ type: "h", value: otherCenterY });
+                  snappedToOtherY = true;
+                }
+              }
+            }
+
+            setActiveGuides(guides);
+
             currentTempCoords.current = { x: snappedX, y: snappedY, w: item.w, h: item.h };
 
-            // 直接修改 DOM style，极其流畅
             const element = document.getElementById(`canvas-item-${draggingCanvasItemId}`);
             if (element) {
               element.style.left = `${snappedX}px`;
               element.style.top = `${snappedY}px`;
             }
 
-            // 同步屏幕空间选框标签和工具栏位置
+            // 同步覆盖层元素
             const toolbar = document.querySelector(".canvas-floating-toolbar") as HTMLElement;
             const labelLeft = document.querySelector(".canvas-selection-label-left") as HTMLElement;
             const labelRight = document.querySelector(".canvas-selection-label-right") as HTMLElement;
@@ -349,7 +478,6 @@ export function CanvasViewport({
             const ratio = isAsset ? (imageRatios[item.asset_id ?? ""] || item.w / item.h) : 1;
 
             if (isAsset) {
-              // 图片等比缩放约束，以 w 算出等比的 h，并调整 X、Y 偏移
               if (resizingHandle === "bottom-right") {
                 nextW = Math.max(100, itemResizeStart.current.itemW + dx);
                 nextH = nextW / ratio;
@@ -368,7 +496,6 @@ export function CanvasViewport({
                 nextY = itemResizeStart.current.itemY + (itemResizeStart.current.itemH - nextH);
               }
             } else {
-              // 备注卡片自由缩放
               if (resizingHandle === "bottom-right") {
                 nextW = Math.max(100, itemResizeStart.current.itemW + dx);
                 nextH = Math.max(80, itemResizeStart.current.itemH + dy);
@@ -405,10 +532,8 @@ export function CanvasViewport({
             const snappedW = Math.round(nextW / snapGrid) * snapGrid;
             const snappedH = Math.round(nextH / snapGrid) * snapGrid;
 
-            // 写入临时坐标
             currentTempCoords.current = { x: snappedX, y: snappedY, w: snappedW, h: snappedH };
 
-            // 直接修改 DOM style，极其流畅
             const element = document.getElementById(`canvas-item-${resizingItemId}`);
             if (element) {
               element.style.left = `${snappedX}px`;
@@ -417,7 +542,6 @@ export function CanvasViewport({
               element.style.height = `${snappedH}px`;
             }
 
-            // 同步屏幕空间选框标签和工具栏位置与内容
             const toolbar = document.querySelector(".canvas-floating-toolbar") as HTMLElement;
             const labelLeft = document.querySelector(".canvas-selection-label-left") as HTMLElement;
             const labelRight = document.querySelector(".canvas-selection-label-right") as HTMLElement;
@@ -447,10 +571,12 @@ export function CanvasViewport({
       }}
       onMouseUp={() => {
         setIsPanning(false);
+        setActiveGuides([]);
         if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
           const targetId = draggingCanvasItemId || resizingItemId;
           const { x, y, w, h } = currentTempCoords.current;
           if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
+            if (pushToHistory) pushToHistory(projectCanvas);
             setProjectCanvas((current) => ({
               ...current,
               items: current.items.map((i) =>
@@ -465,10 +591,12 @@ export function CanvasViewport({
       }}
       onMouseLeave={() => {
         setIsPanning(false);
+        setActiveGuides([]);
         if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
           const targetId = draggingCanvasItemId || resizingItemId;
           const { x, y, w, h } = currentTempCoords.current;
           if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
+            if (pushToHistory) pushToHistory(projectCanvas);
             setProjectCanvas((current) => ({
               ...current,
               items: current.items.map((i) =>
@@ -481,7 +609,6 @@ export function CanvasViewport({
         setResizingItemId("");
         currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
       }}
-      onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
@@ -491,188 +618,127 @@ export function CanvasViewport({
           transformOrigin: "0 0",
         }}
       >
+        {/* 智能连接线绘制层 */}
+        {visibleConnections.length > 0 && (
+          <svg
+            className="canvas-connections-svg"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "10000px",
+              height: "10000px",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            <defs>
+              <marker
+                id="arrow-marker"
+                viewBox="0 0 10 10"
+                refX="6"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="rgba(15, 118, 110, 0.45)" />
+              </marker>
+            </defs>
+            {visibleConnections.map((conn) => {
+              const fromItem = visibleItems.find((i) => i.id === conn.fromItemId);
+              const toItem = visibleItems.find((i) => i.id === conn.toItemId);
+              if (!fromItem || !toItem) return null;
+
+              const { x1, y1, x2, y2, dx } = getConnectionPoints(fromItem, toItem);
+
+              const controlDistance = Math.min(100, Math.abs(dx) * 0.4);
+              const cx1 = x1 + (dx > 0 ? controlDistance : -controlDistance);
+              const cy1 = y1;
+              const cx2 = x2 - (dx > 0 ? controlDistance : -controlDistance);
+              const cy2 = y2;
+
+              const pathD = `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+
+              return (
+                <path
+                  key={conn.id}
+                  d={pathD}
+                  stroke="rgba(15, 118, 110, 0.45)"
+                  strokeWidth="2.5"
+                  fill="none"
+                  markerEnd="url(#arrow-marker)"
+                  strokeDasharray="4 4"
+                />
+              );
+            })}
+          </svg>
+        )}
+
+        {/* 辅助对齐参考线 */}
+        {activeGuides.length > 0 && (
+          <svg
+            className="canvas-guides-svg"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "10000px",
+              height: "10000px",
+              pointerEvents: "none",
+              zIndex: 20,
+            }}
+          >
+            {activeGuides.map((guide, idx) =>
+              guide.type === "v" ? (
+                <line
+                  key={idx}
+                  x1={guide.value}
+                  y1={-99999}
+                  x2={guide.value}
+                  y2={99999}
+                  stroke="#ef4444"
+                  strokeWidth={1 / zoom}
+                  strokeDasharray="4 4"
+                />
+              ) : (
+                <line
+                  key={idx}
+                  x1={-99999}
+                  y1={guide.value}
+                  x2={99999}
+                  y2={guide.value}
+                  stroke="#ef4444"
+                  strokeWidth={1 / zoom}
+                  strokeDasharray="4 4"
+                />
+              )
+            )}
+          </svg>
+        )}
+
         {visibleItems.length ? (
           visibleItems.map((item) => {
-            const asset = item.asset_id
-              ? assets.find((assetItem) => assetItem.id === item.asset_id)
-              : null;
+            const asset = item.asset_id ? assets.find((a) => a.id === item.asset_id) : null;
             const colors = getCardColorStyle(item.color);
             const isSelected = selectedItemId === item.id;
 
-            const isAssetCard = item.type === "asset" && asset;
             return (
-              <article
-                className={`canvas-item theme-card-${item.color || "default"} ${
-                  isAssetCard ? "canvas-item-asset" : ""
-                } ${
-                  isSelected && !readOnly ? "selected" : ""
-                }`}
+              <CanvasItemCard
                 key={item.id}
-                id={`canvas-item-${item.id}`}
-                onDragStart={(e) => e.preventDefault()}
-                style={{
-                  left: item.x,
-                  top: item.y,
-                  width: item.w,
-                  height: item.h,
-                  backgroundColor: colors.background,
-                  borderColor: isSelected && !readOnly ? "var(--rv-color-primary)" : colors.border,
-                  color: colors.text,
-                  zIndex: isSelected ? 10 : "auto",
-                }}
-                onMouseDown={(e) => {
-                  if (spacePressed || e.button !== 0 || readOnly) return;
-                  e.stopPropagation();
-                  setSelectedItemId(item.id);
-                  setDraggingCanvasItemId(item.id);
-                  currentTempCoords.current = { x: item.x, y: item.y, w: item.w, h: item.h };
-                  itemDragStart.current = {
-                    x: e.clientX,
-                    y: e.clientY,
-                    itemX: item.x,
-                    itemY: item.y,
-                  };
-                }}
-              >
-                {/* AI 运行中覆盖层 */}
-                {processingItemId === item.id && (
-                  <div className="canvas-item-processing-overlay" onMouseDown={(e) => e.stopPropagation()}>
-                    <div className="processing-spinner" />
-                    <span>
-                      {processingType === "remove-bg"
-                        ? "✨ AI 去背景中..."
-                        : processingType === "upscale"
-                        ? "🔍 AI 4K超分中..."
-                        : "✏️ AI 消除中..."}
-                    </span>
-                  </div>
-                )}
-
-                {/* 调节大小手柄 */}
-                {isSelected && !readOnly && (
-                  <>
-                    <div className="resize-handle top-left" onMouseDown={(e) => handleResizeStart(e, item.id, "top-left")} />
-                    <div className="resize-handle top-right" onMouseDown={(e) => handleResizeStart(e, item.id, "top-right")} />
-                    <div className="resize-handle bottom-left" onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-left")} />
-                    <div className="resize-handle bottom-right" onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-right")} />
-                  </>
-                )}
-
-                {!readOnly && removeCanvasItem && (
-                  <button
-                    className="canvas-remove"
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeCanvasItem(item.id);
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-                {item.type === "asset" && asset ? (
-                  asset.thumbnail_url || asset.file_url ? (
-                    <img 
-                      alt="" 
-                      src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} 
-                      draggable={false}
-                      onDragStart={(e) => e.preventDefault()}
-                    />
-                  ) : (
-                    <div className="canvas-item-fallback">{asset.asset_type}</div>
-                  )
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                    {readOnly ? (
-                      <>
-                        <div
-                          style={{
-                            fontWeight: "bold",
-                            fontSize:
-                              item.titleSize === "lg"
-                                ? "18px"
-                                : item.titleSize === "sm"
-                                ? "12px"
-                                : "14px",
-                            color: colors.text,
-                            padding: "2px 4px",
-                            width: "100%",
-                            wordBreak: "break-all",
-                          }}
-                        >
-                          {item.title}
-                        </div>
-                        <div
-                          style={{
-                            flex: 1,
-                            fontSize:
-                              item.fontSize === "lg"
-                                ? "16px"
-                                : item.fontSize === "sm"
-                                ? "12px"
-                                : "14px",
-                            color: colors.text,
-                            padding: "4px",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-all",
-                            overflowY: "auto",
-                          }}
-                        >
-                          {item.text}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          className="canvas-item-title-input"
-                          value={item.title}
-                          onChange={(e) => {
-                            if (!setProjectCanvas) return;
-                            const val = e.target.value;
-                            setProjectCanvas((curr) => ({
-                              ...curr,
-                              items: curr.items.map((i) =>
-                                i.id === item.id ? { ...i, title: val } : i
-                              ),
-                            }));
-                          }}
-                          style={{
-                            fontWeight: "bold",
-                            fontSize:
-                              item.titleSize === "lg"
-                                ? "18px"
-                                : item.titleSize === "sm"
-                                ? "12px"
-                                : "14px",
-                            color: colors.text,
-                            background: "transparent",
-                            border: 0,
-                            outline: 0,
-                            padding: "2px 4px",
-                            width: "calc(100% - 24px)",
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        />
-                        <textarea
-                          value={item.text ?? ""}
-                          onChange={(event) => updateCanvasNote(item.id, event.target.value)}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          style={{
-                            fontSize:
-                              item.fontSize === "lg"
-                                ? "16px"
-                                : item.fontSize === "sm"
-                                ? "12px"
-                                : "14px",
-                            color: colors.text,
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
-              </article>
+                item={item}
+                asset={asset}
+                isSelected={isSelected}
+                readOnly={readOnly}
+                colors={colors}
+                processingItemId={processingItemId}
+                processingType={processingType}
+                removeCanvasItem={removeCanvasItem}
+                updateCanvasNote={updateCanvasNote}
+                setProjectCanvas={setProjectCanvas}
+                onMouseDownCard={onMouseDownCard}
+                handleResizeStart={handleResizeStart}
+              />
             );
           })
         ) : (
@@ -693,133 +759,30 @@ export function CanvasViewport({
         )}
       </div>
 
-      {/* 屏幕空间悬浮工具栏 (Screen Space Overlay)，大小不受 zoom 缩放影响 */}
-      {!readOnly && selectedItemId && (() => {
-        const item = projectCanvas.items.find((i) => i.id === selectedItemId);
-        if (!item || item.type !== "asset") return null;
-        const asset = assets.find((a) => a.id === item.asset_id);
-        if (!asset) return null;
-
-        const screenX = item.x * zoom + panX;
-        const screenY = item.y * zoom + panY;
-        const screenW = item.w * zoom;
-
-        const displayPrompt = (() => {
-          const meta = asset.metadata;
-          if (meta && typeof meta.prompt === "string" && meta.prompt.trim() !== "") {
-            return meta.prompt;
-          }
-          return item.title || "未命名图片";
-        })();
-
-        const displayRes = realResolutions[asset.id] || 
-          (asset.metadata && typeof asset.metadata.size === "string" ? asset.metadata.size : null) ||
-          (asset.metadata && typeof asset.metadata.width === "number" && typeof asset.metadata.height === "number" ? `${asset.metadata.width}x${asset.metadata.height}` : null) ||
-          `${item.w} x ${item.h}`;
-
-        return (
-          <React.Fragment>
-            {/* 左上角提示词标签 */}
-            <div
-              className="canvas-selection-label-left"
-              style={{
-                position: "absolute",
-                left: screenX,
-                top: screenY - 20,
-                zIndex: 98,
-              }}
-              title={displayPrompt}
-            >
-              🖼️ {displayPrompt.length > 25 ? `${displayPrompt.slice(0, 25)}...` : displayPrompt}
-            </div>
-
-            {/* 右上角分辨率标签 */}
-            <div
-              className="canvas-selection-label-right"
-              style={{
-                position: "absolute",
-                left: screenX + screenW,
-                top: screenY - 20,
-                transform: "translateX(-100%)",
-                zIndex: 98,
-              }}
-            >
-              {displayRes}
-            </div>
-
-            {/* 悬浮工具栏 */}
-            <div
-              className="canvas-floating-toolbar"
-              style={{
-                position: "absolute",
-                left: screenX + screenW / 2,
-                top: screenY - 54,
-                transform: "translateX(-50%)",
-                zIndex: 100,
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className="canvas-toolbar-actions">
-                <button
-                  type="button"
-                  onClick={() => handleMagicTool("remove-bg", item.id)}
-                  disabled={processingItemId === item.id}
-                  title="AI 抠图去背景"
-                >
-                  AI 去背景
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMagicTool("upscale", item.id)}
-                  disabled={processingItemId === item.id}
-                  title="AI 超分放大"
-                >
-                  超分放大
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMagicTool("erase", item.id)}
-                  disabled={processingItemId === item.id}
-                  title="AI 橡皮擦消除"
-                >
-                  橡皮擦
-                </button>
-                <div className="canvas-toolbar-divider" />
-                <button
-                  type="button"
-                  className="btn-primary-action"
-                  onClick={() => handleDrawSimilar(asset)}
-                  title="画同款工作流"
-                >
-                  画同款
-                </button>
-                <a
-                  href={assetUrl(asset.file_url ?? "")}
-                  download={asset.metadata.file_name || `asset-${asset.id}.png`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="下载原图"
-                >
-                  下载
-                </a>
-                <button
-                  type="button"
-                  className="btn-danger-action"
-                  onClick={() => {
-                    if (removeCanvasItem) {
-                      removeCanvasItem(item.id);
-                      setSelectedItemId("");
-                    }
-                  }}
-                  title="从画布删除"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          </React.Fragment>
-        );
-      })()}
+      {/* 选中卡片屏幕空间覆盖层 */}
+      {!readOnly && selectedItemId && (
+        <CanvasSelectionOverlay
+          selectedItemId={selectedItemId}
+          setSelectedItemId={setSelectedItemId}
+          projectCanvas={projectCanvas}
+          setProjectCanvas={setProjectCanvas!}
+          assets={assets}
+          setAssets={setAssets}
+          zoom={zoom}
+          panX={panX}
+          panY={panY}
+          realResolutions={realResolutions}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          processingItemId={processingItemId}
+          setProcessingItemId={setProcessingItemId}
+          processingType={processingType}
+          setProcessingType={setProcessingType}
+          connectionSourceId={connectionSourceId}
+          setConnectionSourceId={setConnectionSourceId}
+          handleDrawSimilar={handleDrawSimilar}
+        />
+      )}
     </div>
   );
 }

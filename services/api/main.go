@@ -46,6 +46,7 @@ func main() {
 		api.POST("/auth/register", handler.RegisterUser)
 		api.POST("/auth/login", handler.LoginUser)
 		api.POST("/auth/dev-login", handler.DevLogin) // 快捷开发登录
+		api.GET("/version", getBuildVersion)
 
 		// 2. 外部客户免登交付预览 Portal 接口（公开不需要 Token 鉴权）
 		api.GET("/portal/shares/:token", handler.GetPortalProject)
@@ -139,25 +140,30 @@ func main() {
 			auth.POST("/workflows/creative-directions", handler.RunCreativeDirections)
 			auth.POST("/workflows/short-video-script-storyboard", handler.RunShortVideoScriptStoryboard)
 			auth.POST("/workflows/xiaohongshu-cover-batch", handler.RunXiaohongshuCoverBatch) // 新增小红书封面批量工作流
+			auth.POST("/workflows/magic-action", handler.RunMagicAction) // 新增画板 AI 魔法修改接口
 
 			// 分站管理员特权及财务对账接口
 			auth.GET("/admin/users", handler.ListAdminUsers)                                      // 获取系统用户大盘
 			auth.POST("/admin/users/:user_id/platform-admin", handler.UpdatePlatformAdmin)        // 调整超管头衔
 			auth.GET("/admin/workspace-members", handler.ListWorkspaceMembers)
 			auth.POST("/admin/workspace-members", handler.UpsertWorkspaceMember)
+			auth.DELETE("/admin/workspace-members", handler.DeleteWorkspaceMember)
 			auth.POST("/admin/credits/adjust", handler.AdjustCredits)
 			auth.GET("/admin/reports/costs", handler.GetCostReport)
 			auth.POST("/billing/orders/:order_id/mock-pay", handler.MockPayOrder)                 // 模拟支付
 
-			// 后台超管 Mock 接口（防止前端页面报错白屏，写死/自适应模型配置）
-			auth.GET("/admin/providers", handler.MockListProviders)
-			auth.POST("/admin/providers", handler.MockCreateProvider)
-			auth.POST("/admin/providers/:id/enabled", handler.MockEnableProvider)
-			auth.DELETE("/admin/providers/:id", handler.MockDeleteProvider)
-			auth.GET("/admin/models", handler.MockListModels)
-			auth.POST("/admin/models", handler.MockCreateModel)
-			auth.POST("/admin/models/:id/enabled", handler.MockEnableModel)
-			auth.DELETE("/admin/models/:id", handler.MockDeleteModel)
+			// 后台服务商接入与算力模型大盘真实接口
+			auth.GET("/admin/providers", handler.ListProviders)
+			auth.POST("/admin/providers", handler.CreateProvider)
+			auth.POST("/admin/providers/:id/enabled", handler.EnableProvider)
+			auth.DELETE("/admin/providers/:id", handler.DeleteProvider)
+			auth.POST("/admin/providers/fetch-upstream-models", handler.FetchUpstreamModels)
+
+			auth.GET("/admin/models", handler.ListModels)
+			auth.POST("/admin/models", handler.CreateModel)
+			auth.POST("/admin/models/:id/enabled", handler.EnableModel)
+			auth.DELETE("/admin/models/:id", handler.DeleteModel)
+			auth.POST("/admin/models/batch-import", handler.BatchImportModels)
 			auth.GET("/admin/pricing-rules", handler.MockListPricingRules)
 			auth.POST("/admin/pricing-rules", handler.MockCreatePricingRule)
 			auth.GET("/admin/workflow-templates", handler.MockListWorkflowTemplates)
@@ -166,6 +172,22 @@ func main() {
 			auth.POST("/admin/workflow-templates/:id/publish", handler.MockPublishWorkflowTemplate)
 			auth.POST("/admin/models/test-text", handler.MockTestTextModel)
 			auth.POST("/admin/models/test-image", handler.MockTestImageModel)
+
+			// 模板分类管理 (Admin CRUD)
+			auth.GET("/admin/template-categories", handler.ListTemplateCategories)
+			auth.POST("/admin/template-categories", handler.CreateTemplateCategory)
+			auth.PUT("/admin/template-categories/:id", handler.UpdateTemplateCategory)
+			auth.DELETE("/admin/template-categories/:id", handler.DeleteTemplateCategory)
+
+			// 提示词模板管理 (Admin CRUD)
+			auth.GET("/admin/prompt-templates", handler.ListPromptTemplates)
+			auth.POST("/admin/prompt-templates", handler.CreatePromptTemplate)
+			auth.PUT("/admin/prompt-templates/:id", handler.UpdatePromptTemplate)
+			auth.DELETE("/admin/prompt-templates/:id", handler.DeletePromptTemplate)
+
+			// 前台公开获取接口
+			auth.GET("/template-categories", handler.ListTemplateCategoriesPublic)
+			auth.GET("/prompt-templates", handler.ListPromptTemplatesPublic)
 		}
 	}
 
@@ -266,5 +288,15 @@ func updateClientSettings(c *gin.Context) {
 		"success": true,
 		"message": "配置更新成功",
 		"data":    settings,
+	})
+}
+
+// getBuildVersion 返回服务的版本与编译信息以兼容前端 dashboard
+func getBuildVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"service":            "reveria-go-api",
+		"version":            "0.1.0",
+		"api_contract":       1,
+		"database_connected": true,
 	})
 }

@@ -1,46 +1,32 @@
 import { ReactNode } from "react";
 import {
   FileText,
-  Palette,
-  Sparkles,
   Image,
-  Layers,
   Film,
+  Sparkles
 } from "lucide-react";
 
 export const quickTasks = [
   { label: "图像", type: "image-generation" },
-  { label: "客户 brief 分析", type: "brief-analysis" },
-  { label: "品牌风格提取", type: "brand-style-extract" },
-  { label: "三套创意方向", type: "creative-directions" },
-  { label: "小红书封面批量生成", type: "xiaohongshu-cover-batch" },
-  { label: "短视频脚本和分镜", type: "short-video-script-storyboard" },
+  { label: "文本", type: "text-generation" },
+  { label: "视频", type: "video-generation" },
 ] as const;
 
 export function isWorkflowRunnable(type: string): boolean {
   return (
-    type === "brief-analysis" ||
-    type === "brand-style-extract" ||
-    type === "creative-directions" ||
     type === "image-generation" ||
-    type === "xiaohongshu-cover-batch" ||
-    type === "short-video-script-storyboard"
+    type === "text-generation" ||
+    type === "video-generation"
   );
 }
 
 export function getWorkflowIcon(type: string, size = 16): ReactNode {
   switch (type) {
-    case "brief-analysis":
+    case "text-generation":
       return <FileText size={size} />;
-    case "brand-style-extract":
-      return <Palette size={size} />;
-    case "creative-directions":
-      return <Sparkles size={size} />;
     case "image-generation":
       return <Image size={size} />;
-    case "xiaohongshu-cover-batch":
-      return <Layers size={size} />;
-    case "short-video-script-storyboard":
+    case "video-generation":
       return <Film size={size} />;
     default:
       return <Sparkles size={size} />;
@@ -49,18 +35,12 @@ export function getWorkflowIcon(type: string, size = 16): ReactNode {
 
 export function getWorkflowDesc(type: string): string {
   switch (type) {
-    case "brief-analysis":
-      return "分析客户原始 Brief，提取项目核心诉求与切入点";
-    case "brand-style-extract":
-      return "提取并定义品牌风格调性，建立文案与视觉指南";
-    case "creative-directions":
-      return "生成三套差异化的创意方向与具体实施策略";
+    case "text-generation":
+      return "使用 AI 语言大模型进行文本创作、文案撰写与创意策划";
     case "image-generation":
       return "使用 AI 绘图大模型生成高清图片与视觉创意素材";
-    case "xiaohongshu-cover-batch":
-      return "批量策划高点击率的小红书封面文案与排版创意";
-    case "short-video-script-storyboard":
-      return "生成完整的短视频脚本、镜头分镜和配音脚本";
+    case "video-generation":
+      return "使用 AI 视频生成大模型生成动态视觉效果与短视频素材";
     default:
       return "智能生成工作流";
   }

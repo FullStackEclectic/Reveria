@@ -524,12 +524,12 @@
 }
 
 .task-row:hover {
-  border-color: #0f766e;
+  border-color: #6366f1;
 }
 
 .task-row.selected {
-  border-color: #0f766e;
-  background: #eef8f5;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .task-row small {
@@ -555,8 +555,8 @@
 
 .project-row-button:hover,
 .project-row-button.selected {
-  border-color: #0f766e;
-  background: #eef8f5;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .project-row div {
@@ -619,8 +619,8 @@
 }
 
 .workflow-input:focus {
-  border-color: #0f766e;
-  outline: 2px solid rgba(15, 118, 110, 0.18);
+  border-color: #6366f1;
+  outline: 2px solid rgba(99, 102, 241, 0.08);
 }
 
 .run-button {
@@ -647,7 +647,7 @@
 }
 
 .result-meta strong {
-  color: #0f766e;
+  color: #6366f1;
 }
 
 .workflow-result pre {
@@ -690,36 +690,48 @@
 /* Resize handles for canvas cards */
 .resize-handle {
   position: absolute;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   background: var(--rv-color-primary);
-  border: 1px solid #ffffff;
-  border-radius: 2px;
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
   z-index: 100;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  cursor: inherit;
 }
 
 .resize-handle.top-left {
-  top: -4px;
-  left: -4px;
+  top: -5px;
+  left: -5px;
   cursor: nwse-resize;
 }
 
 .resize-handle.top-right {
-  top: -4px;
-  right: -4px;
+  top: -5px;
+  right: -5px;
   cursor: nesw-resize;
 }
 
 .resize-handle.bottom-left {
-  bottom: -4px;
-  left: -4px;
+  bottom: -5px;
+  left: -5px;
   cursor: nesw-resize;
 }
 
 .resize-handle.bottom-right {
-  bottom: -4px;
-  right: -4px;
+  bottom: -5px;
+  right: -5px;
   cursor: nwse-resize;
 }
 
@@ -943,5 +955,221 @@
     opacity: 1;
     transform: translate(-50%, 0);
   }
+}
+
+/* ======================================================== */
+/* 5. 项目列表视图卡片与网格 (对齐 TusiArt 极简风) */
+/* ======================================================== */
+
+.project-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.project-card-figma {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.project-card-figma:hover {
+  transform: translateY(-3px);
+  border-color: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.06);
+}
+
+.project-card-figma .thumbnail-area {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  position: relative;
+  background: #fafaf9;
+  border-bottom: 1px solid #f5f5f4;
+  overflow: hidden;
+}
+
+.project-card-figma .thumbnail-area svg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.project-card-figma:hover .thumbnail-area svg {
+  transform: scale(1.02);
+}
+
+/* 删除按钮 */
+.project-delete-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #78716c;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.project-card-figma:hover .project-delete-btn {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.project-delete-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+  transform: scale(1.05);
+}
+
+.project-card-figma .info-area {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.project-card-figma .icon-wrapper {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.project-card-figma .text-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.project-card-figma .title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1c1917;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+.project-card-figma .metadata {
+  font-size: 11px;
+  color: #78716c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 搜索栏样式统一 */
+.projects-view-search-bar {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  padding: 0 12px;
+  height: 38px;
+  min-height: 38px;
+  width: 260px;
+  box-sizing: border-box;
+  transition: all 0.2s;
+  box-shadow: none;
+}
+
+.projects-view-search-bar:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.08);
+}
+
+.projects-view-search-bar input {
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  font-size: 13px;
+  color: #1c1917;
+  margin-left: 8px;
+  width: 100%;
+  height: 100%;
+  line-height: normal;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.projects-view-search-bar .search-icon {
+  color: #a8a29e;
+  flex-shrink: 0;
+}
+
+/* 对齐主色调的按钮覆写，解决文字挤压与换行 */
+.primary-button {
+  background: #6366f1 !important;
+  border-color: #6366f1 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  padding: 0 16px !important;
+  height: 38px !important;
+  border-radius: 8px !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.12) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.primary-button:hover {
+  background: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25) !important;
+}
+
+.secondary-button {
+  background: #ffffff !important;
+  color: #44403c !important;
+  border: 1px solid #e7e5e4 !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  padding: 0 16px !important;
+  height: 38px !important;
+  border-radius: 8px !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.secondary-button:hover {
+  background: #fafaf9 !important;
+  border-color: #d6d3d1 !important;
+  color: #1c1917 !important;
 }
 

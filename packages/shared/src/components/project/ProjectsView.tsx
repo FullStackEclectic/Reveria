@@ -44,7 +44,7 @@ interface ProjectsViewProps {
   deleteAsset: (id: string) => Promise<void>;
   setPreviewAsset: (asset: AssetSummary | null) => void;
   setIsNewProjectModalOpen: (open: boolean) => void;
-  
+
   // View Router Props
   projectsViewMode: "list" | "detail";
   setProjectsViewMode: (mode: "list" | "detail") => void;
@@ -123,7 +123,7 @@ export function ProjectsView({
     const matched = recentIds
       .map((id) => projects.find((p) => p.id === id))
       .filter((p): p is ProjectSummary => !!p);
-    
+
     if (matched.length > 0) {
       return matched;
     }
@@ -157,12 +157,12 @@ export function ProjectsView({
         <path d="M 12 0 L 0 0 0 12" fill="none" stroke="rgba(185, 178, 165, 0.08)" strokeWidth="1" />
       </pattern>
       <rect width="240" height="135" fill="url(#grid-canvas-proj)" />
-      
+
       {/* Node A */}
       <rect x="25" y="25" width="60" height="40" rx="4" fill="#ffffff" stroke="rgba(15, 118, 110, 0.25)" strokeWidth="1.5" />
       <rect x="33" y="33" width="44" height="6" rx="2" fill="rgba(15, 118, 110, 0.12)" />
       <rect x="33" y="44" width="30" height="4" rx="2" fill="rgba(115, 111, 106, 0.1)" />
-      
+
       {/* Node B */}
       <rect x="145" y="45" width="70" height="45" rx="4" fill="#ffffff" stroke="rgba(15, 118, 110, 0.2)" strokeWidth="1.5" />
       <circle cx="180" cy="68" r="14" fill="rgba(15, 118, 110, 0.08)" />
@@ -170,7 +170,7 @@ export function ProjectsView({
 
       {/* Curve Connection */}
       <path d="M 85 45 C 115 45, 115 67, 145 67" stroke="rgba(15, 118, 110, 0.3)" strokeWidth="1.5" strokeDasharray="3 3" strokeLinecap="round" />
-      
+
       {/* Selection outline */}
       <rect x="23" y="23" width="64" height="44" rx="2" fill="none" stroke="#0ea5e9" strokeWidth="1" />
       <rect x="21" y="21" width="5" height="5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1" />
@@ -197,7 +197,7 @@ export function ProjectsView({
       {/* Sparkles */}
       <path d="M 190 20 L 193 26 L 199 29 L 193 32 L 190 38 L 187 32 L 181 29 L 187 26 Z" fill="rgba(15, 118, 110, 0.18)" stroke="rgba(15, 118, 110, 0.4)" strokeWidth="1" />
       <path d="M 50 70 L 52 74 L 56 76 L 52 78 L 50 82 L 48 78 L 44 76 L 48 74 Z" fill="rgba(15, 118, 110, 0.12)" stroke="rgba(15, 118, 110, 0.3)" strokeWidth="1" />
-      
+
       {/* Prompt block */}
       <rect x="40" y="105" width="160" height="20" rx="10" fill="#ffffff" stroke="rgba(15, 118, 110, 0.2)" strokeWidth="1" />
       <circle cx="50" cy="115" r="3" fill="#0f766e" />
@@ -252,12 +252,24 @@ export function ProjectsView({
   const getIconBgColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "delivered":
-        return "#10b981"; // green
+        return "rgba(16, 185, 129, 0.1)"; // 极淡绿
       case "running":
       case "active":
-        return "#0ea5e9"; // blue
+        return "rgba(99, 102, 241, 0.1)"; // 极淡紫蓝
       default:
-        return "#f59e0b"; // amber
+        return "rgba(245, 158, 11, 0.1)"; // 极淡琥珀
+    }
+  };
+
+  const getIconColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "delivered":
+        return "#10b981";
+      case "running":
+      case "active":
+        return "#6366f1";
+      default:
+        return "#f59e0b";
     }
   };
 
@@ -309,12 +321,11 @@ export function ProjectsView({
   // Otherwise, render the clean project card grid view
   return (
     <PageFrame
-      eyebrow="项目"
       title="客户项目"
       status={`${projects.length} 个项目`}
       action={
         <div className="topbar-actions" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div className="project-search-bar" style={{ margin: 0 }}>
+          <div className="projects-view-search-bar">
             <Search size={16} className="search-icon" />
             <input
               type="text"
@@ -376,9 +387,9 @@ export function ProjectsView({
                           className="icon-wrapper"
                           style={{ backgroundColor: getIconBgColor(project.status) }}
                         >
-                          <FolderKanban size={15} color="#ffffff" />
+                          <FolderKanban size={15} color={getIconColor(project.status)} />
                         </div>
-                        
+
                         <div className="text-wrapper">
                           <span className="title" title={project.name}>{project.name}</span>
                           <span className="metadata">
@@ -430,9 +441,9 @@ export function ProjectsView({
                         className="icon-wrapper"
                         style={{ backgroundColor: getIconBgColor(project.status) }}
                       >
-                        <FolderKanban size={15} color="#ffffff" />
+                        <FolderKanban size={15} color={getIconColor(project.status)} />
                       </div>
-                      
+
                       <div className="text-wrapper">
                         <span className="title" title={project.name}>{project.name}</span>
                         <span className="metadata">

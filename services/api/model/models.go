@@ -284,3 +284,60 @@ type ProjectShare struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 	Status    string     `gorm:"type:varchar(32);default:'active'" json:"status"`
 }
+
+// Provider 算力服务商
+type Provider struct {
+	ID           string    `gorm:"type:varchar(80);primaryKey" json:"id"`
+	Name         string    `gorm:"type:varchar(120);not null" json:"name"`
+	ApiURL       string    `gorm:"type:text" json:"api_url"`
+	ApiKey       string    `gorm:"type:text" json:"api_key"`
+	ProviderType string    `gorm:"type:varchar(64);default:'openai'" json:"provider_type"`
+	Enabled      bool      `gorm:"default:true;not null" json:"enabled"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Model 算力模型表
+type Model struct {
+	ID          string    `gorm:"type:varchar(160);primaryKey" json:"id"`
+	ProviderID  string    `gorm:"type:varchar(80);index" json:"provider_id"`
+	Name        string    `gorm:"type:varchar(160);not null" json:"name"`
+	DisplayName string    `gorm:"type:varchar(160);not null" json:"display_name"`
+	ModelType   string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"` // 模型类型：chat (对话), image (图像), video (视频)
+	Enabled     bool      `gorm:"default:true;not null" json:"enabled"`
+	CreditsCost int64     `gorm:"default:0" json:"credits_cost"` // 调用定价扣点
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// TemplateCategory 模板分类表
+type TemplateCategory struct {
+	ID           uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	ParentID     *uuid.UUID     `gorm:"type:uuid" json:"parent_id"`
+	WorkflowType string         `gorm:"type:varchar(60);default:'image-generation';not null" json:"workflow_type"`
+	Name         string         `gorm:"type:varchar(100);not null;uniqueIndex" json:"name"`
+	SortOrder    int            `gorm:"default:0" json:"sort_order"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// PromptTemplate 提示词模板表
+type PromptTemplate struct {
+	ID            uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	CategoryID    uuid.UUID      `gorm:"type:uuid;index" json:"category_id"`
+	Title         string         `gorm:"type:varchar(160);not null" json:"title"`
+	Content       string         `gorm:"type:text;not null" json:"content"`
+	DefaultWidth  int            `gorm:"default:300" json:"default_width"`
+	DefaultHeight int            `gorm:"default:200" json:"default_height"`
+	WorkflowType  string         `gorm:"type:varchar(60);default:'image-generation'" json:"workflow_type"`
+	NeedImage     int            `gorm:"default:0" json:"need_image"`
+	ShowRatio      bool           `gorm:"default:true" json:"show_ratio"`
+	NegativePrompt string         `gorm:"type:text" json:"negative_prompt"`
+	PreviewUrl     string         `gorm:"type:varchar(255)" json:"preview_url"`
+	ModelID        string         `gorm:"type:varchar(60)" json:"model_id"`
+	AdvancedParams string         `gorm:"type:text" json:"advanced_params"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+

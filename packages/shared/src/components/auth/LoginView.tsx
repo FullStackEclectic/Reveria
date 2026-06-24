@@ -1,5 +1,5 @@
 import React, { FormEvent } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import "./LoginView.css";
 
 
@@ -14,6 +14,8 @@ interface LoginViewProps {
   isLoggingIn: boolean;
   handlePasswordAuth: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   handleDevLogin: () => Promise<void>;
+  isModal?: boolean;
+  onClose?: () => void;
 }
 
 export function LoginView({
@@ -27,10 +29,50 @@ export function LoginView({
   isLoggingIn,
   handlePasswordAuth,
   handleDevLogin,
+  isModal = false,
+  onClose,
 }: LoginViewProps) {
+  const overlayClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <main className="login-shell">
-      <section className="login-panel">
+    <main className={isModal ? "login-modal-overlay" : "login-shell"} onClick={overlayClick}>
+      <section className="login-panel" style={{ position: "relative" }}>
+        {isModal && onClose && (
+          <button
+            type="button"
+            className="login-modal-close"
+            onClick={onClose}
+            style={{
+              position: "absolute",
+              top: "16px",
+              right: "16px",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--rv-color-text-muted)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "4px",
+              borderRadius: "50%",
+              transition: "var(--rv-transition-default)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--rv-color-text-main)";
+              e.currentTarget.style.background = "var(--rv-color-bg-base)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--rv-color-text-muted)";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
         <div className="brand login-brand">
           <div className="brand-mark">R</div>
           <div>

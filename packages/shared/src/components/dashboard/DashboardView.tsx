@@ -52,104 +52,16 @@ export function DashboardView({
     );
   }, [projects, searchQuery]);
 
-  // Figma-like Cover SVG Templates
-  const renderCanvasSVG = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 135" fill="none" style={{ width: "100%", height: "100%" }}>
-      <rect width="240" height="135" fill="#fcfbfa" />
-      <pattern id="grid-canvas" width="12" height="12" patternUnits="userSpaceOnUse">
-        <path d="M 12 0 L 0 0 0 12" fill="none" stroke="rgba(185, 178, 165, 0.08)" strokeWidth="1" />
-      </pattern>
-      <rect width="240" height="135" fill="url(#grid-canvas)" />
-      
-      {/* Node A */}
-      <rect x="25" y="25" width="60" height="40" rx="4" fill="#ffffff" stroke="rgba(15, 118, 110, 0.25)" strokeWidth="1.5" />
-      <rect x="33" y="33" width="44" height="6" rx="2" fill="rgba(15, 118, 110, 0.12)" />
-      <rect x="33" y="44" width="30" height="4" rx="2" fill="rgba(115, 111, 106, 0.1)" />
-      
-      {/* Node B */}
-      <rect x="145" y="45" width="70" height="45" rx="4" fill="#ffffff" stroke="rgba(15, 118, 110, 0.2)" strokeWidth="1.5" />
-      <circle cx="180" cy="68" r="14" fill="rgba(15, 118, 110, 0.08)" />
-      <path d="M 175 68 L 185 68 M 180 63 L 180 73" stroke="rgba(15, 118, 110, 0.4)" strokeWidth="1.5" strokeLinecap="round" />
-
-      {/* Curve Connection */}
-      <path d="M 85 45 C 115 45, 115 67, 145 67" stroke="rgba(15, 118, 110, 0.3)" strokeWidth="1.5" strokeDasharray="3 3" strokeLinecap="round" />
-      
-      {/* Figma Selection borders */}
-      <rect x="23" y="23" width="64" height="44" rx="2" fill="none" stroke="#0ea5e9" strokeWidth="1" />
-      <rect x="21" y="21" width="5" height="5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1" />
-      <rect x="84" y="21" width="5" height="5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1" />
-      <rect x="21" y="64" width="5" height="5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1" />
-      <rect x="84" y="64" width="5" height="5" fill="#ffffff" stroke="#0ea5e9" strokeWidth="1" />
-    </svg>
-  );
-
-  const renderImageSVG = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 135" fill="none" style={{ width: "100%", height: "100%" }}>
-      <rect width="240" height="135" fill="#f9f8f6" />
-      <pattern id="grid-img" width="16" height="16" patternUnits="userSpaceOnUse">
-        <path d="M 16 0 L 0 0 0 16" fill="none" stroke="rgba(185, 178, 165, 0.06)" strokeWidth="1" />
-      </pattern>
-      <rect width="240" height="135" fill="url(#grid-img)" />
-
-      {/* Image box */}
-      <rect x="75" y="15" width="90" height="90" rx="8" fill="#ffffff" stroke="rgba(185, 178, 165, 0.25)" strokeWidth="1" />
-      <path d="M 85 95 L 115 65 C 120 60, 128 60, 133 65 L 155 87" stroke="rgba(185, 178, 165, 0.4)" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M 125 95 L 140 80 C 143 77, 147 77, 150 80 L 158 88" stroke="rgba(185, 178, 165, 0.4)" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="105" cy="40" r="8" fill="rgba(234, 179, 8, 0.15)" stroke="rgba(234, 179, 8, 0.4)" strokeWidth="1" />
-
-      {/* Sparkles */}
-      <path d="M 190 20 L 193 26 L 199 29 L 193 32 L 190 38 L 187 32 L 181 29 L 187 26 Z" fill="rgba(15, 118, 110, 0.18)" stroke="rgba(15, 118, 110, 0.4)" strokeWidth="1" />
-      <path d="M 50 70 L 52 74 L 56 76 L 52 78 L 50 82 L 48 78 L 44 76 L 48 74 Z" fill="rgba(15, 118, 110, 0.12)" stroke="rgba(15, 118, 110, 0.3)" strokeWidth="1" />
-      
-      {/* Prompt block */}
-      <rect x="40" y="105" width="160" height="20" rx="10" fill="#ffffff" stroke="rgba(15, 118, 110, 0.2)" strokeWidth="1" />
-      <circle cx="50" cy="115" r="3" fill="#0f766e" />
-      <rect x="58" y="113" width="100" height="4" rx="2" fill="rgba(15, 118, 110, 0.15)" />
-    </svg>
-  );
-
-  const renderVideoSVG = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 135" fill="none" style={{ width: "100%", height: "100%" }}>
-      <rect width="240" height="135" fill="#fcfafa" />
-      <pattern id="grid-vid" width="20" height="20" patternUnits="userSpaceOnUse">
-        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(185, 178, 165, 0.05)" strokeWidth="1" />
-      </pattern>
-      <rect width="240" height="135" fill="url(#grid-vid)" />
-
-      {/* Video film strip */}
-      <rect x="25" y="20" width="55" height="75" rx="4" fill="#ffffff" stroke="rgba(185, 178, 165, 0.3)" strokeWidth="1" />
-      <rect x="30" y="25" width="45" height="32" rx="2" fill="rgba(115, 111, 106, 0.05)" />
-      <circle cx="52" cy="41" r="7" fill="rgba(115, 111, 106, 0.1)" />
-      <polygon points="50,38 56,41 50,44" fill="rgba(115, 111, 106, 0.4)" />
-      <rect x="30" y="65" width="45" height="5" rx="1.5" fill="rgba(185, 178, 165, 0.2)" />
-      <rect x="30" y="75" width="30" height="4" rx="1" fill="rgba(185, 178, 165, 0.15)" />
-      <rect x="30" y="83" width="40" height="4" rx="1" fill="rgba(185, 178, 165, 0.15)" />
-
-      <rect x="92" y="20" width="55" height="75" rx="4" fill="#ffffff" stroke="rgba(185, 178, 165, 0.3)" strokeWidth="1" />
-      <rect x="97" y="25" width="45" height="32" rx="2" fill="rgba(115, 111, 106, 0.05)" />
-      <rect x="97" y="65" width="45" height="5" rx="1.5" fill="rgba(185, 178, 165, 0.2)" />
-      <rect x="97" y="75" width="35" height="4" rx="1" fill="rgba(185, 178, 165, 0.15)" />
-
-      <rect x="160" y="20" width="55" height="75" rx="4" fill="#ffffff" stroke="rgba(185, 178, 165, 0.3)" strokeWidth="1" />
-      <rect x="165" y="25" width="45" height="32" rx="2" fill="rgba(115, 111, 106, 0.05)" />
-      <rect x="165" y="65" width="45" height="5" rx="1.5" fill="rgba(185, 178, 165, 0.2)" />
-      <rect x="165" y="75" width="25" height="4" rx="1" fill="rgba(185, 178, 165, 0.15)" />
-
-      {/* Tracker */}
-      <rect x="25" y="108" width="190" height="4" rx="2" fill="rgba(115, 111, 106, 0.1)" />
-      <rect x="25" y="108" width="105" height="4" rx="2" fill="var(--rv-color-primary)" opacity="0.8" />
-    </svg>
-  );
-
-  const renderThumbnailSVG = (projectId: string) => {
+  // 磨砂炫彩渐变色预览分类映射
+  const getThumbnailClass = (projectId: string) => {
     let sum = 0;
     for (let i = 0; i < projectId.length; i++) {
       sum += projectId.charCodeAt(i);
     }
     const type = sum % 3;
-    if (type === 0) return renderCanvasSVG();
-    if (type === 1) return renderImageSVG();
-    return renderVideoSVG();
+    if (type === 0) return "thumb-gradient-purple";
+    if (type === 1) return "thumb-gradient-sunset";
+    return "thumb-gradient-ocean";
   };
 
   const getIconBgColor = (status: string) => {
@@ -184,7 +96,10 @@ export function DashboardView({
         <div className="dashboard-main-col">
           <div className="project-section-header">
             <div className="title-area">
-              <h3>项目库</h3>
+              <h3>
+                <FolderKanban size={20} className="title-icon" />
+                项目库
+              </h3>
               <span className="count">共 {projects.length} 个项目</span>
             </div>
 
@@ -200,11 +115,11 @@ export function DashboardView({
                 />
               </div>
               <button
-                className="primary-button"
+                className="btn-create-project-black"
                 type="button"
                 onClick={() => setIsNewProjectModalOpen(true)}
               >
-                <Sparkles size={16} aria-hidden="true" />
+                <Sparkles size={14} />
                 新建项目
               </button>
             </div>
@@ -226,26 +141,29 @@ export function DashboardView({
                       setActiveView("projects");
                     }}
                   >
-                    {/* 上部：项目缩略图预览（Figma风） */}
+                    {/* 上部：项目缩略图预览（磨砂炫彩渐变色） */}
                     <div className="thumbnail-area">
-                      {renderThumbnailSVG(project.id)}
+                      <div className={`project-thumbnail-gradient ${getThumbnailClass(project.id)}`}>
+                        <div className="glass-noise-overlay"></div>
+                        <div className="project-thumbnail-center-badge">
+                          <FolderKanban size={24} className="folder-icon" />
+                        </div>
+                      </div>
                     </div>
 
                     {/* 下部：项目基础信息及类型图标 */}
                     <div className="info-area">
-                      <div
-                        className="icon-wrapper"
-                        style={{ backgroundColor: getIconBgColor(project.status) }}
-                      >
-                        <FolderKanban size={15} color="#ffffff" />
-                      </div>
-                      
                       <div className="text-wrapper">
-                        <span className="title" title={project.name}>{project.name}</span>
-                        <span className="metadata">
-                          {customer ? customer.name : "个人项目"} · 已消耗 {project.consumed_credits} 点 · {getStatusText(project.status)}
-                        </span>
+                        <span className="project-title" title={project.name}>{project.name}</span>
+                        <div className="project-meta-row">
+                          <span className="meta-item">{customer ? customer.name : "个人项目"}</span>
+                          <span className="meta-divider">·</span>
+                          <span className="meta-item">已消耗 {project.consumed_credits} 点</span>
+                        </div>
                       </div>
+                      <span className={`status-badge status-${project.status.toLowerCase()}`}>
+                        {getStatusText(project.status)}
+                      </span>
                     </div>
                   </div>
                 );
@@ -258,11 +176,12 @@ export function DashboardView({
               <p>{searchQuery ? "请尝试更改搜索关键字" : "项目制是创意生产的主轴，通过工作流串联资产与无限画布"}</p>
               {!searchQuery && (
                 <button
-                  className="primary-button"
+                  className="btn-create-project-black"
                   type="button"
                   onClick={() => setIsNewProjectModalOpen(true)}
+                  style={{ width: "auto", margin: "16px auto 0 auto" }}
                 >
-                  <Sparkles size={16} /> 创建第一个项目
+                  <Sparkles size={14} /> 创建第一个项目
                 </button>
               )}
             </div>
@@ -279,15 +198,26 @@ export function DashboardView({
             </div>
             {tasks.length > 0 ? (
               <div className="side-list">
-                {tasks.slice(0, 4).map((task) => (
-                  <div className="side-list-item" key={task.id}>
-                    <div className="item-left">
-                      <strong className="title">{task.task_type}</strong>
-                      <span className={`status-dot ${task.status}`}>{task.status}</span>
+                {tasks.slice(0, 4).map((task) => {
+                  const displayName = task.task_type === "image-generation" ? "AI 生图" : task.task_type === "video-generation" ? "AI 视频" : task.task_type === "text-generation" ? "AI 写作" : "AI 任务";
+                  const isWorking = task.status === "running" || task.status === "pending";
+                  return (
+                    <div className="side-list-item" key={task.id}>
+                      <div className="item-left">
+                        <strong className="title">{displayName}</strong>
+                        <div className="status-container" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span className={`status-dot ${task.status}`}>
+                            {isWorking && <span className="pulse-glow" />}
+                          </span>
+                          <span className="status-label" style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>
+                            {task.status === "running" ? "生成中" : task.status === "pending" ? "排队中" : task.status === "success" ? "已完成" : "失败"}
+                          </span>
+                        </div>
+                      </div>
+                      <small className="cost">{task.actual_credits || task.estimated_credits} 点</small>
                     </div>
-                    <small className="cost">{task.actual_credits || task.estimated_credits} 点</small>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="side-empty-state">
@@ -312,10 +242,10 @@ export function DashboardView({
                         <strong className="title">{transaction.transaction_type}</strong>
                         <span className="desc">{transaction.reason ?? "无备注"}</span>
                       </div>
-                      <strong className={`amount ${isPositive ? "positive" : "negative"}`}>
+                      <span className={`credit-pill ${isPositive ? "positive" : "negative"}`}>
                         {isPositive ? "+" : ""}
                         {transaction.amount} 点
-                      </strong>
+                      </span>
                     </div>
                   );
                 })}
@@ -336,21 +266,27 @@ export function DashboardView({
             {customers.length > 0 || brandKits.length > 0 ? (
               <div className="side-list">
                 {customers.slice(0, 2).map((customer) => (
-                  <div className="side-list-item" key={customer.id}>
-                    <div className="item-left">
-                      <strong className="title">{customer.name}</strong>
-                      <span className="desc">{customer.industry ?? "未填写行业"}</span>
+                  <div className="side-list-item card-like-item" key={customer.id}>
+                    <div className="item-avatar-box customer-avatar">
+                      {(customer.name || "C").slice(0, 1).toUpperCase()}
                     </div>
-                    <span className="tag customer">客户</span>
+                    <div className="item-content-info">
+                      <strong className="item-name">{customer.name}</strong>
+                      <span className="item-desc">{customer.industry ?? "未填写行业"}</span>
+                    </div>
+                    <span className="side-tag customer-tag">客户</span>
                   </div>
                 ))}
                 {brandKits.slice(0, 2).map((brandKit) => (
-                  <div className="side-list-item" key={brandKit.id}>
-                    <div className="item-left">
-                      <strong className="title">{brandKit.name}</strong>
-                      <span className="desc">{brandKit.style_prompt ?? "未填写风格"}</span>
+                  <div className="side-list-item card-like-item" key={brandKit.id}>
+                    <div className="item-avatar-box brand-avatar">
+                      {(brandKit.name || "B").slice(0, 1).toUpperCase()}
                     </div>
-                    <span className="tag brand-kit">品牌库</span>
+                    <div className="item-content-info">
+                      <strong className="item-name">{brandKit.name}</strong>
+                      <span className="item-desc">{brandKit.style_prompt ?? "未填写风格"}</span>
+                    </div>
+                    <span className="side-tag brand-tag">品牌库</span>
                   </div>
                 ))}
               </div>

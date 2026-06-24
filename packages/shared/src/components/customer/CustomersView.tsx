@@ -209,12 +209,12 @@ export function CustomersView({
   }
 
   return (
-    <section className="workspace" style={{ padding: "0px", height: "100%" }}>
-      <section className="page-grid" style={{ height: "calc(100vh - 40px)", margin: "20px", display: "grid", gridTemplateColumns: "1fr 3fr", gap: "20px" }}>
+    <section className="customer-workspace">
+      <section className="customer-page-grid">
         
         {/* 左侧客户搜索与选择列表 */}
-        <div className="panel list-panel" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div className="panel-header" style={{ marginBottom: "5px" }}>
+        <div className="customer-panel list-panel">
+          <div className="customer-panel-header">
             <h3>客户合作列表</h3>
             <span>点击查看业务资产</span>
           </div>
@@ -235,7 +235,7 @@ export function CustomersView({
               type="button"
               onClick={() => setIsAddingCustomerInline(!isAddingCustomerInline)}
               title="快速录入客户"
-              style={{ width: "32px", height: "32px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "8px" }}
+              style={{ width: "32px", height: "32px", padding: 0 }}
             >
               <Plus size={16} />
             </button>
@@ -243,18 +243,7 @@ export function CustomersView({
 
           {/* 行内直接添加客户输入层 */}
           {isAddingCustomerInline && (
-            <form
-              onSubmit={handleCreateCustomerInline}
-              style={{
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px dashed var(--rv-color-primary)",
-                borderRadius: "8px",
-                padding: "10px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px"
-              }}
-            >
+            <form onSubmit={handleCreateCustomerInline} className="rv-inline-add-form">
               <input
                 required
                 autoFocus
@@ -262,7 +251,7 @@ export function CustomersView({
                 placeholder="客户名称，如：蓝天科技"
                 value={newCustomerName}
                 onChange={(e) => setNewCustomerName(e.target.value)}
-                style={{ fontSize: "12px", width: "100%" }}
+                style={{ fontSize: "12px" }}
               />
               <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
                 <button
@@ -286,7 +275,7 @@ export function CustomersView({
           )}
 
           {/* 过滤列表渲染 */}
-          <div className="project-list" style={{ flex: 1, overflowY: "auto" }}>
+          <div className="customer-list-container">
             {filteredCustomers.length > 0 ? (
               filteredCustomers.map((customer) => {
                 const isSelected = selectedCustomer?.id === customer.id;
@@ -294,19 +283,11 @@ export function CustomersView({
                 const isDeleting = isDeletingCustomer && selectedCustomer?.id === customer.id;
                 return (
                   <div
-                    className={isSelected ? "project-row selected" : "project-row"}
+                    className={isSelected ? "customer-project-row selected" : "customer-project-row"}
                     key={customer.id}
                     onClick={() => setSelectedCustomerId(customer.id)}
                     onMouseEnter={() => setHoveredCustomerId(customer.id)}
                     onMouseLeave={() => setHoveredCustomerId("")}
-                    style={{ 
-                      padding: "10px 12px", 
-                      display: "flex", 
-                      alignItems: "center", 
-                      gap: "10px",
-                      cursor: "pointer",
-                      transition: "var(--rv-transition-default)"
-                    }}
                   >
                     {/* HSL 微渐变首字母头像 */}
                     <span
@@ -316,8 +297,8 @@ export function CustomersView({
                       {getFirstChar(customer.name)}
                     </span>
 
-                    <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <strong style={{ fontSize: "13px" }}>{customer.name}</strong>
+                    <div className="info-content">
+                      <strong>{customer.name}</strong>
                       <span className="rv-badge rv-badge-neutral" style={{ alignSelf: "flex-start" }}>
                         {customer.industry || "未填写行业"}
                       </span>
@@ -328,21 +309,18 @@ export function CustomersView({
                       {hoveredCustomerId === customer.id ? (
                         <button
                           type="button"
-                          className="icon-button"
+                          className="danger-button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteCustomerById(customer);
+                            void handleDeleteCustomerById(customer);
                           }}
                           disabled={isDeletingCustomer}
                           title="快速删除客户"
                           style={{
                             padding: "4px",
-                            background: "transparent",
                             border: 0,
-                            color: "#ef4444",
                             display: "flex",
-                            alignItems: "center",
-                            cursor: "pointer"
+                            alignItems: "center"
                           }}
                         >
                           {isDeleting ? (
@@ -369,23 +347,23 @@ export function CustomersView({
         </div>
 
         {/* 右侧详情面板 */}
-        <div className="panel detail-panel" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="customer-panel detail-panel">
           {selectedCustomer ? (
             <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
               
               {/* Pro 风格 Hero 名片区 */}
-              <div style={{ display: "flex", alignItems: "center", gap: "16px", paddingBottom: "4px" }}>
+              <div className="customer-hero-section">
                 <span
                   className="rv-avatar rv-avatar-lg"
                   style={{ background: getAvatarGradient(selectedCustomer.name) }}
                 >
                   {getFirstChar(selectedCustomer.name)}
                 </span>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>{selectedCustomer.name}</h2>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div className="customer-hero-meta">
+                  <h2>{selectedCustomer.name}</h2>
+                  <div className="customer-hero-info">
                     <span className="rv-badge rv-badge-primary">{selectedCustomer.industry || "通用行业"}</span>
-                    <span style={{ fontSize: "12px", color: "var(--rv-color-text-muted)" }}>
+                    <span>
                       共 {customerProjects.length} 个关联项目 · {customerBrandKits.length} 个专属 brand-kit 资产
                     </span>
                   </div>
@@ -457,21 +435,13 @@ export function CustomersView({
                           placeholder="在此处填写客户偏好、周期性需求或其他合作备注信息..."
                         />
                       </label>
-                      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                      <div className="form-actions-bar">
                         <button
-                          className="secondary-button"
+                          className="danger-button"
                           type="button"
                           onClick={() => handleDeleteCustomerById(selectedCustomer)}
                           disabled={isDeletingCustomer}
-                          style={{
-                            padding: "8px 16px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            color: "#ef4444",
-                            borderColor: "rgba(239, 68, 68, 0.2)",
-                            background: "transparent"
-                          }}
+                          style={{ padding: "8px 16px" }}
                         >
                           {isDeletingCustomer ? (
                             <Loader2 className="spin" size={16} />
@@ -484,7 +454,7 @@ export function CustomersView({
                           className="primary-button"
                           type="submit"
                           disabled={isSavingCustomer}
-                          style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: "6px" }}
+                          style={{ padding: "8px 16px" }}
                         >
                           {isSavingCustomer ? (
                             <Loader2 className="spin" size={16} />
@@ -497,8 +467,8 @@ export function CustomersView({
                     </form>
 
                     {/* 穿透跳转的关联项目模块 */}
-                    <div style={{ borderTop: "1px solid var(--rv-color-border-thin)", paddingTop: "16px" }}>
-                      <h4 style={{ margin: "0 0 10px 0", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div className="associated-projects-section">
+                      <h4>
                         <Briefcase size={14} style={{ color: "var(--rv-color-primary)" }} />
                         关联业务项目
                       </h4>
@@ -541,13 +511,13 @@ export function CustomersView({
                         <div style={{ display: "flex", alignItems: "center", gap: "10px", gridColumn: "span 2", marginBottom: "10px" }}>
                           <button
                             type="button"
-                            className="icon-button"
+                            className="secondary-button"
                             onClick={() => setEditingBrandKit(null)}
-                            style={{ padding: "6px", display: "flex", alignItems: "center", background: "transparent", border: 0 }}
+                            style={{ padding: "6px", minHeight: "32px", display: "flex", alignItems: "center" }}
                           >
                             <ArrowLeft size={16} />
                           </button>
-                          <h4 style={{ margin: 0, fontSize: "14px" }}>配置品牌库配置项：{editingBrandKit.name}</h4>
+                          <h4 style={{ margin: 0, fontSize: "14px", color: "#1c1917", fontWeight: "600" }}>配置品牌库配置项：{editingBrandKit.name}</h4>
                         </div>
 
                         <label className="wide-field">
@@ -613,11 +583,12 @@ export function CustomersView({
                           />
                         </label>
 
-                        <div style={{ gridColumn: "span 2", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                        <div className="form-actions-bar">
                           <button
                             className="primary-button"
                             type="submit"
                             disabled={isSavingBrandKit}
+                            style={{ padding: "8px 16px" }}
                           >
                             {isSavingBrandKit ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
                             保存品牌配置
@@ -626,6 +597,7 @@ export function CustomersView({
                             className="secondary-button"
                             type="button"
                             onClick={() => setEditingBrandKit(null)}
+                            style={{ padding: "8px 16px" }}
                           >
                             取消
                           </button>
@@ -633,8 +605,8 @@ export function CustomersView({
                       </form>
                     ) : (
                       /* 品牌列表 Grid 排版 */
-                      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "14px" }}>
+                      <div className="brand-assets-container">
+                        <div className="brand-assets-grid">
                           
                           {/* 磨砂加号卡片 */}
                           {!isAddingBrand ? (
@@ -650,9 +622,8 @@ export function CustomersView({
                             <form
                               onSubmit={handleCreateBrandKit}
                               className="rv-brand-grid-card"
-                              style={{ flexDirection: "column", gap: "10px", justifyContent: "space-between", minHeight: "135px" }}
                             >
-                              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "6px" }}>
                                 <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--rv-color-text-muted)" }}>新资产名称</span>
                                 <input
                                   required
@@ -664,7 +635,7 @@ export function CustomersView({
                                   style={{ width: "100%", fontSize: "12px", padding: "6px 8px" }}
                                 />
                               </div>
-                              <div style={{ display: "flex", gap: "6px", width: "100%", justifyContent: "flex-end" }}>
+                              <div style={{ display: "flex", gap: "6px", width: "100%", justifyContent: "flex-end", marginTop: "12px" }}>
                                 <button
                                   type="button"
                                   className="secondary-button"
@@ -687,13 +658,13 @@ export function CustomersView({
 
                           {/* 已有品牌渲染 */}
                           {customerBrandKits.map((brand) => (
-                            <div key={brand.id} className="rv-brand-grid-card" style={{ flexDirection: "column", gap: "10px", minHeight: "135px", justifyContent: "space-between" }}>
+                            <div key={brand.id} className="rv-brand-grid-card">
                               <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <strong style={{ fontSize: "14px", color: "var(--rv-color-text-main)" }}>{brand.name}</strong>
+                                <div className="brand-card-header">
+                                  <strong>{brand.name}</strong>
                                   
                                   {/* 操作按钮区 */}
-                                  <div style={{ display: "flex", gap: "4px" }}>
+                                  <div className="brand-card-actions">
                                     <button
                                       type="button"
                                       className="secondary-button"
@@ -706,7 +677,9 @@ export function CustomersView({
                                     <button
                                       type="button"
                                       className="danger-button"
-                                      onClick={(e) => handleDeleteBrandKit(brand.id, e)}
+                                      onClick={(e) => {
+                                        void handleDeleteBrandKit(brand.id, e);
+                                      }}
                                       disabled={isDeletingBrandKitId === brand.id}
                                       title="移去该品牌"
                                       style={{ padding: "4px", borderRadius: "6px", background: "transparent", border: 0 }}
@@ -721,16 +694,16 @@ export function CustomersView({
                                 </div>
 
                                 {/* 配置项微型内凹容器 */}
-                                <div className="rv-code-container" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <div style={{ display: "flex", gap: "4px" }}>
-                                    <span style={{ fontWeight: "600", flexShrink: 0 }}>口吻:</span>
-                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <div className="rv-code-container">
+                                  <div className="rv-code-line">
+                                    <strong>口吻:</strong>
+                                    <span>
                                       {brand.tone_of_voice || "未配置口吻"}
                                     </span>
                                   </div>
-                                  <div style={{ display: "flex", gap: "4px" }}>
-                                    <span style={{ fontWeight: "600", flexShrink: 0 }}>视觉:</span>
-                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <div className="rv-code-line">
+                                    <strong>视觉:</strong>
+                                    <span>
                                       {brand.style_prompt || "未配置提示词"}
                                     </span>
                                   </div>
@@ -752,9 +725,9 @@ export function CustomersView({
               </div>
             </div>
           ) : (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rv-color-text-muted)", flexDirection: "column", gap: "10px" }}>
+            <div className="customer-empty-state">
               <FileText size={48} style={{ opacity: 0.15 }} />
-              <p style={{ margin: 0, fontSize: "13px" }}>请在左侧列表中选定或录入一个客户以展看详情</p>
+              <p>请在左侧列表中选定或录入一个客户以展开详情</p>
             </div>
           )}
         </div>

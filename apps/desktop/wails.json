@@ -3,9 +3,9 @@
   "name": "Reveria",
   "outputfilename": "Reveria",
   "frontend:dir": ".",
-  "frontend:install": "npm install",
-  "frontend:build": "npm run build",
-  "frontend:dev:watcher": "npm run dev",
+  "frontend:install": "",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
   "frontend:dev:serverUrl": "http://localhost:1420",
   "author": {
     "name": "Reveria Team",

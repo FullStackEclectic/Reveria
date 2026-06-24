@@ -1,114 +1,39 @@
 import React from "react";
-import { LogOut, History, Coins, Settings, ChevronLeft, ChevronRight } from "lucide-react";
-import { navItems, UserSummary, AppView } from "../../types";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { navItems, AppView } from "../../types";
 import "./Sidebar.css";
 
 const isDesktop = () => typeof window !== "undefined" && !!(window as any).go;
 
 interface SidebarProps {
-  currentUser: UserSummary | null;
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (collapsed: boolean) => void;
-  isUserDropdownOpen: boolean;
-  setIsUserDropdownOpen: (open: boolean) => void;
   activeView: AppView;
   setActiveView: (view: AppView) => void;
   setAdminMessage: (msg: string) => void;
   setProjectsViewMode: (mode: "list" | "detail") => void;
-  handleLogout: () => Promise<void>;
-  formattedCredits: string;
+  categories: any[];
+  selectedCategoryId: string;
+  setSelectedCategoryId: (id: string) => void;
+  setSelectedSubCategoryId: (id: string) => void;
+  setSelectedWorkflowType: (type: string) => void;
 }
 
 export function Sidebar({
-  currentUser,
   isSidebarCollapsed,
   setIsSidebarCollapsed,
-  isUserDropdownOpen,
-  setIsUserDropdownOpen,
   activeView,
   setActiveView,
   setAdminMessage,
   setProjectsViewMode,
-  handleLogout,
-  formattedCredits,
+  categories,
+  selectedCategoryId,
+  setSelectedCategoryId,
+  setSelectedSubCategoryId,
+  setSelectedWorkflowType,
 }: SidebarProps) {
   return (
     <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
-      <div className="user-profile-section">
-        <button
-          className="user-profile-btn"
-          type="button"
-          onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-        >
-          <div className="avatar-placeholder">
-            {(currentUser?.display_name || "US").slice(0, 2).toUpperCase()}
-          </div>
-          <div className="user-info">
-            <div className="username-row">
-              <span className="username">{currentUser?.display_name || "未登录"}</span>
-              {currentUser && (
-                <span className="user-credits" title={`当前积分: ${formattedCredits}`}>
-                  <Coins size={12} className="credits-icon" />
-                  <span className="credits-text">{formattedCredits}</span>
-                </span>
-              )}
-            </div>
-            <span className="role">
-              {currentUser?.is_platform_admin ? "超级管理员" : "工作区成员"}
-            </span>
-          </div>
-        </button>
-
-        {isUserDropdownOpen && currentUser && (
-          <div className="user-dropdown-menu">
-            <div className="user-dropdown-header">
-              <strong>{currentUser.display_name}</strong>
-              <span>{currentUser.email || "开发用户"}</span>
-            </div>
-
-            <button
-              className="user-dropdown-item"
-              type="button"
-              onClick={() => {
-                setIsUserDropdownOpen(false);
-                setActiveView("history");
-              }}
-            >
-              <History size={14} />
-              <span>生成历史</span>
-            </button>
-
-            <button
-              className="user-dropdown-item"
-              type="button"
-              onClick={() => {
-                setIsUserDropdownOpen(false);
-                setActiveView("credits");
-              }}
-            >
-              <Coins size={14} />
-              <span>点数中心</span>
-            </button>
-
-            {/* 独立的管理后台通过 /admin 提供，此处工作台不需要集成的管理页面入口 */}
-
-            <div className="user-dropdown-divider" />
-
-            <button
-              className="user-dropdown-item logout"
-              type="button"
-              onClick={() => {
-                setIsUserDropdownOpen(false);
-                void handleLogout();
-              }}
-            >
-              <LogOut size={14} />
-              <span>退出登录</span>
-            </button>
-          </div>
-        )}
-      </div>
-
       <nav aria-label="主导航">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -133,17 +58,94 @@ export function Sidebar({
         })}
       </nav>
 
-      <button
-        className="sidebar-toggle-btn"
-        type="button"
-        onClick={() => {
-          const nextCollapsed = !isSidebarCollapsed;
-          setIsSidebarCollapsed(nextCollapsed);
-          localStorage.setItem("reveria.sidebarCollapsed", String(nextCollapsed));
-        }}
-      >
-        {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-      </button>
+      {activeView === "square" && !isSidebarCollapsed && categories.filter(c => !c.parent_id).length > 0 && (
+        <div className="side-menu-section" style={{ marginTop: "12px", borderTop: "1px solid rgba(28, 25, 23, 0.05)", paddingTop: "12px" }}>
+          <div className="side-section-title" style={{ fontSize: "11px", fontWeight: 700, color: "#78716c", letterSpacing: "0.5px", marginBottom: "6px", paddingLeft: "12px" }}>
+            模板大类分类
+          </div>
+          <ul className="side-menu-list flow-list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {categories.filter(c => !c.parent_id).map((cat) => {
+              let tagText = "图";
+              let textColor = "#6366f1";
+              let bgColor = "rgba(99, 102, 241, 0.1)";
+
+              if (cat.workflow_type === "video-generation") {
+                tagText = "视";
+                textColor = "#a855f7";
+                bgColor = "rgba(168, 85, 247, 0.1)";
+              } else if (cat.workflow_type === "text-generation") {
+                tagText = "文";
+                textColor = "#f97316";
+                bgColor = "rgba(249, 115, 22, 0.1)";
+              }
+
+              return (
+                <li
+                  key={cat.id}
+                  className={selectedCategoryId === cat.id ? "active" : ""}
+                  onClick={() => {
+                    setSelectedWorkflowType("all");
+                    setSelectedCategoryId(cat.id);
+                    setSelectedSubCategoryId("all");
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    fontWeight: "550",
+                    color: selectedCategoryId === cat.id ? "#6366f1" : "#57534e",
+                    background: selectedCategoryId === cat.id ? "rgba(99, 102, 241, 0.08)" : "transparent",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                    marginBottom: "2px"
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "4px",
+                      fontSize: "10px",
+                      fontWeight: 800,
+                      color: textColor,
+                      backgroundColor: bgColor,
+                      flexShrink: 0
+                    }}
+                  >
+                    {tagText}
+                  </span>
+                  <span>{cat.name}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <div className="sidebar-bottom-section">
+        {!isSidebarCollapsed && (
+          <div className="sidebar-footer">
+            <div className="sidebar-footer-grid">
+              <a href="#" onClick={(e) => e.preventDefault()}>微信公众号</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>小红书</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>B站</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>抖音</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>TAMS</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>招聘</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>关于我们</a>
+              <a href="#" onClick={(e) => e.preventDefault()}>反馈</a>
+              <a href="#" onClick={(e) => e.preventDefault()} className="full-width">Privacy Policy</a>
+              <a href="#" onClick={(e) => e.preventDefault()} className="full-width">Terms of Service</a>
+            </div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

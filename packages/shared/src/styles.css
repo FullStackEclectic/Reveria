@@ -96,19 +96,57 @@ select {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 248px 1fr;
-  min-height: 100vh;
+  grid-template-columns: 230px 1fr;
+  min-height: calc(100vh - 64px);
   background: var(--rv-color-bg-base);
   transition: grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-shell.collapsed {
+  grid-template-columns: 76px 1fr;
 }
 
 .app-shell.no-sidebar {
   grid-template-columns: 1fr !important;
 }
 
+/* 修复 fixed 侧栏脱离 Grid 流导致主内容被误排在第一列的问题 */
+.app-shell > aside.sidebar ~ * {
+  grid-column: 2;
+}
+
+.app-shell.no-sidebar > * {
+  grid-column: 1 / -1 !important;
+}
+
+.app-shell.no-header {
+  min-height: 100vh !important;
+}
+
 
 .workspace {
-  padding: 32px;
+  padding: 24px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(185, 178, 165, 0.15);
+  margin-bottom: 16px;
+}
+
+.topbar h2 {
+  margin: 0 0 2px 0 !important;
+  font-size: 20px !important;
+  line-height: 1.2 !important;
+}
+
+.topbar .workspace-status {
+  margin: 0 !important;
+  font-size: 12px !important;
+  color: #78716c !important;
 }
 
 
@@ -303,5 +341,429 @@ select {
   margin: 12px 0 0;
   color: #6b645d;
   font-size: 12px;
+}
+
+/* ========================================== */
+/* 8. 顶部高还原 TusiArt 风格 Header           */
+/* ========================================== */
+.rv-global-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid #e7e5e4;
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  color: #1c1917;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rv-header-toggle-btn {
+  background: transparent;
+  border: none;
+  color: #78716c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rv-header-toggle-btn:hover {
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.brand-logo-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.brand-logo-text {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #1c1917;
+}
+
+/* 中部搜索区域 */
+.header-middle {
+  flex: 1;
+  max-width: 480px;
+  margin: 0 24px;
+}
+
+.header-search-bar {
+  background: #f5f5f4;
+  border: 1px solid transparent;
+  border-radius: 99px;
+  padding: 2px 16px 2px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  transition: all 0.2s ease;
+}
+
+.header-search-bar:focus-within {
+  background: #ffffff;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+}
+
+.search-category-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #57534e;
+  background: #ffffff;
+  padding: 4px 10px;
+  border-radius: 99px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.search-input-wrapper input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 6px 0;
+  font-size: 13px;
+  color: #1c1917;
+  outline: none;
+}
+
+.search-input-wrapper input::placeholder {
+  color: #a8a29e;
+}
+
+.search-action-icons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #78716c;
+}
+
+.search-action-icons .camera-icon,
+.search-action-icons .search-icon {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.search-action-icons .camera-icon:hover,
+.search-action-icons .search-icon:hover {
+  color: #1c1917;
+}
+
+/* 右侧操作区域 */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 创造/开始创作按钮 - 蓝绿渐变高保真 */
+.btn-create-magic {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+  border: none;
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: var(--rv-radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-create-magic:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.35);
+}
+
+.btn-create-magic .chevron-down-icon {
+  opacity: 0.8;
+}
+
+/* + 新建项目 按钮 - 白底 */
+.btn-publish-project {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  color: #57534e;
+  padding: 8px 14px;
+  border-radius: var(--rv-radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-publish-project:hover {
+  background: #f5f5f4;
+  color: #1c1917;
+  border-color: #d6d3d1;
+}
+
+/* PRO 算力小徽章 - 金色渐变 */
+.pro-credits-badge {
+  display: flex;
+  align-items: center;
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid #f59e0b;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fffbeb;
+  height: 30px;
+}
+
+.pro-credits-badge .pro-label {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  padding: 0 8px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.pro-credits-badge .credits-val {
+  color: #b45309;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* 系统后台入口 */
+.btn-admin-entrance {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #d97706;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-admin-entrance:hover {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+/* 消息、任务图标列表 */
+.header-icon-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn-item {
+  background: transparent;
+  border: none;
+  color: #78716c;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.icon-btn-item:hover {
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+/* 用户状态区 */
+.user-profile-menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 8px;
+  border-left: 1px solid #e7e5e4;
+}
+
+.user-avatar-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.user-display-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1c1917;
+}
+
+.btn-logout-link {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.btn-logout-link:hover {
+  background: #fef2f2;
+}
+
+/* 登入 按钮 - 极简黑色圆角 */
+.btn-login-entrance {
+  background: #1c1917;
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: var(--rv-radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-login-entrance:hover {
+  background: #44403c;
+  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.15);
+}
+
+/* 右上角用户下拉菜单 */
+.user-profile-menu-container {
+  position: relative;
+}
+
+.user-profile-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.user-profile-menu-trigger:hover {
+  background: rgba(28, 25, 23, 0.03);
+}
+
+.header-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  padding: 6px;
+  min-width: 150px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-user-dropdown .dropdown-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.header-user-dropdown .dropdown-header strong {
+  font-size: 13px;
+  color: #1c1917;
+}
+
+.header-user-dropdown .dropdown-header span {
+  font-size: 11px;
+  color: #a8a29e;
+}
+
+.header-user-dropdown .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #44403c;
+  transition: all 0.15s;
+}
+
+.header-user-dropdown .dropdown-item:hover {
+  background: rgba(28, 25, 23, 0.03);
+}
+
+.header-user-dropdown .dropdown-item.logout {
+  color: #ef4444;
+}
+
+.header-user-dropdown .dropdown-item.logout:hover {
+  background: #fef2f2;
+}
+
+.header-user-dropdown .dropdown-divider {
+  height: 1px;
+  background: rgba(28, 25, 23, 0.04);
+  margin: 4px 0;
 }
 

@@ -102,8 +102,8 @@ export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): Projec
         text: typeof item.text === "string" ? item.text : "",
         x: clamp(Number(item.x ?? 0), -1000000, 1000000),
         y: clamp(Number(item.y ?? 0), -1000000, 1000000),
-        w: clamp(Number(item.w ?? 180), 120, 600),
-        h: clamp(Number(item.h ?? 140), 96, 600),
+        w: Math.max(Number(item.w ?? 180), 80),
+        h: Math.max(Number(item.h ?? 140), 60),
         board_id: typeof item.board_id === "string" ? item.board_id : undefined,
         color: typeof item.color === "string" ? item.color : undefined,
         fontSize: (item.fontSize === "sm" || item.fontSize === "md" || item.fontSize === "lg") ? item.fontSize : undefined,
@@ -140,13 +140,15 @@ export function assetTypeFromMime(mimeType: string) {
 }
 
 export function assetTitle(asset: AssetSummary) {
-  const title = asset.metadata.file_name ?? asset.metadata.title;
+  const meta = getAssetMetadata(asset);
+  const title = meta.file_name ?? meta.title;
   return typeof title === "string" && title.trim() ? title : asset.asset_type;
 }
 
 export function assetMimeType(asset: AssetSummary) {
-  return typeof asset.metadata.mime_type === "string" && asset.metadata.mime_type.trim()
-    ? asset.metadata.mime_type
+  const meta = getAssetMetadata(asset);
+  return typeof meta.mime_type === "string" && meta.mime_type.trim()
+    ? meta.mime_type
     : asset.asset_type;
 }
 
@@ -283,12 +285,9 @@ export function readCachedUser() {
 
 export function isWorkflowRunnable(workflow: WorkflowType) {
   return (
-    workflow === "brief-analysis" ||
-    workflow === "brand-style-extract" ||
-    workflow === "creative-directions" ||
-    workflow === "xiaohongshu-cover-batch" ||
-    workflow === "short-video-script-storyboard" ||
-    workflow === "image-generation"
+    workflow === "image-generation" ||
+    workflow === "text-generation" ||
+    workflow === "video-generation"
   );
 }
 
@@ -350,10 +349,11 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function deleteJson<T>(path: string): Promise<T> {
+export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",
-    headers: withAuthHeaders(),
+    headers: withAuthHeaders(body ? { "Content-Type": "application/json" } : undefined),
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
     throw new Error(`DELETE ${path} failed with ${response.status}`);
@@ -486,4 +486,16 @@ export async function fetchAdminData(workspaceId?: string) {
     memberData,
     costReportData,
   };
+}
+
+export function getAssetMetadata(asset: AssetSummary): any {
+  if (!asset || !asset.metadata) return {};
+  if (typeof asset.metadata === "string") {
+    try {
+      return JSON.parse(asset.metadata);
+    } catch {
+      return {};
+    }
+  }
+  return asset.metadata;
 }

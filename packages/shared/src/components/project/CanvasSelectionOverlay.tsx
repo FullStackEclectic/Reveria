@@ -1,0 +1,250 @@
+import React from "react";
+import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
+import { assetUrl, postJson } from "../../utils";
+
+export interface CanvasSelectionOverlayProps {
+  selectedItemId: string;
+  setSelectedItemId: (id: string) => void;
+  projectCanvas: ProjectCanvasDocument;
+  setProjectCanvas: React.Dispatch<React.SetStateAction<ProjectCanvasDocument>>;
+  assets: AssetSummary[];
+  setAssets: React.Dispatch<React.SetStateAction<AssetSummary[]>>;
+  zoom: number;
+  panX: number;
+  panY: number;
+  realResolutions: Record<string, string>;
+  workspaceId: string;
+  projectId: string;
+
+  processingItemId: string;
+  setProcessingItemId: (id: string) => void;
+  processingType: string;
+  setProcessingType: (type: "remove-bg" | "upscale" | "erase" | "") => void;
+
+  connectionSourceId: string;
+  setConnectionSourceId: (id: string) => void;
+
+  handleDrawSimilar: (asset: AssetSummary | null) => void;
+}
+
+export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
+  selectedItemId,
+  setSelectedItemId,
+  projectCanvas,
+  setProjectCanvas,
+  assets,
+  setAssets,
+  zoom,
+  panX,
+  panY,
+  realResolutions,
+  workspaceId,
+  projectId,
+  processingItemId,
+  setProcessingItemId,
+  processingType,
+  setProcessingType,
+  connectionSourceId,
+  setConnectionSourceId,
+  handleDrawSimilar,
+}) => {
+  const item = projectCanvas.items.find((i) => i.id === selectedItemId);
+  if (!item || item.type !== "asset") return null;
+
+  const asset = assets.find((a) => a.id === item.asset_id);
+  if (!asset) return null;
+
+  const screenX = item.x * zoom + panX;
+  const screenY = item.y * zoom + panY;
+  const screenW = item.w * zoom;
+
+  const displayPrompt = (() => {
+    const meta = asset.metadata;
+    if (meta && typeof meta.prompt === "string" && meta.prompt.trim() !== "") {
+      return meta.prompt;
+    }
+    return item.title || "未命名图片";
+  })();
+
+  const displayRes =
+    realResolutions[asset.id] ||
+    (asset.metadata && typeof asset.metadata.size === "string" ? asset.metadata.size : null) ||
+    (asset.metadata &&
+    typeof asset.metadata.width === "number" &&
+    typeof asset.metadata.height === "number"
+      ? `${asset.metadata.width}x${asset.metadata.height}`
+      : null) ||
+    `${item.w} x ${item.h}`;
+
+  const isConnectingSource = connectionSourceId === item.id;
+
+  const handleMagicAction = async (action: "remove-bg" | "upscale" | "erase") => {
+    setProcessingItemId(item.id);
+    setProcessingType(action);
+    try {
+      const response = await postJson<{ success: boolean; message?: string; asset: AssetSummary }>(
+        "/api/workflows/magic-action",
+        {
+          workspace_id: workspaceId,
+          project_id: projectId,
+          asset_id: asset.id,
+          action: action,
+        }
+      );
+
+      if (response.success && response.asset) {
+        // 1. 将新资产插入全局 assets
+        setAssets((curr) => [response.asset, ...curr]);
+        // 2. 更新画布卡片关联的资产 ID 与标题
+        setProjectCanvas((curr) => ({
+          ...curr,
+          items: curr.items.map((i) =>
+            i.id === item.id
+              ? {
+                  ...i,
+                  asset_id: response.asset.id,
+                  title:
+                    action === "remove-bg"
+                      ? `${i.title} (已去背景)`
+                      : action === "upscale"
+                      ? `${i.title} (4K超分)`
+                      : `${i.title} (AI消除)`,
+                }
+              : i
+          ),
+        }));
+      } else {
+        alert(`处理失败: ${response.message || "未知服务商错误"}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`处理失败: ${err.message || err}`);
+    } finally {
+      setProcessingItemId("");
+      setProcessingType("");
+    }
+  };
+
+  return (
+    <React.Fragment>
+      {/* 左上角提示词标签 */}
+      <div
+        className="canvas-selection-label-left"
+        style={{
+          position: "absolute",
+          left: screenX,
+          top: screenY - 20,
+          zIndex: 98,
+        }}
+        title={displayPrompt}
+      >
+        🖼️ {displayPrompt.length > 25 ? `${displayPrompt.slice(0, 25)}...` : displayPrompt}
+      </div>
+
+      {/* 右上角分辨率标签 */}
+      <div
+        className="canvas-selection-label-right"
+        style={{
+          position: "absolute",
+          left: screenX + screenW,
+          top: screenY - 20,
+          transform: "translateX(-100%)",
+          zIndex: 98,
+        }}
+      >
+        {displayRes}
+      </div>
+
+      {/* 悬浮工具栏 */}
+      <div
+        className="canvas-floating-toolbar"
+        style={{
+          position: "absolute",
+          left: screenX + screenW / 2,
+          top: screenY - 54,
+          transform: "translateX(-50%)",
+          zIndex: 100,
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="canvas-toolbar-actions">
+          <button
+            type="button"
+            onClick={() => void handleMagicAction("remove-bg")}
+            disabled={processingItemId === item.id}
+            title="AI 抠图去背景"
+          >
+            AI 去背景
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMagicAction("upscale")}
+            disabled={processingItemId === item.id}
+            title="AI 超分放大"
+          >
+            超分放大
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMagicAction("erase")}
+            disabled={processingItemId === item.id}
+            title="AI 橡皮擦消除"
+          >
+            橡皮擦
+          </button>
+
+          <div className="canvas-toolbar-divider" />
+
+          {/* 智能连线功能按钮 */}
+          <button
+            type="button"
+            onClick={() => setConnectionSourceId(isConnectingSource ? "" : item.id)}
+            className={isConnectingSource ? "btn-active-connection" : ""}
+            style={{
+              color: isConnectingSource ? "var(--rv-color-primary)" : "inherit",
+              fontWeight: isConnectingSource ? "bold" : "normal",
+            }}
+            title="创建与此卡片的连线"
+          >
+            🔗 {isConnectingSource ? "请选择终点卡片..." : "连接"}
+          </button>
+
+          <div className="canvas-toolbar-divider" />
+
+          <button
+            type="button"
+            className="btn-primary-action"
+            onClick={() => handleDrawSimilar(asset)}
+            title="画同款工作流"
+          >
+            画同款
+          </button>
+          <a
+            href={assetUrl(asset.file_url ?? "")}
+            download={asset.metadata?.file_name || `asset-${asset.id}.png`}
+            target="_blank"
+            rel="noreferrer"
+            title="下载原图"
+          >
+            下载
+          </a>
+          <button
+            type="button"
+            className="btn-danger-action"
+            onClick={() => {
+              const removeBtn = document.querySelector(".canvas-remove") as HTMLButtonElement;
+              if (removeBtn) {
+                removeBtn.click();
+              } else {
+                setSelectedItemId("");
+              }
+            }}
+            title="从画布删除"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+};

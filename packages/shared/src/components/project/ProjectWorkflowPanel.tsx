@@ -121,37 +121,55 @@ export function ProjectWorkflowPanel({
              dn.includes("image") || dn.includes("dall") || dn.includes("midjourney") || dn.includes("flux") || dn.includes("sd") || dn.includes("diffusion") || dn.includes("图");
     };
 
+    const isVideoModel = (m: ModelSummary) => {
+      const n = (m.name || "").toLowerCase();
+      const dn = (m.display_name || "").toLowerCase();
+      return n.includes("video") || n.includes("luma") || n.includes("runway") || n.includes("sora") || n.includes("kling") || n.includes("cogvideo") ||
+             dn.includes("video") || dn.includes("luma") || dn.includes("runway") || dn.includes("sora") || dn.includes("kling") || dn.includes("cogvideo") || dn.includes("视频");
+    };
+
     if (selectedWorkflow === "image-generation") {
       const filtered = models
         .filter((m) => m.enabled && isImageModel(m))
-        .map((m) => ({ name: m.name, display_name: m.display_name || m.name }));
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
       if (filtered.length > 0) {
         return filtered;
       }
       return [
-        { name: "gpt-image-2", display_name: "GPT Image 2" },
-        { name: "dall-e-3", display_name: "DALL-E 3" },
-        { name: "midjourney-v6", display_name: "Midjourney v6" },
+        { id: "gpt-image-2", name: "gpt-image-2", display_name: "GPT Image 2" },
+        { id: "dall-e-3", name: "dall-e-3", display_name: "DALL-E 3" },
+        { id: "midjourney-v6", name: "midjourney-v6", display_name: "Midjourney v6" },
+      ];
+    } else if (selectedWorkflow === "video-generation") {
+      const filtered = models
+        .filter((m) => m.enabled && isVideoModel(m))
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
+      if (filtered.length > 0) {
+        return filtered;
+      }
+      return [
+        { id: "luma-video", name: "luma-video", display_name: "Luma Video" },
+        { id: "runway-gen3", name: "runway-gen3", display_name: "Runway Gen-3" },
       ];
     } else {
       const filtered = models
-        .filter((m) => m.enabled && !isImageModel(m))
-        .map((m) => ({ name: m.name, display_name: m.display_name || m.name }));
+        .filter((m) => m.enabled && !isImageModel(m) && !isVideoModel(m))
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
       if (filtered.length > 0) {
         return filtered;
       }
       return [
-        { name: "gpt-4o", display_name: "GPT-4o" },
-        { name: "claude-3.5-sonnet", display_name: "Claude 3.5 Sonnet" },
-        { name: "deepseek-v3", display_name: "DeepSeek-V3" },
+        { id: "gpt-4o", name: "gpt-4o", display_name: "GPT-4o" },
+        { id: "claude-3.5-sonnet", name: "claude-3.5-sonnet", display_name: "Claude 3.5 Sonnet" },
+        { id: "deepseek-v3", name: "deepseek-v3", display_name: "DeepSeek-V3" },
       ];
     }
   }
 
   useEffect(() => {
     const available = getAvailableModels();
-    if (!available.some((m) => m.name === selectedModel)) {
-      setSelectedModel(available[0]?.name || "");
+    if (!available.some((m) => m.id === selectedModel)) {
+      setSelectedModel(available[0]?.id || "");
     }
   }, [selectedWorkflow, models]);
 
@@ -244,64 +262,45 @@ export function ProjectWorkflowPanel({
 
   // Payload Builder for Workflows
   function buildWorkflowPayload(workflow: WorkflowType, workspaceId: string, projectId?: string) {
-    const base = {
-      workspace_id: workspaceId,
-      project_id: projectId ?? null,
-      user_id: currentUser?.id ?? null,
-      idempotency_key: `${workflow}-${Date.now()}`,
-      model: selectedModel,
-    };
-
-    if (workflow === "brand-style-extract") {
-      return {
-        ...base,
-        brand_kit_id: null,
-        brand_materials: workflowInput,
-      };
-    }
-
-    if (workflow === "creative-directions") {
-      return {
-        ...base,
-        brief: workflowInput,
-        style_prompt: "清晰、现代、适合社媒传播",
-        target_platforms: ["小红书", "抖音"],
-      };
-    }
-
     if (workflow === "image-generation") {
       return {
-        ...base,
-        prompt: workflowInput,
-        size: `${width}x${height}`,
-        quality: quality,
-        image_count: imageCount,
-        ref_image_url: refAsset ? (refAsset.thumbnail_url ?? refAsset.file_url) : null
+        workspace_id: workspaceId,
+        project_id: projectId ?? null,
+        task_type: "image_generation",
+        selected_model: selectedModel || "gpt-image-2",
+        input_payload: {
+          prompt: workflowInput,
+          size: `${width}x${height}`,
+          quality: quality,
+          image_count: imageCount,
+          ref_image_url: refAsset ? (refAsset.thumbnail_url ?? refAsset.file_url) : null
+        }
       };
     }
 
-    if (workflow === "xiaohongshu-cover-batch") {
+    if (workflow === "video-generation") {
       return {
-        ...base,
-        brief: workflowInput,
-        style_prompt: "清晰、现代、适合小红书信息流",
-        count: 6,
+        workspace_id: workspaceId,
+        project_id: projectId ?? null,
+        task_type: "video_generation",
+        selected_model: selectedModel || "luma-video",
+        input_payload: {
+          prompt: workflowInput,
+          size: `${width}x${height}`,
+          ref_image_url: refAsset ? (refAsset.thumbnail_url ?? refAsset.file_url) : null
+        }
       };
     }
 
-    if (workflow === "short-video-script-storyboard") {
-      return {
-        ...base,
-        brief: workflowInput,
-        style_prompt: "真实、节奏紧凑、适合竖屏短视频",
-        target_platforms: ["抖音", "小红书", "视频号"],
-        duration_seconds: 30,
-      };
-    }
-
+    // text-generation 文本大类
     return {
-      ...base,
-      brief: workflowInput,
+      workspace_id: workspaceId,
+      project_id: projectId ?? null,
+      task_type: "text",
+      selected_model: selectedModel || "gpt-4o",
+      input_payload: {
+        prompt: workflowInput,
+      }
     };
   }
 
@@ -327,24 +326,35 @@ export function ProjectWorkflowPanel({
     setWorkflowResult(null);
 
     try {
-      const data = await postJson<WorkflowResult>(
-        `/api/workflows/${selectedWorkflow}`,
-        buildWorkflowPayload(selectedWorkflow, workspaceId, selectedProjectId)
+      const payload = buildWorkflowPayload(selectedWorkflow, workspaceId, selectedProjectId);
+      const res = await postJson<{ success: boolean; message?: string; data: any }>(
+        "/api/tasks",
+        payload
       );
-      setWorkflowResult(data);
-      if (data.transactions?.length) {
-        setTransactions(data.transactions);
+      
+      if (!res.success && !res.data) {
+        throw new Error(res.message || "提交生成任务失败");
       }
-      const task = data.task;
+
+      const task = res.data;
+      const data = {
+        success: true,
+        task: task,
+        transactions: [] as any[],
+        output: null,
+      };
+
+      setWorkflowResult(data);
+      
       if (task) {
         const taskId = task.id ?? `${task.task_type}-${Date.now()}`;
         setTasks((current) => [
           {
             id: taskId,
             task_type: task.task_type,
-            status: task.status,
-            estimated_credits: task.estimated_credits,
-            actual_credits: task.actual_credits,
+            status: task.status || "pending",
+            estimated_credits: task.estimated_credits || 0,
+            actual_credits: task.actual_credits || 0,
           },
           ...current,
         ]);
@@ -354,50 +364,17 @@ export function ProjectWorkflowPanel({
           workspace_id: workspaceId,
           project_id: selectedProjectId,
           task_type: task.task_type,
-          status: task.status,
-          estimated_credits: task.estimated_credits,
-          frozen_credits: task.estimated_credits,
-          actual_credits: task.actual_credits,
-          input_payload: buildWorkflowPayload(selectedWorkflow, workspaceId, selectedProjectId),
-          output_payload: data.output,
+          status: task.status || "pending",
+          estimated_credits: task.estimated_credits || 0,
+          frozen_credits: task.frozen_credits || 0,
+          actual_credits: task.actual_credits || 0,
+          input_payload: payload.input_payload,
+          output_payload: null,
           error_code: null,
           error_message: null,
         });
+        return;
       }
-      if (data.asset) {
-        setAssets((current) => [data.asset as AssetSummary, ...current]);
-      } else if (data.output) {
-        try {
-          const asset = await postJson<AssetSummary>("/api/assets", {
-            workspace_id: workspaceId,
-            project_id: selectedProjectId,
-            customer_id: selectedProject.customer_id ?? null,
-            asset_type: "workflow_output",
-            source: "ai",
-            file_url: null,
-            thumbnail_url: null,
-            metadata: {
-              title: selectedWorkflowLabel,
-              task_type: data.task?.task_type ?? selectedWorkflow,
-              output: data.output,
-              prompt: workflowInput,
-              model: selectedModel,
-            },
-            created_by: currentUser?.id ?? null,
-          });
-          setAssets((current) => [asset, ...current]);
-        } catch {
-          setWorkflowResult({
-            task: data.task,
-            output: {
-              message: "工作流已返回结果，但保存项目资产失败，请检查 API 和数据库状态",
-              result: data.output,
-            },
-            transactions: data.transactions,
-          });
-        }
-      }
-    } catch {
       setWorkflowResult({
         task: {
           task_type: selectedWorkflow,
@@ -407,6 +384,18 @@ export function ProjectWorkflowPanel({
         },
         output: {
           message: "API 未连接或工作流执行失败",
+        },
+      });
+    } catch (err: any) {
+      setWorkflowResult({
+        task: {
+          task_type: selectedWorkflow,
+          status: "failed",
+          estimated_credits: 0,
+          actual_credits: 0,
+        },
+        output: {
+          message: err.message || "提交生成任务遇到错误",
         },
       });
     } finally {
@@ -452,13 +441,17 @@ export function ProjectWorkflowPanel({
     .filter(
       (a) =>
         a.project_id === selectedProjectId &&
-        (a.source === "ai" || a.asset_type === "workflow_output")
+        (a.source === "ai" || a.source === "generated" || a.asset_type === "workflow_output")
     )
     .slice()
     .reverse();
 
   const isRunnable = selectedWorkflow ? isWorkflowRunnable(selectedWorkflow) : false;
-  const costPoints = selectedWorkflow === "image-generation" ? 12 : 15;
+  const costPoints = selectedWorkflow === "image-generation"
+    ? 12
+    : selectedWorkflow === "video-generation"
+    ? 30
+    : 2;
 
   return (
     <div className="gen-chat-container">
@@ -501,8 +494,8 @@ export function ProjectWorkflowPanel({
           {/* 输入区 & 参考图 */}
           {/* 输入区 & 参考图：改用纵向布局，使参考图呈现在输入框上方 */}
           <div className="gen-prompt-top-row" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "10px 12px 6px 12px" }}>
-            {/* 生图工作流独享：参考图模块 */}
-            {selectedWorkflow === "image-generation" && (
+            {/* 图像和视频工作流共享：参考图模块 */}
+            {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && (
               <div style={{ flexShrink: 0, display: "flex", justifyContent: "flex-start" }}>
                 {refAsset ? (
                   <div className="gen-ref-image-preview">
@@ -524,7 +517,7 @@ export function ProjectWorkflowPanel({
                     type="button"
                     className="gen-ref-image-btn"
                     onClick={() => setIsRefSelectorOpen(true)}
-                    title="添加生图参考图"
+                    title="添加参考图"
                   >
                     <Image size={15} />
                     <span style={{ fontSize: "9px", marginTop: "2px", fontWeight: "600" }}>参考图</span>
@@ -538,7 +531,13 @@ export function ProjectWorkflowPanel({
               ref={textareaRef}
               className="gen-prompt-textarea"
               rows={inputRows}
-              placeholder={selectedWorkflow === "image-generation" ? "今天我们要创作什么图像..." : "输入任务提示词或创意大纲..."}
+              placeholder={
+                selectedWorkflow === "image-generation"
+                  ? "今天我们要创作什么图像..."
+                  : selectedWorkflow === "video-generation"
+                  ? "今天我们要生成什么视频..."
+                  : "输入任务提示词或创意大纲..."
+              }
               value={workflowInput}
               onChange={handleTextareaChange}
               style={{ width: "100%", border: "none", resize: "none", outline: "none", fontSize: "12px", background: "transparent", color: "var(--rv-color-text-main)", padding: "2px 0", lineHeight: "1.4" }}
@@ -583,8 +582,8 @@ export function ProjectWorkflowPanel({
                 )}
               </div>
 
-              {/* 生图工作流独享：生图参数设置徽章 */}
-              {selectedWorkflow === "image-generation" && (
+              {/* 生图与视频工作流：参数设置徽章 */}
+              {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && (
                 <button
                   ref={paramBadgeRef}
                   type="button"
@@ -592,7 +591,11 @@ export function ProjectWorkflowPanel({
                   onClick={() => setIsParamPopupOpen(!isParamPopupOpen)}
                   style={{ border: "none", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", marginLeft: "6px" }}
                 >
-                  <span>{getQualityLabel(quality)} · {aspectRatio} · {imageCount}张</span>
+                  <span>
+                    {selectedWorkflow === "image-generation"
+                      ? `${getQualityLabel(quality)} · ${aspectRatio} · ${imageCount}张`
+                      : `比例：${aspectRatio}`}
+                  </span>
                   <ChevronDown size={10} />
                 </button>
               )}
@@ -605,7 +608,7 @@ export function ProjectWorkflowPanel({
                 className="gen-model-trigger"
                 type="button"
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                title={`当前选择模型: ${getAvailableModels().find((m) => m.name === selectedModel)?.display_name || selectedModel}`}
+                title={`当前选择模型: ${getAvailableModels().find((m) => m.id === selectedModel)?.display_name || selectedModel}`}
               >
                 🤖
               </button>
@@ -615,11 +618,11 @@ export function ProjectWorkflowPanel({
                   <div className="gen-model-dropdown-title">选择模型</div>
                   {getAvailableModels().map((m) => (
                     <button
-                      key={m.name}
-                      className={`gen-model-dropdown-item ${selectedModel === m.name ? "active" : ""}`}
+                      key={m.id}
+                      className={`gen-model-dropdown-item ${selectedModel === m.id ? "active" : ""}`}
                       type="button"
                       onClick={() => {
-                        setSelectedModel(m.name);
+                        setSelectedModel(m.id);
                         setIsModelDropdownOpen(false);
                       }}
                     >
@@ -647,25 +650,27 @@ export function ProjectWorkflowPanel({
             </div>
           </div>
 
-          {/* 生图参数浮窗面板：移到 gen-prompt-card 根容器内，以相对于整体卡片绝对定位，解决过窄重叠问题 */}
-          {selectedWorkflow === "image-generation" && isParamPopupOpen && (
+          {/* 参数浮窗面板：图像/视频模式按需渲染对应字段 */}
+          {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && isParamPopupOpen && (
             <div className="gen-param-popup" ref={paramPopupRef} onClick={(e) => e.stopPropagation()}>
               {/* 1. 质量 */}
-              <div className="gen-param-section">
-                <span className="gen-param-section-title">质量</span>
-                <div className="gen-btn-group">
-                  {(["auto", "high", "medium", "low"] as const).map((q) => (
-                    <button
-                      key={q}
-                      type="button"
-                      className={`gen-selector-item ${quality === q ? "active" : ""}`}
-                      onClick={() => setQuality(q)}
-                    >
-                      {getQualityLabel(q)}
-                    </button>
-                  ))}
+              {selectedWorkflow === "image-generation" && (
+                <div className="gen-param-section">
+                  <span className="gen-param-section-title">质量</span>
+                  <div className="gen-btn-group">
+                    {(["auto", "high", "medium", "low"] as const).map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        className={`gen-selector-item ${quality === q ? "active" : ""}`}
+                        onClick={() => setQuality(q)}
+                      >
+                        {getQualityLabel(q)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 2. 尺寸微调 */}
               <div className="gen-param-section">
@@ -716,21 +721,23 @@ export function ProjectWorkflowPanel({
               </div>
 
               {/* 4. 图片张数 */}
-              <div className="gen-param-section">
-                <span className="gen-param-section-title">生成数量 (当前消耗: {12 * imageCount} 点)</span>
-                <div className="gen-btn-group" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "2px" }}>
-                  {([1, 2, 3, 4, 5] as const).map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      className={`gen-selector-item ${imageCount === num ? "active" : ""}`}
-                      onClick={() => setImageCount(num)}
-                    >
-                      {num} 张
-                    </button>
-                  ))}
+              {selectedWorkflow === "image-generation" && (
+                <div className="gen-param-section">
+                  <span className="gen-param-section-title">生成数量 (当前消耗: {12 * imageCount} 点)</span>
+                  <div className="gen-btn-group" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "2px" }}>
+                    {([1, 2, 3, 4, 5] as const).map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        className={`gen-selector-item ${imageCount === num ? "active" : ""}`}
+                        onClick={() => setImageCount(num)}
+                      >
+                        {num} 张
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

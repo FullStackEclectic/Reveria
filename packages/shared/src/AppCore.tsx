@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { LogOut, History, Coins, Settings, ChevronLeft, ChevronRight } from "lucide-react";
+import { LogOut, History, Coins, Settings, ChevronLeft, ChevronRight, Menu, Camera, Search, Sparkles, ChevronDown, Bell, ClipboardList, FileText } from "lucide-react";
 import { navItems } from "./types";
 import {
   AppView,
@@ -48,6 +48,7 @@ import {
 
 // Subview components
 import { LoginView } from "./components/auth/LoginView";
+import { ModelSquare } from "./components/square/ModelSquare";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { ProjectsView } from "./components/project/ProjectsView";
 import { CustomersView } from "./components/customer/CustomersView";
@@ -65,13 +66,18 @@ import { Sidebar } from "./components/common/Sidebar";
 
 export function AppCore() {
   const [currentUser, setCurrentUser] = useState<UserSummary | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("reveria.sidebarCollapsed") === "true";
+      const saved = localStorage.getItem("reveria.sidebarCollapsed");
+      if (saved === "true") {
+        setIsSidebarCollapsed(true);
+      }
     }
-    return false;
-  });
-  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  }, []);
+
+  const [isHeaderUserDropdownOpen, setIsHeaderUserDropdownOpen] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
 
@@ -90,15 +96,43 @@ export function AppCore() {
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   const [loginForm, setLoginForm] = useState({
-    displayName: "开发用户",
-    email: "dev@reveria.local",
+    displayName: "",
+    email: "",
     password: "",
   });
   const [loginMode, setLoginMode] = useState<"login" | "register" | "dev">("login");
   const [loginMessage, setLoginMessage] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const [activeView, setActiveView] = useState<AppView>("workbench");
+  const [activeView, setActiveView] = useState<AppView>("square");
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedWorkflowType, setSelectedWorkflowType] = useState<string>("all");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>("all");
+
+  useEffect(() => {
+    async function initCategories() {
+      try {
+        const catsRes = await getJson<any>("/api/template-categories");
+        if (catsRes && catsRes.success) {
+          setCategories(catsRes.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to load template categories in AppCore:", err);
+      }
+    }
+    void initCategories();
+  }, []);
+
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loginCallback, setLoginCallback] = useState<(() => void) | null>(null);
+  const triggerLogin = (callback?: () => void) => {
+    if (callback) {
+      setLoginCallback(() => callback);
+    }
+    setIsLoginModalOpen(true);
+  };
   const [projectsViewMode, setProjectsViewMode] = useState<"list" | "detail">("list");
   
   // 核心共享业务状态
@@ -112,6 +146,7 @@ export function AppCore() {
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedBrandKitId, setSelectedBrandKitId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [isRestored, setIsRestored] = useState(false);
 
   const [customerEditForm, setCustomerEditForm] = useState({ name: "", industry: "", notes: "" });
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
@@ -185,6 +220,47 @@ export function AppCore() {
     });
   }, [selectedCustomer?.id]);
 
+  // 恢复本地存储状态
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedActiveView = localStorage.getItem("reveria.activeView");
+      if (savedActiveView) {
+        setActiveView(savedActiveView as AppView);
+      }
+      const savedProjectsViewMode = localStorage.getItem("reveria.projectsViewMode");
+      if (savedProjectsViewMode) {
+        setProjectsViewMode(savedProjectsViewMode as "list" | "detail");
+      }
+      const savedSelectedProjectId = localStorage.getItem("reveria.selectedProjectId");
+      if (savedSelectedProjectId) {
+        setSelectedProjectId(savedSelectedProjectId);
+      }
+    }
+    setIsRestored(true);
+  }, []);
+
+  // 状态变化同步至 localStorage
+  useEffect(() => {
+    if (!isRestored) return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("reveria.activeView", activeView);
+    }
+  }, [activeView, isRestored]);
+
+  useEffect(() => {
+    if (!isRestored) return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("reveria.projectsViewMode", projectsViewMode);
+    }
+  }, [projectsViewMode, isRestored]);
+
+  useEffect(() => {
+    if (!isRestored) return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("reveria.selectedProjectId", selectedProjectId);
+    }
+  }, [selectedProjectId, isRestored]);
+
   const formattedCredits = formatCredits(activeWorkspace?.credit_balance);
   const formattedRecharge = formatCredits(activeWorkspace?.recharge_balance);
   const formattedGift = formatCredits(activeWorkspace?.gift_balance);
@@ -195,6 +271,33 @@ export function AppCore() {
     return currentUser.is_platform_admin ? "平台超级管理员" : "工作区成员";
   }, [currentUser, activeWorkspace]);
 
+  // 登录态恢复与成功回调的监听
+  useEffect(() => {
+    if (currentUser) {
+      setIsLoginModalOpen(false);
+      if (loginCallback) {
+        loginCallback();
+        setLoginCallback(null);
+      }
+    }
+  }, [currentUser, loginCallback]);
+
+  // 包裹的视图切换，如果是游客状态则拦截核心页并弹窗登录
+  const handleViewChange = (view: AppView) => {
+    if (view === "square") {
+      setActiveView("square");
+      return;
+    }
+    if (!currentUser) {
+      setLoginCallback(() => () => {
+        setActiveView(view);
+      });
+      setIsLoginModalOpen(true);
+    } else {
+      setActiveView(view);
+    }
+  };
+
   async function restoreCurrentUser() {
     try {
       const cached = readCachedUser();
@@ -203,7 +306,12 @@ export function AppCore() {
         await refreshAccessToken();
       }
     } catch {
-      // Quiet fail
+      // Quiet fail - clear stale session data if token refresh fails
+      setCurrentUser(null);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+        localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+      }
     }
   }
 
@@ -237,6 +345,15 @@ export function AppCore() {
     }
   }
 
+  async function loadActiveModels() {
+    try {
+      const activeModels = await getJson<ModelSummary[]>("/api/admin/models");
+      setModels(activeModels.filter((m) => m.enabled));
+    } catch (err) {
+      console.error("Failed to load active models:", err);
+    }
+  }
+
   async function loadDashboard() {
     try {
       const data = await fetchDashboardData();
@@ -255,17 +372,24 @@ export function AppCore() {
       setRechargeRecords(data.rechargeData);
       setSelectedCustomerId((current) => current || firstCustomerId);
       setSelectedBrandKitId((current) => current || firstBrandKitId);
-      setSelectedProjectId((current) => current || firstProjectId);
-      if (firstProjectId) {
-        void loadProjectAssets(firstProjectId);
-        void loadProjectCanvas(firstProjectId);
+
+      let finalProjectId = selectedProjectId;
+      if (!finalProjectId && typeof window !== "undefined") {
+        finalProjectId = localStorage.getItem("reveria.selectedProjectId") || "";
       }
-      try {
-        const activeModels = await getJson<ModelSummary[]>("/api/admin/models");
-        setModels(activeModels.filter((m) => m.enabled));
-      } catch (err) {
-        console.error("Failed to load active models in dashboard:", err);
+      if (finalProjectId && !data.projectData.some((p) => p.id === finalProjectId)) {
+        finalProjectId = "";
       }
+      if (!finalProjectId) {
+        finalProjectId = firstProjectId;
+      }
+
+      setSelectedProjectId(finalProjectId);
+      if (finalProjectId) {
+        void loadProjectAssets(finalProjectId);
+        void loadProjectCanvas(finalProjectId);
+      }
+      await loadActiveModels();
       setIsApiOnline(true);
     } catch (err) {
       console.error("loadDashboard failed:", err);
@@ -499,6 +623,28 @@ export function AppCore() {
 
   function renderActiveView() {
     switch (activeView) {
+      case "square":
+        return (
+          <ModelSquare
+            currentUser={currentUser}
+            triggerLogin={triggerLogin}
+            onUseTemplate={(template) => {
+              setIsNewProjectModalOpen(true);
+              setActiveView("workbench");
+            }}
+            onNavigateToView={handleViewChange}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            categories={categories}
+            setCategories={setCategories}
+            selectedWorkflowType={selectedWorkflowType}
+            setSelectedWorkflowType={setSelectedWorkflowType}
+            selectedCategoryId={selectedCategoryId}
+            setSelectedCategoryId={setSelectedCategoryId}
+            selectedSubCategoryId={selectedSubCategoryId}
+            setSelectedSubCategoryId={setSelectedSubCategoryId}
+          />
+        );
       case "workbench":
         return (
           <DashboardView
@@ -617,7 +763,10 @@ export function AppCore() {
             formattedCredits={formattedCredits}
             currentUser={currentUser}
             setCurrentUser={setCurrentUser}
-            onBack={() => setActiveView("workbench")}
+            onBack={() => {
+              setActiveView("workbench");
+              void loadActiveModels();
+            }}
           />
         );
       default:
@@ -625,95 +774,291 @@ export function AppCore() {
     }
   }
 
-  const isNoSidebar = activeView === "projects" && projectsViewMode === "detail";
+  const isNoSidebar = (activeView === "projects" && projectsViewMode === "detail") || !currentUser || activeView === "admin";
 
-  if (!currentUser) {
+  const renderHeader = () => {
     return (
-      <LoginView
-        loginForm={loginForm}
-        setLoginForm={setLoginForm}
-        loginMode={loginMode}
-        setLoginMode={setLoginMode}
-        loginMessage={loginMessage}
-        inviteToken={inviteToken}
-        invitedClaims={invitedClaims}
-        isLoggingIn={isLoggingIn}
-        handlePasswordAuth={handlePasswordAuth}
-        handleDevLogin={handleDevLogin}
-      />
+      <header className="rv-global-header">
+        {/* 左侧：菜单开关 + Logo */}
+        <div className="header-left">
+          <button 
+            type="button" 
+            className="rv-header-toggle-btn"
+            onClick={() => {
+              const nextState = !isSidebarCollapsed;
+              setIsSidebarCollapsed(nextState);
+              localStorage.setItem("reveria.sidebarCollapsed", String(nextState));
+            }}
+            title={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+          >
+            <Menu size={18} />
+          </button>
+          
+          <div 
+            className="header-brand" 
+            onClick={() => handleViewChange("square")}
+          >
+            <div className="brand-logo-icon">R</div>
+            <span className="brand-logo-text">Reveria</span>
+          </div>
+        </div>
+        
+        {/* 中间：全局搜索框 */}
+        <div className="header-middle">
+          <div className="header-search-bar">
+            <span className="search-category-tag">模型</span>
+            <div className="search-input-wrapper">
+              <input 
+                type="text" 
+                placeholder="搜索感兴趣的 AI 绘图模板、模型或标签..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="search-action-icons">
+                <Camera size={16} className="camera-icon" onClick={() => alert("以图搜图功能即将开放")} />
+                <Search size={16} className="search-icon" />
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* 右侧：动作与用户状态 */}
+        <div className="header-right">
+          {/* 开始创作 按钮 */}
+          <button 
+            type="button" 
+            className="btn-create-magic"
+            onClick={() => {
+              if (!currentUser) {
+                triggerLogin(() => handleViewChange("workbench"));
+              } else {
+                handleViewChange("workbench");
+              }
+            }}
+          >
+            <Sparkles size={14} />
+            <span>开始创作</span>
+            <ChevronDown size={12} className="chevron-down-icon" />
+          </button>
+          
+          {/* 文档 按钮 */}
+          <button 
+            type="button" 
+            className="btn-publish-project"
+            onClick={() => {
+              alert("文档中心功能即将开放，敬请期待！");
+            }}
+            style={{ display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <FileText size={14} />
+            <span>文档</span>
+          </button>
+
+          {currentUser ? (
+            <>
+              {/* PRO 算力额度 */}
+              <div className="pro-credits-badge">
+                <span className="pro-label">PRO</span>
+                <span className="credits-val">{formattedCredits} 点</span>
+              </div>
+              
+              {/* 系统后台入口（仅管理员） */}
+              {currentUser.is_platform_admin && (
+                <button
+                  type="button"
+                  className="btn-admin-entrance"
+                  onClick={() => handleViewChange("admin")}
+                  title="进入系统管理后台"
+                >
+                  后台管理
+                </button>
+              )}
+              
+              {/* 消息与任务图标 */}
+              <div className="header-icon-actions">
+                <button type="button" className="icon-btn-item" title="消息通知" onClick={() => alert("暂无新通知")}>
+                  <Bell size={18} />
+                </button>
+                <button type="button" className="icon-btn-item" title="任务列表" onClick={() => alert("当前无正在进行的算力任务")}>
+                  <ClipboardList size={18} />
+                </button>
+              </div>
+              
+              {/* 用户头像与菜单 */}
+              <div className="user-profile-menu-container">
+                <button
+                  type="button"
+                  className="user-profile-menu-trigger"
+                  onClick={() => setIsHeaderUserDropdownOpen(!isHeaderUserDropdownOpen)}
+                >
+                  <div className="user-avatar-circle" style={{ margin: 0 }}>
+                    {(currentUser.display_name || "U").slice(0, 1).toUpperCase()}
+                  </div>
+                  <span className="user-display-name">
+                    {currentUser.display_name}
+                  </span>
+                  <ChevronDown size={14} style={{ color: "#a8a29e", transform: isHeaderUserDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                </button>
+
+                {isHeaderUserDropdownOpen && (
+                  <div className="header-user-dropdown">
+                    <div className="dropdown-header">
+                      <strong>{currentUser.display_name}</strong>
+                      <span>{currentUser.email || "开发用户"}</span>
+                    </div>
+
+                    <button
+                      className="dropdown-item"
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderUserDropdownOpen(false);
+                        handleViewChange("history");
+                      }}
+                    >
+                      <History size={14} />
+                      <span>生成历史</span>
+                    </button>
+
+                    <button
+                      className="dropdown-item"
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderUserDropdownOpen(false);
+                        handleViewChange("credits");
+                      }}
+                    >
+                      <Coins size={14} />
+                      <span>点数中心</span>
+                    </button>
+
+                    <div className="dropdown-divider" />
+
+                    <button
+                      className="dropdown-item logout"
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderUserDropdownOpen(false);
+                        void handleLogout();
+                      }}
+                    >
+                      <LogOut size={14} />
+                      <span>退出登录</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* 未登录时的登入按钮 */
+            <button
+              type="button"
+              className="btn-login-entrance"
+              onClick={() => {
+                setLoginCallback(null);
+                setIsLoginModalOpen(true);
+              }}
+            >
+              登入
+            </button>
+          )}
+        </div>
+      </header>
     );
-  }
+  };
+
+  const isNoHeader = activeView === "admin" || (activeView === "projects" && projectsViewMode === "detail");
 
   return (
-    <main className={`app-shell ${isSidebarCollapsed ? "collapsed" : ""} ${isNoSidebar ? "no-sidebar" : ""}`}>
-      {!isNoSidebar && (
-        <Sidebar
-          currentUser={currentUser!}
-          isSidebarCollapsed={isSidebarCollapsed}
-          setIsSidebarCollapsed={setIsSidebarCollapsed}
-          isUserDropdownOpen={isUserDropdownOpen}
-          setIsUserDropdownOpen={setIsUserDropdownOpen}
-          activeView={activeView}
-          setActiveView={setActiveView}
-          setAdminMessage={setAdminMessage}
-          setProjectsViewMode={setProjectsViewMode}
-          handleLogout={handleLogout}
-          formattedCredits={formattedCredits}
+    <div className="rv-app-wrapper" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {!isNoHeader && renderHeader()}
+      
+      <main className={`app-shell ${isSidebarCollapsed ? "collapsed" : ""} ${isNoSidebar ? "no-sidebar" : ""} ${isNoHeader ? "no-header" : ""}`}>
+        {!isNoSidebar && (
+          <Sidebar
+            isSidebarCollapsed={isSidebarCollapsed}
+            setIsSidebarCollapsed={setIsSidebarCollapsed}
+            activeView={activeView}
+            setActiveView={handleViewChange}
+            setAdminMessage={setAdminMessage}
+            setProjectsViewMode={setProjectsViewMode}
+            categories={categories}
+            selectedCategoryId={selectedCategoryId}
+            setSelectedCategoryId={setSelectedCategoryId}
+            setSelectedSubCategoryId={setSelectedSubCategoryId}
+            setSelectedWorkflowType={setSelectedWorkflowType}
+          />
+        )}
+
+        {renderActiveView()}
+
+        {previewAsset ? (
+          <AssetPreviewDialog asset={previewAsset} setPreviewAsset={setPreviewAsset} />
+        ) : null}
+
+        <InvitationModal
+          inviteToken={inviteToken}
+          invitedClaims={invitedClaims}
+          currentUser={currentUser}
+          inviteError={inviteError}
+          isAcceptingInvite={isAcceptingInvite}
+          handleAcceptInvitation={handleAcceptInvitation}
+          handleCancelInvitation={handleCancelInvitation}
+        />
+
+        <NewProjectModal
+          isOpen={isNewProjectModalOpen}
+          onClose={() => setIsNewProjectModalOpen(false)}
+          activeWorkspace={activeWorkspace}
+          currentUser={currentUser}
+          customers={customers}
+          brandKits={brandKits}
+          onSuccess={(project, customer, brandKit, existingCid, existingBid) => {
+            setProjects((current) => [project, ...current]);
+            setSelectedProjectId(project.id);
+            setAssets([]);
+
+            if (customer) {
+              setCustomers((current) => [customer, ...current]);
+              setSelectedCustomerId(customer.id);
+            } else if (existingCid) {
+              setSelectedCustomerId(existingCid);
+            }
+
+            if (brandKit) {
+              setBrandKits((current) => [brandKit, ...current]);
+              setSelectedBrandKitId(brandKit.id);
+            } else if (existingBid) {
+              setSelectedBrandKitId(existingBid);
+            }
+
+            setActiveView("projects");
+            setProjectsViewMode("detail");
+            void loadProjectAssets(project.id);
+            void loadProjectCanvas(project.id);
+          }}
+          onError={(msg) => {
+            setAdminMessage(msg);
+            alert(msg);
+          }}
+        />
+      </main>
+
+      {isLoginModalOpen && (
+        <LoginView
+          isModal
+          onClose={() => setIsLoginModalOpen(false)}
+          loginForm={loginForm}
+          setLoginForm={setLoginForm}
+          loginMode={loginMode}
+          setLoginMode={setLoginMode}
+          loginMessage={loginMessage}
+          inviteToken={inviteToken}
+          invitedClaims={invitedClaims}
+          isLoggingIn={isLoggingIn}
+          handlePasswordAuth={handlePasswordAuth}
+          handleDevLogin={handleDevLogin}
         />
       )}
-
-      {renderActiveView()}
-
-      {previewAsset ? (
-        <AssetPreviewDialog asset={previewAsset} setPreviewAsset={setPreviewAsset} />
-      ) : null}
-
-      <InvitationModal
-        inviteToken={inviteToken}
-        invitedClaims={invitedClaims}
-        currentUser={currentUser}
-        inviteError={inviteError}
-        isAcceptingInvite={isAcceptingInvite}
-        handleAcceptInvitation={handleAcceptInvitation}
-        handleCancelInvitation={handleCancelInvitation}
-      />
-
-      <NewProjectModal
-        isOpen={isNewProjectModalOpen}
-        onClose={() => setIsNewProjectModalOpen(false)}
-        activeWorkspace={activeWorkspace}
-        currentUser={currentUser}
-        customers={customers}
-        brandKits={brandKits}
-        onSuccess={(project, customer, brandKit, existingCid, existingBid) => {
-          setProjects((current) => [project, ...current]);
-          setSelectedProjectId(project.id);
-          setAssets([]);
-
-          if (customer) {
-            setCustomers((current) => [customer, ...current]);
-            setSelectedCustomerId(customer.id);
-          } else if (existingCid) {
-            setSelectedCustomerId(existingCid);
-          }
-
-          if (brandKit) {
-            setBrandKits((current) => [brandKit, ...current]);
-            setSelectedBrandKitId(brandKit.id);
-          } else if (existingBid) {
-            setSelectedBrandKitId(existingBid);
-          }
-
-          setActiveView("projects");
-          setProjectsViewMode("detail");
-          void loadProjectAssets(project.id);
-          void loadProjectCanvas(project.id);
-        }}
-        onError={(msg) => {
-          setAdminMessage(msg);
-          alert(msg);
-        }}
-      />
-    </main>
+    </div>
   );
 }

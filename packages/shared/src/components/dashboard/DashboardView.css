@@ -1,89 +1,567 @@
-.metrics {
+/* ==========================================
+   Reveria DashboardView (工作台) 重塑样式系统
+   与首页大模型广场 (ModelSquare) 的极简、质感风格对齐
+   ========================================== */
+
+/* 主格布局与排版 */
+.workspace {
+  padding: 24px 32px 60px 32px;
+  background-color: #faf9f6; /* 与首页统一的浅米灰底色 */
+  min-height: calc(100vh - 64px);
+}
+
+.dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 340px;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* 左侧主大栏 */
+.dashboard-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 板块头部结构 */
+.project-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1.5px solid #1c1917; /* 与首页一样的硬黑实线分割 */
+  padding-bottom: 16px;
+  flex-wrap: wrap;
   gap: 16px;
-  margin-bottom: 24px;
 }
 
-.metric,
-.panel {
-  border: 1px solid var(--rv-color-border-thin);
-  border-radius: var(--rv-radius-md);
-  background: var(--rv-color-bg-panel);
-  box-shadow: var(--rv-shadow-md);
-  transition: var(--rv-transition-default);
+.project-section-header .title-area {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
-.metric:hover,
-.panel:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--rv-shadow-lg);
+.project-section-header .title-area h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1c1917;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.metric {
-  padding: 20px;
+.project-section-header .title-area .title-icon {
+  color: #1c1917;
 }
 
-.metric span {
-  display: block;
-  color: var(--rv-color-text-muted);
+.project-section-header .title-area .count {
   font-size: 12px;
+  color: #a8a29e;
   font-weight: 500;
 }
 
-.metric strong {
-  display: block;
-  margin-top: 10px;
-  color: var(--rv-color-text-main);
-  font-size: 18px;
-  font-weight: 800;
+/* 搜索过滤条与新建项目按钮 */
+.project-actions-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.content-grid {
+.project-search-bar {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  padding: 6px 12px;
+  gap: 8px;
+  width: 240px;
+  transition: all 0.15s;
+}
+
+.project-search-bar:focus-within {
+  border-color: #1c1917;
+  box-shadow: 0 0 0 2px rgba(28, 25, 23, 0.05);
+}
+
+.project-search-bar .search-icon {
+  color: #a8a29e;
+}
+
+.project-search-bar input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: #1c1917;
+  width: 100%;
+}
+
+/* 新建项目黑色药丸按钮 */
+.btn-create-project-black {
+  background: #1c1917;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  box-shadow: 0 4px 6px -1px rgba(28, 25, 23, 0.1), 0 2px 4px -1px rgba(28, 25, 23, 0.06);
+}
+
+.btn-create-project-black:hover {
+  background: #44403c;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 15px -3px rgba(28, 25, 23, 0.15);
+}
+
+/* 项目卡片网格 */
+.project-cards-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
 }
 
-.admin-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(340px, 1fr));
-  gap: 18px;
+/* Figma 风格精装项目卡片 */
+.project-card-figma {
+  background: #ffffff;
+  border: 1px solid rgba(28, 25, 23, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.page-grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.75fr) minmax(420px, 1.25fr);
-  gap: 18px;
+.project-card-figma:hover {
+  transform: translateY(-4px);
+  border-color: #1c1917; /* 炫酷黑描边高亮 */
+  box-shadow: 0 12px 20px -8px rgba(28, 25, 23, 0.12);
 }
 
-.two-column-grid {
-  grid-template-columns: repeat(2, minmax(320px, 1fr));
+/* 上部缩略图区域 */
+.project-card-figma .thumbnail-area {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: #f5f5f4;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.04);
 }
 
-.three-column-grid {
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+/* 磨砂炫彩渐变色 */
+.project-thumbnail-gradient {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.4s ease;
 }
 
-.panel {
-  min-height: 320px;
-  padding: 18px;
+.project-card-figma:hover .project-thumbnail-gradient {
+  transform: scale(1.05); /* 缩放微动效 */
 }
 
-.list-panel {
-  min-height: 520px;
+/* 三类不同的渐变背景 */
+.thumb-gradient-purple {
+  background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
 }
 
-.detail-panel {
-  grid-column: auto;
-  min-height: 520px;
+.thumb-gradient-sunset {
+  background: linear-gradient(135deg, #f87171 0%, #fb923c 100%);
 }
 
-.compact-panel {
-  min-height: 180px;
+.thumb-gradient-ocean {
+  background: linear-gradient(135deg, #2dd4bf 0%, #3b82f6 100%);
 }
 
-.detail-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+/* 磨砂杂色遮罩层 */
+.glass-noise-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.15;
+  background-image: radial-gradient(circle, #ffffff 10%, transparent 10.5%);
+  background-size: 8px 8px;
+  mix-blend-mode: overlay;
+}
+
+/* 缩略图中央徽章 */
+.project-thumbnail-center-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.project-thumbnail-center-badge .folder-icon {
+  color: #ffffff;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+/* 下部信息区域 */
+.project-card-figma .info-area {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.project-card-figma .info-area .text-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.project-card-figma .info-area .project-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1c1917;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-card-figma .info-area .project-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #a8a29e;
+  font-weight: 500;
+}
+
+.project-card-figma .info-area .meta-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-card-figma .info-area .meta-divider {
+  color: #d6d3d1;
+}
+
+/* 药丸项目状态标签 */
+.status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.status-badge.status-delivered {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.status-badge.status-running,
+.status-badge.status-active {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+.status-badge.status-draft {
+  background: #f5f5f4;
+  color: #78716c;
+}
+
+/* 空数据状态 */
+.project-empty-card {
+  background: #ffffff;
+  border: 1px dashed rgba(28, 25, 23, 0.15);
+  border-radius: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  max-width: 480px;
+  margin: 32px auto;
+}
+
+.project-empty-card .empty-icon {
+  color: #d6d3d1;
   margin-bottom: 16px;
+}
+
+.project-empty-card h4 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1c1917;
+  margin: 0 0 8px 0;
+}
+
+.project-empty-card p {
+  font-size: 12px;
+  color: #a8a29e;
+  line-height: 1.6;
+  margin: 0;
+}
+
+
+/* 右栏侧边面板集合 */
+.dashboard-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.side-panel {
+  background: #ffffff;
+  border: 1px solid rgba(28, 25, 23, 0.05);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.02);
+}
+
+.side-panel-header {
+  border-bottom: 1px solid rgba(28, 25, 23, 0.04);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.side-panel-header h4 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1c1917;
+  margin: 0 0 2px 0;
+}
+
+.side-panel-header .subtitle {
+  font-size: 11px;
+  color: #a8a29e;
+  font-weight: 500;
+}
+
+.side-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 列表行排版 */
+.side-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf9f6;
+  border: 1px solid rgba(28, 25, 23, 0.02);
+  transition: all 0.15s;
+}
+
+.side-list-item:hover {
+  background: #f5f5f4;
+  border-color: rgba(28, 25, 23, 0.06);
+}
+
+.side-list-item .item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.side-list-item .title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1c1917;
+}
+
+.side-list-item .desc {
+  font-size: 11px;
+  color: #a8a29e;
+  font-weight: 500;
+}
+
+.side-list-item .cost {
+  font-size: 12px;
+  font-weight: 700;
+  color: #44403c;
+}
+
+/* 异步任务监控点 & 呼吸灯 */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+
+.status-dot.success {
+  background-color: #10b981;
+}
+
+.status-dot.failed {
+  background-color: #ef4444;
+}
+
+.status-dot.pending {
+  background-color: #f59e0b;
+}
+
+.status-dot.running {
+  background-color: #0ea5e9;
+}
+
+/* 炫酷呼吸灯点 */
+.pulse-glow {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.6;
+  animation: breathing 1.6s infinite ease-in-out;
+}
+
+@keyframes breathing {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+}
+
+/* 点数充值扣减收支气泡 */
+.credit-pill {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.credit-pill.positive {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.credit-pill.negative {
+  background: #fff5f5;
+  color: #dc2626;
+}
+
+/* 名片化客户与品牌 */
+.card-like-item {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.item-avatar-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.customer-avatar {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+}
+
+.brand-avatar {
+  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+}
+
+.item-content-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.item-content-info .item-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: #1c1917;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-content-info .item-desc {
+  font-size: 10px;
+  color: #a8a29e;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 名片徽章标签 */
+.side-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.side-tag.customer-tag {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.side-tag.brand-tag {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.side-empty-state {
+  padding: 24px 12px;
+  text-align: center;
+  background: #faf9f6;
+  border-radius: 10px;
+}
+
+.side-empty-state p {
+  font-size: 12px;
+  color: #a8a29e;
+  margin: 0;
+  font-weight: 500;
 }

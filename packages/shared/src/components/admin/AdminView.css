@@ -264,3 +264,23 @@
   color: #f8fafc;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+/* 统一消除后台管理系统根面板的圆角、投影、边框多重嵌套，以配合直角全屏贴合 */
+.admin-tab-content > .panel,
+.admin-tab-content > div > .panel,
+.admin-tab-content > div > div > .panel {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #ffffff !important;
+  transform: none !important;
+  min-height: calc(100vh - 64px) !important;
+  width: 100% !important;
+}
+
+.admin-tab-content > .panel:hover,
+.admin-tab-content > div > .panel:hover,
+.admin-tab-content > div > div > .panel:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}

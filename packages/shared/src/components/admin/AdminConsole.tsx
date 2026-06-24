@@ -195,11 +195,8 @@ export function AdminConsole({
       className="admin-console-wrapper" 
       style={{ 
         minHeight: "100vh", 
-        background: "#0f172a",
-        color: "#f8fafc",
-        ["--rv-color-text-main" as any]: "#f8fafc",
-        ["--rv-color-text-muted" as any]: "#94a3b8",
-        ["--rv-color-border-thin" as any]: "rgba(255, 255, 255, 0.1)"
+        background: "var(--rv-color-bg-base)",
+        color: "var(--rv-color-text-main)"
       }}
     >
       {onBack && (
@@ -207,9 +204,8 @@ export function AdminConsole({
           className="admin-top-bar"
           style={{
             padding: "12px 24px",
-            borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
-            background: "rgba(15, 23, 42, 0.8)",
-            backdropFilter: "blur(8px)",
+            borderBottom: "1px solid var(--rv-color-border-thin)",
+            background: "var(--rv-color-bg-sidebar)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between"
@@ -221,7 +217,7 @@ export function AdminConsole({
             style={{
               background: "transparent",
               border: "none",
-              color: "#94a3b8",
+              color: "var(--rv-color-text-muted)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
@@ -230,8 +226,8 @@ export function AdminConsole({
               fontWeight: "500",
               transition: "color 0.2s"
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#f8fafc")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#94a3b8")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--rv-color-text-main)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--rv-color-text-muted)")}
           >
             <ChevronLeft size={16} />
             返回画板工作台

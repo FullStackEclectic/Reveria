@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"reveria/services/api/database"
@@ -228,6 +232,52 @@ func UpsertWorkspaceMember(c *gin.Context) {
 	c.JSON(http.StatusOK, member)
 }
 
+// DeleteWorkspaceMember 物理删除工作区成员记录 (DELETE /admin/workspace-members)
+func DeleteWorkspaceMember(c *gin.Context) {
+	actorID := c.MustGet("user_id").(uuid.UUID)
+
+	var req struct {
+		WorkspaceID uuid.UUID `json:"workspace_id" binding:"required"`
+		UserID      uuid.UUID `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "输入参数有误"})
+		return
+	}
+
+	// 只有工作区的所有者或管理员可以移除成员
+	if !hasWorkspaceRole(req.WorkspaceID, actorID, []string{"owner", "admin"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限移除该成员"})
+		return
+	}
+
+	// 执行删除
+	var member model.WorkspaceMember
+	err := database.DB.Where("workspace_id = ? AND user_id = ?", req.WorkspaceID, req.UserID).First(&member).Error
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未在该工作区中找到指定成员记录"})
+		return
+	}
+
+	// 限制：无法删除工作区最后一个 owner
+	if member.Role == "owner" {
+		var ownerCount int64
+		database.DB.Model(&model.WorkspaceMember{}).Where("workspace_id = ? AND role = ?", req.WorkspaceID, "owner").Count(&ownerCount)
+		if ownerCount <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无法删除工作区最后一个所有者"})
+			return
+		}
+	}
+
+	if err := database.DB.Delete(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "移出工作区失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已成功将成员移出该工作区"})
+}
+
+
 // GetCostReport 获取大盘成本与毛利报表 (GET /admin/reports/costs)
 func GetCostReport(c *gin.Context) {
 	actorID := c.MustGet("user_id").(uuid.UUID)
@@ -344,97 +394,300 @@ func UpdatePlatformAdmin(c *gin.Context) {
 }
 
 // Mock 接口使用的响应载荷结构体
-type ProviderSummary struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	ProviderType string `json:"provider_type"`
-	Enabled      bool   `json:"enabled"`
+// 1. 服务商管理
+
+// ListProviders 获取服务商列表 (GET /api/admin/providers)
+func ListProviders(c *gin.Context) {
+	var list []model.Provider
+	if err := database.DB.Order("created_at desc").Find(&list).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取服务商列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, list)
 }
 
-type ModelSummary struct {
+// CreateProvider 创建或更新服务商 (POST /api/admin/providers)
+func CreateProvider(c *gin.Context) {
+	var req model.Provider
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "输入格式有误"})
+		return
+	}
+
+	if req.ID == "" {
+		req.ID = uuid.New().String()
+	}
+	req.CreatedAt = time.Now()
+
+	var existing model.Provider
+	err := database.DB.Where("id = ?", req.ID).First(&existing).Error
+	if err != nil {
+		// 创建
+		if err := database.DB.Create(&req).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建服务商失败"})
+			return
+		}
+	} else {
+		// 更新
+		existing.Name = req.Name
+		existing.ApiURL = req.ApiURL
+		existing.ApiKey = req.ApiKey
+		existing.ProviderType = req.ProviderType
+		existing.Enabled = req.Enabled
+		if err := database.DB.Save(&existing).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新服务商失败"})
+			return
+		}
+		req = existing
+	}
+
+	c.JSON(http.StatusOK, req)
+}
+
+// EnableProvider 启用/禁用服务商 (POST /api/admin/providers/:id/enabled)
+func EnableProvider(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数有误"})
+		return
+	}
+
+	if err := database.DB.Model(&model.Provider{}).Where("id = ?", id).Update("enabled", req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "状态更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// DeleteProvider 删除服务商 (DELETE /api/admin/providers/:id)
+func DeleteProvider(c *gin.Context) {
+	id := c.Param("id")
+	// 删除服务商
+	if err := database.DB.Delete(&model.Provider{}, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "删除失败"})
+		return
+	}
+	// 连带删除该服务商下的模型
+	database.DB.Delete(&model.Model{}, "provider_id = ?", id)
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// 2. 算力模型管理
+
+// ListModels 获取模型列表 (GET /api/admin/models)
+func ListModels(c *gin.Context) {
+	var list []model.Model
+	if err := database.DB.Order("created_at desc").Find(&list).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取模型列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, list)
+}
+
+// CreateModel 创建或修改模型定价 (POST /api/admin/models)
+func CreateModel(c *gin.Context) {
+	var req model.Model
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数格式错误"})
+		return
+	}
+
+	if req.ID == "" {
+		req.ID = req.Name // 默认用 Name 作为 ID
+	}
+	req.CreatedAt = time.Now()
+
+	var existing model.Model
+	err := database.DB.Where("id = ?", req.ID).First(&existing).Error
+	if err != nil {
+		if err := database.DB.Create(&req).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建模型失败"})
+			return
+		}
+	} else {
+		existing.DisplayName = req.DisplayName
+		existing.ModelType = req.ModelType
+		existing.CreditsCost = req.CreditsCost
+		existing.Enabled = req.Enabled
+		if err := database.DB.Save(&existing).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存模型失败"})
+			return
+		}
+		req = existing
+	}
+	c.JSON(http.StatusOK, req)
+}
+
+// EnableModel 启用/禁用模型 (POST /api/admin/models/:id/enabled)
+func EnableModel(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数格式有误"})
+		return
+	}
+
+	if err := database.DB.Model(&model.Model{}).Where("id = ?", id).Update("enabled", req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// DeleteModel 删除模型 (DELETE /api/admin/models/:id)
+func DeleteModel(c *gin.Context) {
+	id := c.Param("id")
+	log.Printf("[DeleteModel] 收到删除模型请求，ID = %s", id)
+	db := database.DB.Delete(&model.Model{}, "id = ?", id)
+	if db.Error != nil {
+		log.Printf("[DeleteModel] 从数据库删除失败: %v", db.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "删除失败: " + db.Error.Error()})
+		return
+	}
+	log.Printf("[DeleteModel] 从数据库删除成功，RowsAffected = %d", db.RowsAffected)
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// 3. 实时代理拉取模型与批量导入
+
+type FetchUpstreamModelsRequest struct {
+	ApiURL string `json:"api_url" binding:"required"`
+	ApiKey string `json:"api_key" binding:"required"`
+}
+
+type UpstreamModelItem struct {
+	ID string `json:"id"`
+}
+
+type UpstreamModelsResponse struct {
+	Data []UpstreamModelItem `json:"data"`
+}
+
+// FetchUpstreamModels 代理拉取上游服务商模型 (POST /api/admin/providers/fetch-upstream-models)
+func FetchUpstreamModels(c *gin.Context) {
+	var req FetchUpstreamModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数不合法"})
+		return
+	}
+
+	url := strings.TrimSuffix(req.ApiURL, "/") + "/v1/models"
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "上游 API 链接格式有误"})
+		return
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+req.ApiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "访问上游失败，连接超时或网络不通: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": fmt.Sprintf("上游返回错误 (Status: %d): %s", resp.StatusCode, string(bodyBytes))})
+		return
+	}
+
+	var upstreamResp UpstreamModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&upstreamResp); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "解析上游模型格式失败"})
+		return
+	}
+
+	var ids []string
+	for _, item := range upstreamResp.Data {
+		ids = append(ids, item.ID)
+	}
+
+	c.JSON(http.StatusOK, ids)
+}
+
+type BatchImportItem struct {
 	ID          string `json:"id"`
 	ProviderID  string `json:"provider_id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
-	Enabled     bool   `json:"enabled"`
+	ModelType   string `json:"model_type"`
+	CreditsCost int64  `json:"credits_cost"`
 }
 
-// MockListProviders (GET /api/admin/providers)
-func MockListProviders(c *gin.Context) {
-	providers := []ProviderSummary{
-		{ID: "12zx-ai", Name: "12ZX-AI 大模型中台网关", ProviderType: "gateway", Enabled: true},
+// BatchImportModels 批量导入并设定模型定价 (POST /api/admin/models/batch-import)
+func BatchImportModels(c *gin.Context) {
+	var req []BatchImportItem
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求输入有误"})
+		return
 	}
-	c.JSON(http.StatusOK, providers)
-}
 
-func MockCreateProvider(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"id": "new-mock-provider", "name": "新网关通道"})
-}
-
-func MockEnableProvider(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-func MockDeleteProvider(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-// MockListModels (GET /api/admin/models) - 写死返回常用模型配置，高可用支持下拉选择
-func MockListModels(c *gin.Context) {
-	models := []ModelSummary{
-		{ID: "deepseek-chat", ProviderID: "12zx-ai", Name: "deepseek-chat", DisplayName: "DeepSeek Chat (网关LLM)", Enabled: true},
-		{ID: "gpt-4o", ProviderID: "12zx-ai", Name: "gpt-4o", DisplayName: "GPT-4o (网关LLM)", Enabled: true},
-		{ID: "kling-v1.5", ProviderID: "12zx-ai", Name: "kling-v1.5", DisplayName: "可灵 Kling 视频 (网关视频)", Enabled: true},
-		{ID: "stable-diffusion-3", ProviderID: "12zx-ai", Name: "stable-diffusion-3", DisplayName: "Stable Diffusion 3 (网关生图)", Enabled: true},
+	tx := database.DB.Begin()
+	for _, item := range req {
+		var modelItem model.Model
+		err := tx.Where("id = ?", item.ID).First(&modelItem).Error
+		if err != nil {
+			// 新增
+			modelItem = model.Model{
+				ID:          item.ID,
+				ProviderID:  item.ProviderID,
+				Name:        item.Name,
+				DisplayName: item.DisplayName,
+				ModelType:   item.ModelType,
+				Enabled:     true,
+				CreditsCost: item.CreditsCost,
+				CreatedAt:   time.Now(),
+			}
+			if err := tx.Create(&modelItem).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "导入模型失败: " + err.Error()})
+				return
+			}
+		} else {
+			// 覆盖更新类型与价格
+			modelItem.ModelType = item.ModelType
+			modelItem.CreditsCost = item.CreditsCost
+			if err := tx.Save(&modelItem).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新模型失败: " + err.Error()})
+				return
+			}
+		}
 	}
-	c.JSON(http.StatusOK, models)
+	tx.Commit()
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "模型批量导入保存成功"})
 }
 
-func MockCreateModel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"id": "new-mock-model", "name": "新大模型通道"})
-}
-
-func MockEnableModel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-func MockDeleteModel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-
-// MockListPricingRules (GET /api/admin/pricing-rules)
+// Mock 辅助存根
 func MockListPricingRules(c *gin.Context) {
-	// 返回空数组，代表采用分站默认加价策略
 	c.JSON(http.StatusOK, []any{})
 }
-
 func MockCreatePricingRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-
-// MockListWorkflowTemplates (GET /api/admin/workflow-templates)
 func MockListWorkflowTemplates(c *gin.Context) {
 	c.JSON(http.StatusOK, []any{})
 }
-
 func MockCreateWorkflowTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-
 func MockEnableWorkflowTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-
 func MockPublishWorkflowTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-
-// MockTestTextModel (POST /api/admin/models/test-text)
 func MockTestTextModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "网关文字通道连通性测试通过"})
 }
-
-// MockTestImageModel (POST /api/admin/models/test-image)
 func MockTestImageModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "网关图片通道连通性测试通过"})
 }

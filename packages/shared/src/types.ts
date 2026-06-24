@@ -1,6 +1,7 @@
-import { FolderKanban, BriefcaseBusiness, UsersRound, Library, Boxes, History, Coins, Settings } from "lucide-react";
+import { FolderKanban, BriefcaseBusiness, UsersRound, Library, Boxes, History, Coins, Settings, Sparkles } from "lucide-react";
 
 export type AppView =
+  | "square"
   | "workbench"
   | "projects"
   | "customers"
@@ -185,6 +186,14 @@ export type CanvasItem = {
   titleSize?: "sm" | "md" | "lg";
 };
 
+export type CanvasConnection = {
+  id: string;
+  fromItemId: string;
+  toItemId: string;
+  color?: string;
+  label?: string;
+};
+
 export type ProjectCanvasDocument = {
   version: 1;
   items: CanvasItem[];
@@ -193,6 +202,7 @@ export type ProjectCanvasDocument = {
   panX?: number;
   panY?: number;
   zoom?: number;
+  connections?: CanvasConnection[];
 };
 
 export type ProjectCanvasSummary = {
@@ -213,6 +223,8 @@ export type ProviderSummary = {
   id: string;
   name: string;
   provider_type: string;
+  api_url?: string;
+  api_key?: string;
   enabled: boolean;
 };
 
@@ -221,6 +233,8 @@ export type ModelSummary = {
   provider_id: string;
   name: string;
   display_name?: string;
+  model_type?: string;
+  credits_cost?: number;
   enabled: boolean;
 };
 
@@ -366,19 +380,46 @@ export type DeleteAssetResponse = {
 };
 
 export const navItems = [
-  { icon: FolderKanban, label: "仪表盘", view: "workbench" },
+  { icon: Sparkles, label: "首页", view: "square" },
+  { icon: FolderKanban, label: "工作台", view: "workbench" },
   { icon: BriefcaseBusiness, label: "项目", view: "projects" },
   { icon: UsersRound, label: "客户", view: "customers" },
   { icon: Boxes, label: "素材库", view: "assets" },
 ] as const;
 
 export const quickTasks = [
-  { label: "客户 brief 分析", type: "brief-analysis" },
-  { label: "品牌风格提取", type: "brand-style-extract" },
-  { label: "三套创意方向", type: "creative-directions" },
-  { label: "图片生成", type: "image-generation" },
-  { label: "小红书封面批量生成", type: "xiaohongshu-cover-batch" },
-  { label: "短视频脚本和分镜", type: "short-video-script-storyboard" },
+  { label: "图像", type: "image-generation" },
+  { label: "文本", type: "text-generation" },
+  { label: "视频", type: "video-generation" },
 ] as const;
 
 export type WorkflowType = (typeof quickTasks)[number]["type"];
+
+export interface TemplateCategory {
+  id: string;
+  name: string;
+  sort_order: number;
+  parent_id?: string | null;
+  workflow_type: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  category_id: string;
+  title: string;
+  content: string;
+  default_width: number;
+  default_height: number;
+  workflow_type?: string;
+  need_image?: number;
+  show_ratio?: boolean;
+  negative_prompt?: string;
+  preview_url?: string;
+  model_id?: string;
+  advanced_params?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+

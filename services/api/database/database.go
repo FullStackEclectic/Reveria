@@ -85,6 +85,10 @@ func AutoMigrate() {
 		&model.ProjectComment{},
 		&model.TaskComment{},
 		&model.ProjectShare{},
+		&model.Provider{},
+		&model.Model{},
+		&model.TemplateCategory{},
+		&model.PromptTemplate{},
 	)
 	if err != nil {
 		log.Fatalf("数据库自动迁移失败: %v", err)

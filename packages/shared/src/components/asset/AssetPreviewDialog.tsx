@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { ExternalLink, Download } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl, assetMimeType, formatFileSize } from "../../utils";
@@ -31,8 +31,35 @@ export function AssetPreviewDialog({
   asset,
   setPreviewAsset,
 }: AssetPreviewDialogProps) {
+  const [resolution, setResolution] = useState<string>("");
   const title = assetTitle(asset);
   const sourceUrl = asset.file_url ?? asset.thumbnail_url ?? "";
+
+  useEffect(() => {
+    if (asset.asset_type !== "image" || !sourceUrl) {
+      setResolution("");
+      return;
+    }
+
+    // 尝试从元数据中快速初始化
+    let initialRes = "";
+    const meta = asset.metadata as any;
+    if (meta) {
+      if (typeof meta.width === "number" && typeof meta.height === "number") {
+        initialRes = `${meta.width} x ${meta.height}`;
+      } else if (typeof meta.size === "string" && meta.size.includes("x")) {
+        initialRes = meta.size;
+      }
+    }
+    setResolution(initialRes);
+
+    // 异步加载原图获取真实的物理分辨率
+    const img = new Image();
+    img.src = assetUrl(sourceUrl);
+    img.onload = () => {
+      setResolution(`${img.naturalWidth} x ${img.naturalHeight}`);
+    };
+  }, [asset.id, sourceUrl]);
 
   function renderAssetPreview(asset: AssetSummary) {
     const sourceUrl = asset.thumbnail_url ?? asset.file_url;
@@ -73,6 +100,9 @@ export function AssetPreviewDialog({
         </div>
         <div className="asset-dialog-meta">
           <span>{assetMimeType(asset)}</span>
+          {resolution ? (
+            <span>{resolution}</span>
+          ) : null}
           {typeof asset.metadata.size === "number" ? (
             <span>{formatFileSize(asset.metadata.size)}</span>
           ) : null}

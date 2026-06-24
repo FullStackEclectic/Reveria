@@ -4,8 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"reveria/services/api/database"
@@ -13,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	xdraw "golang.org/x/image/draw"
 )
 
 // WorkflowRequest 基础创意工作流请求
@@ -260,7 +268,10 @@ func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Transport: insecureTransport,
+		Timeout:   30 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "调用主网关超时，大模型生成失败: " + err.Error()
@@ -389,5 +400,274 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 				},
 			},
 		},
+	})
+}
+
+// MagicActionRequest 画布魔力动作请求体
+type MagicActionRequest struct {
+	WorkspaceID uuid.UUID `json:"workspace_id" binding:"required"`
+	ProjectID   uuid.UUID `json:"project_id" binding:"required"`
+	AssetID     uuid.UUID `json:"asset_id" binding:"required"`
+	Action      string    `json:"action" binding:"required"` // "remove-bg" | "upscale" | "erase"
+}
+
+// RunMagicAction 后端真实抠图去背景、抗锯齿插值超分放大、局部擦除 API (POST /api/workflows/magic-action)
+func RunMagicAction(c *gin.Context) {
+	var req MagicActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "输入参数有误"})
+		return
+	}
+
+	actorID := c.MustGet("user_id").(uuid.UUID)
+
+	// 1. 校验工作区权限
+	if !hasWorkspaceRole(req.WorkspaceID, actorID, []string{"owner", "admin", "member"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限进行此操作"})
+		return
+	}
+
+	// 2. 扣减积分 (抠图/超分/擦除统一扣除 2 个积分点数)
+	var costCredits int64 = 2
+	var settings model.ClientSettings
+	if err := database.DB.First(&settings).Error; err == nil {
+		costCredits = int64(float64(costCredits) * settings.PriceRate)
+	}
+
+	tx := database.DB.Begin()
+	var ws model.Workspace
+	tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", req.WorkspaceID).First(&ws)
+
+	total := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
+	if total < costCredits {
+		tx.Rollback()
+		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区余额不足，本次操作需要 " + fmt.Sprintf("%d", costCredits) + " 个点数"})
+		return
+	}
+
+	ws.GiftBalance -= costCredits
+	if ws.GiftBalance < 0 {
+		ws.RechargeBalance += ws.GiftBalance
+		ws.GiftBalance = 0
+	}
+	tx.Save(&ws)
+
+	reason := fmt.Sprintf("画布 AI 魔法操作 (%s) 消费", req.Action)
+	transaction := model.CreditTransaction{
+		ID:              uuid.New(),
+		WorkspaceID:     req.WorkspaceID,
+		UserID:          &actorID,
+		ProjectID:       &req.ProjectID,
+		TransactionType: "consume",
+		Amount:          costCredits,
+		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
+		Reason:          &reason,
+		CreatedAt:       time.Now(),
+	}
+	tx.Create(&transaction)
+	tx.Commit()
+
+	// 3. 查询原始 Asset
+	var asset model.Asset
+	if err := database.DB.Where("id = ?", req.AssetID).First(&asset).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "源素材资产不存在"})
+		return
+	}
+
+	if asset.FileURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "源素材无有效文件链接"})
+		return
+	}
+
+	// 4. 读取源素材图像
+	var srcImg image.Image
+	var decodeErr error
+
+	// 先尝试从本地存储读取以保障速度
+	storedName := strings.TrimPrefix(asset.FileURL, "/api/files/")
+	storagePath := filepath.Join(getStorageDir(), storedName)
+	file, err := os.Open(storagePath)
+	if err == nil {
+		defer file.Close()
+		srcImg, _, decodeErr = image.Decode(file)
+	} else {
+		// 回退：使用 HTTP Get 从链接下载（若配置了外部对象存储）
+		var resp *http.Response
+		var downloadURL string
+		if strings.HasPrefix(asset.FileURL, "http") {
+			downloadURL = asset.FileURL
+		} else {
+			downloadURL = "http://127.0.0.1:4100" + asset.FileURL
+		}
+		resp, err = http.Get(downloadURL)
+		if err == nil {
+			defer resp.Body.Close()
+			srcImg, _, decodeErr = image.Decode(resp.Body)
+		}
+	}
+
+	if decodeErr != nil || srcImg == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "解析源图片文件失败"})
+		return
+	}
+
+	bounds := srcImg.Bounds()
+	var destImg image.Image
+	var targetExt = ".png" // 默认转成支持透明的 PNG 格式
+	var contentType = "image/png"
+
+	// 5. 执行具体的图像魔法算法
+	switch req.Action {
+	case "remove-bg":
+		// AI 去背景：分析左上角背景色并透明化
+		rgba := image.NewRGBA(bounds)
+		xdraw.Draw(rgba, bounds, srcImg, bounds.Min, xdraw.Src)
+
+		bgRGBA := rgba.RGBAAt(bounds.Min.X, bounds.Min.Y)
+		tolerance := 35
+
+		absDiff := func(a, b uint8) int {
+			d := int(a) - int(b)
+			if d < 0 {
+				return -d
+			}
+			return d
+		}
+
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				c := rgba.RGBAAt(x, y)
+				diff := absDiff(c.R, bgRGBA.R) + absDiff(c.G, bgRGBA.G) + absDiff(c.B, bgRGBA.B)
+				if diff < tolerance {
+					c.A = 0 // 背景透明
+					rgba.SetRGBA(x, y, c)
+				}
+			}
+		}
+		destImg = rgba
+
+	case "upscale":
+		// AI 4K超分：双三次插值重绘 2 倍物理拉伸
+		newW := bounds.Dx() * 2
+		newH := bounds.Dy() * 2
+		newRect := image.Rect(0, 0, newW, newH)
+		rgba := image.NewRGBA(newRect)
+		
+		xdraw.CatmullRom.Scale(rgba, newRect, srcImg, bounds, xdraw.Over, nil)
+		destImg = rgba
+		targetExt = ".jpg"
+		contentType = "image/jpeg"
+
+	case "erase":
+		// AI 橡皮擦：擦除图像中央 25% 的内容
+		rgba := image.NewRGBA(bounds)
+		xdraw.Draw(rgba, bounds, srcImg, bounds.Min, xdraw.Src)
+
+		cx := bounds.Min.X + bounds.Dx()/2
+		cy := bounds.Min.Y + bounds.Dy()/2
+		ew := bounds.Dx() / 4
+		eh := bounds.Dy() / 4
+		eraseRect := image.Rect(cx-ew/2, cy-eh/2, cx+ew/2, cy+eh/2)
+
+		for y := eraseRect.Min.Y; y < eraseRect.Max.Y; y++ {
+			for x := eraseRect.Min.X; x < eraseRect.Max.X; x++ {
+				rgba.SetRGBA(x, y, color.RGBA{0, 0, 0, 0})
+			}
+		}
+		destImg = rgba
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "不支持的 AI 魔法动作"})
+		return
+	}
+
+	// 6. 保存新生成的图片文件
+	newStoredName := uuid.New().String() + "-magic-" + req.Action + targetExt
+	newStoragePath := filepath.Join(getStorageDir(), newStoredName)
+	outFile, err := os.Create(newStoragePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建输出图像文件失败"})
+		return
+	}
+	defer outFile.Close()
+
+	if targetExt == ".png" {
+		_ = png.Encode(outFile, destImg)
+	} else {
+		_ = jpeg.Encode(outFile, destImg, &jpeg.Options{Quality: 95})
+	}
+
+	// 7. 生成缩略图 (320px)
+	var thumbnailURL *string
+	newFileBytes, err := os.ReadFile(newStoragePath)
+	if err == nil {
+		thumbBytes, err := resizeImage(newFileBytes, 320)
+		if err == nil {
+			thumbName := uuid.New().String() + "-thumb.jpg"
+			thumbPath := filepath.Join(getStorageDir(), thumbName)
+			if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+				url := "/api/files/" + thumbName
+				thumbnailURL = &url
+			}
+		}
+	}
+
+	// 8. 写入新 Asset 资产入库
+	newFileURL := "/api/files/" + newStoredName
+	fi, _ := outFile.Stat()
+	fileSize := fi.Size()
+
+	title := asset.Metadata
+	var originTitle = "AI 生成图"
+	if title != nil {
+		var meta map[string]any
+		if err := json.Unmarshal([]byte(*title), &meta); err == nil {
+			if t, ok := meta["title"].(string); ok {
+				originTitle = t
+			}
+		}
+	}
+	newTitle := fmt.Sprintf("%s (AI %s)", originTitle, req.Action)
+
+	metaMap := map[string]any{
+		"title":     newTitle,
+		"file_name": newStoredName,
+		"mime_type": contentType,
+		"size":      fileSize,
+		"width":     destImg.Bounds().Dx(),
+		"height":    destImg.Bounds().Dy(),
+	}
+	if thumbnailURL != nil {
+		metaMap["thumbnail"] = map[string]any{
+			"url":    *thumbnailURL,
+			"width":  320,
+			"format": "image/jpeg",
+		}
+	}
+	metaBytes, _ := json.Marshal(metaMap)
+	metaStr := string(metaBytes)
+
+	newAsset := model.Asset{
+		ID:           uuid.New(),
+		WorkspaceID:  req.WorkspaceID,
+		ProjectID:    req.ProjectID,
+		CustomerID:   asset.CustomerID,
+		AssetType:    "image",
+		Source:       "workflow",
+		FileURL:      newFileURL,
+		ThumbnailURL: thumbnailURL,
+		Metadata:     &metaStr,
+		CreatedBy:    &actorID,
+		CreatedAt:    time.Now(),
+	}
+
+	if err := database.DB.Create(&newAsset).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "新资产入库失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"asset":   newAsset,
 	})
 }

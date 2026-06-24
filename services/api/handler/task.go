@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// insecureTransport 是一个跳过 SSL/TLS 证书校验的自定义 Transport，用于解决网关证书配置不匹配的问题
+var insecureTransport = &http.Transport{
+	TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+}
 
 // TaskEstimateRequest 任务估算请求
 type TaskEstimateRequest struct {
@@ -71,12 +77,63 @@ func EstimateTask(c *gin.Context) {
 	})
 }
 
+type CompatCreateTaskRequest struct {
+	WorkspaceID    uuid.UUID `json:"workspace_id"`
+	ProjectID      uuid.UUID `json:"project_id"`
+	Model          string    `json:"model"`
+	Prompt         string    `json:"prompt"`
+	Size           string    `json:"size"`
+	Quality        string    `json:"quality"`
+	ImageCount     int       `json:"image_count"`
+	RefImageURL    *string   `json:"ref_image_url"`
+	IdempotencyKey string    `json:"idempotency_key"`
+}
+
 // CreateTask 发起 AI 生成任务接口 (POST /tasks 或 /workflows/image-generation)
 func CreateTask(c *gin.Context) {
 	var req CreateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求输入有误: " + err.Error()})
-		return
+
+	// 如果是旧生图工作流请求，使用旧版结构体解析并手动映射到 CreateTaskRequest
+	if c.FullPath() == "/api/workflows/image-generation" {
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			log.Printf("[CompatCreateTask] Failed to read request body: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "读取请求内容失败"})
+			return
+		}
+		// 将读取到的 body 重新写回 Request.Body，防止后续依赖它的中间件或操作受影响
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		log.Printf("[CompatCreateTask] Received Raw JSON Body: %s", string(bodyBytes))
+
+		var compatReq CompatCreateTaskRequest
+		if err := json.Unmarshal(bodyBytes, &compatReq); err == nil {
+			req.WorkspaceID = compatReq.WorkspaceID
+			req.ProjectID = compatReq.ProjectID
+			req.TaskType = "image_generation"
+			req.SelectedModel = compatReq.Model
+			
+			// 组装 input_payload
+			inputMap := map[string]any{
+				"prompt":        compatReq.Prompt,
+				"size":          compatReq.Size,
+				"quality":       compatReq.Quality,
+				"image_count":   compatReq.ImageCount,
+				"ref_image_url": compatReq.RefImageURL,
+			}
+			inputBytes, _ := json.Marshal(inputMap)
+			req.InputPayload = inputBytes
+		} else {
+			log.Printf("[CompatCreateTask] JSON Unmarshal error: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求输入有误: " + err.Error()})
+			return
+		}
+	} else {
+		// 标准处理
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求输入有误: " + err.Error()})
+			return
+		}
 	}
 
 	actorID := c.MustGet("user_id").(uuid.UUID)
@@ -211,13 +268,54 @@ func CreateTask(c *gin.Context) {
 	tx.Commit()
 
 	// 3. 调用 12ZX-AI 网关
-	go callUpstreamGateway(task, settings)
+	if c.FullPath() == "/api/workflows/image-generation" {
+		// 生图工作流兼容接口采用同步方式等待网关调用结束，这样能即时返回生图任务的状态或资产结果给画板展示
+		callUpstreamGateway(task, settings)
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "生成任务已提交后台处理",
-		"data":    task,
-	})
+		var finalTask model.GenerationTask
+		database.DB.Where("id = ?", task.ID).First(&finalTask)
+
+		if finalTask.Status == "succeeded" {
+			var asset model.Asset
+			var meta struct {
+				URL string `json:"url"`
+			}
+			if finalTask.OutputPayload != nil {
+				_ = json.Unmarshal([]byte(*finalTask.OutputPayload), &meta)
+			}
+			if meta.URL != "" && database.DB.Where("file_url = ?", meta.URL).Order("created_at desc").First(&asset).Error == nil {
+				c.JSON(http.StatusOK, gin.H{
+					"task":  finalTask,
+					"asset": asset,
+				})
+			} else {
+				c.JSON(http.StatusOK, gin.H{
+					"task":  finalTask,
+					"asset": nil,
+				})
+			}
+		} else {
+			errMsg := "生图工作流执行失败，请检查 API 连接状态"
+			if finalTask.ErrorMessage != nil {
+				errMsg = *finalTask.ErrorMessage
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"task": finalTask,
+				"output": gin.H{
+					"message": errMsg,
+				},
+			})
+		}
+	} else {
+		// 标准异步生图任务直接放入后台并返回任务 ID 凭证
+		go callUpstreamGateway(task, settings)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "生成任务已提交后台处理",
+			"data":    task,
+		})
+	}
 }
 
 // GetTaskDetail 获取任务进度 (GET /tasks/:id)
@@ -259,6 +357,85 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	var upstreamURL string
 	var reqBody []byte
 
+	// 获取真实的网关模型 API 英文标识（m.name）
+	gatewayModelName := ""
+	if task.SelectedModel != nil {
+		var dbModel model.Model
+		if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err == nil {
+			gatewayModelName = dbModel.Name
+			log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
+
+			// 读取模型对应的 Provider，覆盖 settings 的 API 密钥和地址以做多渠道动态分发
+			var provider model.Provider
+			if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
+				if provider.ApiURL != "" {
+					settings.UpstreamAPIURL = provider.ApiURL
+				}
+				if provider.ApiKey != "" {
+					settings.UpstreamAPIKey = provider.ApiKey
+				}
+				log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
+			} else {
+				log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
+			}
+		} else {
+			gatewayModelName = *task.SelectedModel
+			log.Printf("[callUpstreamGateway] Using raw model name and global settings: %s", gatewayModelName)
+		}
+	}
+
+	// 裁剪 API URL，去掉末尾可能存在的 "/" 以及 "/v1" 后缀，方便之后统一硬编码拼接 `/v1/images/generations` 等
+	settings.UpstreamAPIURL = strings.TrimSuffix(settings.UpstreamAPIURL, "/")
+	settings.UpstreamAPIURL = strings.TrimSuffix(settings.UpstreamAPIURL, "/v1")
+
+	// 文本大类任务，直接调用大语言模型完成
+	if task.TaskType == "text" {
+		var payload map[string]any
+		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
+		prompt, _ := payload["prompt"].(string)
+
+		responseMsg := callUpstreamLLM(prompt, settings)
+
+		outMap := map[string]any{
+			"summary": responseMsg,
+		}
+		outBytes, _ := json.Marshal(outMap)
+		outStr := string(outBytes)
+
+		tx := database.DB.Begin()
+		var dbTask model.GenerationTask
+		if tx.Where("id = ?", task.ID).First(&dbTask).Error == nil {
+			dbTask.Status = "succeeded"
+			dbTask.OutputPayload = &outStr
+			dbTask.ActualCredits = dbTask.EstimatedCredits
+			dbTask.FrozenCredits = 0
+			dbTask.FrozenGiftCredits = 0
+			dbTask.FrozenRefundCredits = 0
+			dbTask.FrozenRechargeCredits = 0
+			tx.Save(&dbTask)
+
+			// 记录正式消费流水
+			consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", dbTask.TaskType)
+			var ws model.Workspace
+			tx.Where("id = ?", dbTask.WorkspaceID).First(&ws)
+			transaction := model.CreditTransaction{
+				ID:              uuid.New(),
+				WorkspaceID:     dbTask.WorkspaceID,
+				UserID:          dbTask.UserID,
+				ProjectID:       &dbTask.ProjectID,
+				TaskID:          &dbTask.ID,
+				TransactionType: "consume",
+				Amount:          dbTask.ActualCredits,
+				BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
+				Reason:          &consumeReason,
+				CreatedAt:       time.Now(),
+			}
+			tx.Create(&transaction)
+		}
+		tx.Commit()
+		return
+	}
+
 	// 图像生成与视频生成在 OpenAI 网关上接口不一样
 	if task.TaskType == "image_generation" || task.TaskType == "text_to_image" {
 		upstreamURL = fmt.Sprintf("%s/v1/images/generations", settings.UpstreamAPIURL)
@@ -267,24 +444,31 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
 
 		prompt, _ := payload["prompt"].(string)
+		sizeStr, _ := payload["size"].(string)
+		if sizeStr == "" {
+			sizeStr = "1024x1024"
+		}
 		gatewayReq := map[string]any{
-			"model":  *task.SelectedModel,
+			"model":  gatewayModelName,
 			"prompt": prompt,
 			"n":      1,
-			"size":   "1024x1024",
+			"size":   sizeStr,
 		}
 		reqBody, _ = json.Marshal(gatewayReq)
-	} else {
-		// 视频生成或其它
+	} else if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
+		// 视频生成
 		upstreamURL = fmt.Sprintf("%s/v1/video/generations", settings.UpstreamAPIURL)
 		var payload map[string]any
 		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
 		prompt, _ := payload["prompt"].(string)
 		gatewayReq := map[string]any{
-			"model":  *task.SelectedModel,
+			"model":  gatewayModelName,
 			"prompt": prompt,
 		}
 		reqBody, _ = json.Marshal(gatewayReq)
+	} else {
+		handleTaskFailure(task.ID, "UNSUPPORTED_TASK_TYPE", "不支持的任务大类类型: "+task.TaskType)
+		return
 	}
 
 	req, err := http.NewRequest("POST", upstreamURL, bytes.NewBuffer(reqBody))
@@ -296,7 +480,10 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Transport: insecureTransport,
+		Timeout:   90 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		handleTaskFailure(task.ID, "GATEWAY_TIMEOUT", "调用主网关超时: "+err.Error())
@@ -375,7 +562,10 @@ func pollUpstreamTask(task model.GenerationTask, upstreamTaskID string, settings
 			}
 			req.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
 
-			client := &http.Client{Timeout: 10 * time.Second}
+			client := &http.Client{
+				Transport: insecureTransport,
+				Timeout:   10 * time.Second,
+			}
 			resp, err := client.Do(req)
 			if err != nil {
 				continue
@@ -425,7 +615,11 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 	log.Printf("[TaskSucceeded] 任务 %s 生成成功，开始本地化下载...", task.ID)
 
 	// 1. 下载原始大文件至本地存储
-	resp, err := http.Get(upstreamURL)
+	downloadClient := &http.Client{
+		Transport: insecureTransport,
+		Timeout:   60 * time.Second,
+	}
+	resp, err := downloadClient.Get(upstreamURL)
 	var localURL string
 	var localThumbURL *string
 	var metaStr string
@@ -460,7 +654,52 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 				}
 			}
 
-			// 3. 构建 Asset 数据模型
+			// 读取任务输入参数，提取 prompt 等元信息
+			var prompt string
+			var paramSize string
+			var quality string
+			var modelName string
+
+			var inputPayload map[string]any
+			if json.Unmarshal([]byte(task.InputPayload), &inputPayload) == nil {
+				prompt, _ = inputPayload["prompt"].(string)
+				paramSize, _ = inputPayload["size"].(string)
+				quality, _ = inputPayload["quality"].(string)
+			}
+
+			if task.SelectedModel != nil {
+				var dbModel model.Model
+				if database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error == nil {
+					modelName = dbModel.DisplayName
+					if modelName == "" {
+						modelName = dbModel.Name
+					}
+				} else {
+					modelName = *task.SelectedModel
+				}
+			}
+
+			mimeType := "image/jpeg"
+			if ext == ".mp4" {
+				mimeType = "video/mp4"
+			}
+
+			metaMap := map[string]any{
+				"file_name":  storedName,
+				"url":        localURL,
+				"title":      "AI 创意生成结果",
+				"size":       len(fileBytes),
+				"mime_type":  mimeType,
+				"prompt":     prompt,
+				"size_str":   paramSize,
+				"dimensions": paramSize,
+				"quality":    quality,
+				"model":      modelName,
+			}
+			metaBytes, _ := json.Marshal(metaMap)
+			metaStr = string(metaBytes)
+
+			// 3. 构建 Asset 数据模型并写入数据库
 			asset := model.Asset{
 				ID:           uuid.New(),
 				WorkspaceID:  task.WorkspaceID,
@@ -469,16 +708,10 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 				Source:       "generated",
 				FileURL:      localURL,
 				ThumbnailURL: localThumbURL,
+				Metadata:     &metaStr,
 				CreatedAt:    time.Now(),
 			}
 			_ = database.DB.Create(&asset)
-
-			metaMap := map[string]any{
-				"file_name": storedName,
-				"url":       localURL,
-			}
-			metaBytes, _ := json.Marshal(metaMap)
-			metaStr = string(metaBytes)
 		}
 	}
 

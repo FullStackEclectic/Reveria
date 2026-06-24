@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AdminConsole } from "@reveria/shared";
-import { UserSummary } from "@reveria/shared";
-import { readCachedUser } from "@reveria/shared";
+import { AdminConsole, UserSummary, readCachedUser, ACCESS_TOKEN_STORAGE_KEY } from "@reveria/shared";
 import "@reveria/shared/src/styles.css";
 
 export default function AdminPage() {
@@ -36,8 +34,9 @@ export default function AdminPage() {
     );
   }
 
-  // 严格鉴权：未登录或不是超级管理员，自动重定向至首页强制登录
-  if (!currentUser || !currentUser.is_platform_admin) {
+  // 严格鉴权：未登录（没有 token 或没有 currentUser）或不是超级管理员，自动重定向至首页强制登录
+  const token = typeof window !== "undefined" ? localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) : null;
+  if (!token || !currentUser || !currentUser.is_platform_admin) {
     if (typeof window !== "undefined") {
       window.location.href = "/";
     }

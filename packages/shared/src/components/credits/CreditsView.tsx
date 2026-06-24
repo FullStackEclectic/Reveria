@@ -58,32 +58,45 @@ export function CreditsView({
       title="套餐与点数中心"
       status={`${activeWorkspace?.name ?? "默认工作区"} · ${formattedCredits} 点`}
     >
-      <section className="metrics">
-        <Metric label="当前套餐" value={planName} />
-        <Metric label="存储空间额度" value={quotaGB} />
-        <Metric label="最大成员限制" value={`${memberLimit} 人`} />
-        <Metric label="点数余额" value={formattedCredits} />
+      <section className="metrics-container">
+        <div className="credits-metric-card">
+          <span className="metric-label">当前套餐</span>
+          <span className="metric-value">{planName}</span>
+        </div>
+        <div className="credits-metric-card">
+          <span className="metric-label">存储空间额度</span>
+          <span className="metric-value">{quotaGB}</span>
+        </div>
+        <div className="credits-metric-card">
+          <span className="metric-label">最大成员限制</span>
+          <span className="metric-value">{memberLimit} 人</span>
+        </div>
+        <div className="credits-metric-card">
+          <span className="metric-label">点数余额</span>
+          <span className="metric-value" style={{ color: "#6366f1" }}>{formattedCredits}</span>
+        </div>
       </section>
 
-      <div style={{ marginBottom: "12px", fontSize: "14px", fontWeight: "600", color: "#6b645d" }}>
+      <div style={{ marginBottom: "12px", fontSize: "14px", fontWeight: "700", color: "#1c1917" }}>
         点数明细
       </div>
-      <section className="metrics" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-        <Metric label="充值点数 (永久)" value={`${formattedRecharge} 点`} />
-        <Metric label="赠送点数 (有效期30天)" value={`${formattedGift} 点`} />
-        <Metric label="退款点数 (永久)" value={`${formattedRefund} 点`} />
+      <section className="metrics-container" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+        <div className="credits-metric-card">
+          <span className="metric-label">充值点数 (永久)</span>
+          <span className="metric-value">{formattedRecharge} 点</span>
+        </div>
+        <div className="credits-metric-card">
+          <span className="metric-label">赠送点数 (有效期30天)</span>
+          <span className="metric-value" style={{ color: "#f97316" }}>{formattedGift} 点</span>
+        </div>
+        <div className="credits-metric-card">
+          <span className="metric-label">退款点数 (永久)</span>
+          <span className="metric-value">{formattedRefund} 点</span>
+        </div>
       </section>
 
       {pendingOrder && (
-        <div
-          className="panel pending-order-panel"
-          style={{
-            border: "2px solid var(--accent-color, #6366f1)",
-            padding: "16px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-          }}
-        >
+        <div className="panel credits-pending-order-card">
           <div
             className="panel-header"
             style={{
@@ -94,18 +107,18 @@ export function CreditsView({
             }}
           >
             <div>
-              <h3 style={{ margin: 0, color: "var(--accent-color, #6366f1)" }}>
+              <h3 style={{ margin: 0, color: "#f97316", fontWeight: 800, fontSize: "16px" }}>
                 待支付订阅订单
               </h3>
-              <span style={{ fontSize: "12px" }}>
+              <span style={{ fontSize: "12px", color: "#78716c" }}>
                 创建于: {new Date(pendingOrder.created_at).toLocaleString()}
               </span>
             </div>
             <span
               className="badge pending"
               style={{
-                backgroundColor: "#fef3c7",
-                color: "#d97706",
+                backgroundColor: "#ffedd5",
+                color: "#ea580c",
                 padding: "4px 8px",
                 borderRadius: "4px",
                 fontSize: "12px",
@@ -117,10 +130,10 @@ export function CreditsView({
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <p style={{ margin: "4px 0" }}>
-                订单编号: <code>{pendingOrder.id}</code>
+              <p style={{ margin: "4px 0", color: "#57534e", fontSize: "13px" }}>
+                订单编号: <code style={{ background: "rgba(234, 88, 12, 0.05)", padding: "2px 6px", borderRadius: "4px" }}>{pendingOrder.id}</code>
               </p>
-              <p style={{ margin: "4px 0", fontSize: "18px", fontWeight: "bold" }}>
+              <p style={{ margin: "4px 0", fontSize: "18px", fontWeight: "bold", color: "#1c1917" }}>
                 金额: ¥{(pendingOrder.amount_cents / 100).toFixed(2)} 元
               </p>
             </div>
@@ -129,7 +142,7 @@ export function CreditsView({
               type="button"
               disabled={isPayingOrder}
               onClick={() => void handleMockPay()}
-              style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)" }}
+              style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#ffffff", borderRadius: "8px", padding: "10px 20px", fontWeight: "600", cursor: "pointer" }}
             >
               {isPayingOrder ? "正在支付..." : "💰 模拟付款成功"}
             </button>
@@ -137,68 +150,36 @@ export function CreditsView({
         </div>
       )}
 
-      <div className="panel" style={{ marginBottom: "20px" }}>
-        <div className="panel-header">
-          <h3>套餐订阅方案</h3>
-          <span>升级套餐以提升成员数量与存储配额，并获取更多月度赠送点数</span>
+      <div className="panel" style={{ marginBottom: "24px", background: "none", border: "none", boxShadow: "none", padding: 0 }}>
+        <div className="panel-header" style={{ marginBottom: "12px" }}>
+          <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#1c1917" }}>套餐订阅方案</h3>
+          <span style={{ fontSize: "12px", color: "#78716c" }}>升级套餐以提升成员数量与存储配额，并获取更多月度赠送点数</span>
         </div>
-        <div
-          className="plans-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "20px",
-            marginTop: "16px",
-          }}
-        >
+        <div className="plans-grid-modern">
           {plans.map((plan) => {
             const isCurrent =
               activeWorkspace?.plan_id === plan.id ||
               (!activeWorkspace?.plan_id && plan.price_cents === 0);
             return (
               <div
-                className={`plan-card ${isCurrent ? "active" : ""}`}
+                className={`plan-card-modern ${isCurrent ? "active-plan" : ""}`}
                 key={plan.id}
-                style={{
-                  border: isCurrent ? "2px solid #10b981" : "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  padding: "20px",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  position: "relative",
-                  backgroundColor: isCurrent ? "#f0fdf4" : "transparent",
-                }}
               >
                 {isCurrent && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: "12px",
-                      right: "12px",
-                      backgroundColor: "#10b981",
-                      color: "#fff",
-                      fontSize: "11px",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    正在使用
-                  </span>
+                  <span className="plan-badge-active">正在使用</span>
                 )}
                 <div>
-                  <h4 style={{ margin: "0 0 8px 0", fontSize: "18px" }}>{plan.name}</h4>
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: "18px", color: "#1c1917", fontWeight: 800 }}>{plan.name}</h4>
                   <p
                     className="price"
-                    style={{ margin: "0 0 16px 0", fontSize: "24px", fontWeight: "bold" }}
+                    style={{ margin: "0 0 16px 0", fontSize: "24px", fontWeight: "800", color: isCurrent ? "#6366f1" : "#1c1917" }}
                   >
                     ¥{(plan.price_cents / 100).toFixed(2)}{" "}
-                    <span style={{ fontSize: "14px", fontWeight: "normal", color: "#6b7280" }}>
+                    <span style={{ fontSize: "14px", fontWeight: "normal", color: "#78716c" }}>
                       / 月
                     </span>
                   </p>
-                  <ul style={{ paddingLeft: "20px", margin: "0 0 20px 0", lineHeight: "1.6" }}>
+                  <ul style={{ paddingLeft: "20px", margin: "0 0 20px 0", lineHeight: "1.6", color: "#57534e", fontSize: "13px" }}>
                     <li>
                       月度赠送点数: <strong>{plan.monthly_credits.toLocaleString()}</strong> 点
                     </li>
@@ -219,11 +200,11 @@ export function CreditsView({
                   </ul>
                 </div>
                 <button
-                  className={isCurrent ? "secondary-button current" : "primary-button"}
+                  className={isCurrent ? "secondary-button" : "primary-button"}
                   type="button"
                   disabled={isCurrent || isCreatingOrder}
                   onClick={() => void handleCreateOrder(plan.id)}
-                  style={{ width: "100%" }}
+                  style={{ width: "100%", borderRadius: "8px", minHeight: "38px" }}
                 >
                   {isCurrent ? "当前套餐" : isCreatingOrder ? "正在下单..." : "立即订购"}
                 </button>
@@ -233,132 +214,93 @@ export function CreditsView({
         </div>
       </div>
 
-      <div className="panel">
-        <div
-          className="panel-header"
-          style={{ borderBottom: "1px solid #e5e7eb", paddingBottom: "12px", marginBottom: "16px" }}
-        >
-          <div style={{ display: "flex", gap: "16px" }}>
-            <button
-              type="button"
-              onClick={() => setCreditsTab("transactions")}
-              style={{
-                border: "none",
-                background: "none",
-                fontSize: "16px",
-                fontWeight: creditsTab === "transactions" ? "bold" : "normal",
-                color: creditsTab === "transactions" ? "var(--accent-color, #6366f1)" : "#6b7280",
-                borderBottom:
-                  creditsTab === "transactions"
-                    ? "2px solid var(--accent-color, #6366f1)"
-                    : "none",
-                paddingBottom: "8px",
-                cursor: "pointer",
-              }}
-            >
-              消费流水 (Transactions)
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreditsTab("recharges")}
-              style={{
-                border: "none",
-                background: "none",
-                fontSize: "16px",
-                fontWeight: creditsTab === "recharges" ? "bold" : "normal",
-                color: creditsTab === "recharges" ? "var(--accent-color, #6366f1)" : "#6b7280",
-                borderBottom:
-                  creditsTab === "recharges"
-                    ? "2px solid var(--accent-color, #6366f1)"
-                    : "none",
-                paddingBottom: "8px",
-                cursor: "pointer",
-              }}
-            >
-              充值历史 (Recharges)
-            </button>
-          </div>
+      <div className="credits-table-panel">
+        <div className="credits-tab-bar">
+          <button
+            type="button"
+            className={`credits-tab-capsule ${creditsTab === "transactions" ? "active" : ""}`}
+            onClick={() => setCreditsTab("transactions")}
+          >
+            消费流水 (Transactions)
+          </button>
+          <button
+            type="button"
+            className={`credits-tab-capsule ${creditsTab === "recharges" ? "active" : ""}`}
+            onClick={() => setCreditsTab("recharges")}
+          >
+            充值历史 (Recharges)
+          </button>
         </div>
 
         {creditsTab === "transactions" ? (
-          <div className="project-list">
+          <div className="credits-list">
             {transactions.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "24px", color: "#9ca3af" }}>
+              <div style={{ textAlign: "center", padding: "24px", color: "#a8a29e", fontSize: "13px" }}>
                 暂无积分消费流水记录
               </div>
             ) : (
-              transactions.map((transaction) => (
-                <div
-                  className="project-row"
-                  key={transaction.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "12px",
-                    borderBottom: "1px solid #f3f4f6",
-                  }}
-                >
-                  <div>
-                    <strong style={{ display: "block" }}>{transaction.transaction_type}</strong>
-                    <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                      {transaction.reason ?? "无备注"}
-                    </span>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <small
-                      style={{
-                        fontWeight: "bold",
-                        color: transaction.amount > 0 ? "#10b981" : "#ef4444",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {transaction.amount > 0 ? "+" : ""}
-                      {transaction.amount} 点
-                    </small>
-                  </div>
-                </div>
-              ))
+              <table className="credits-data-table">
+                <thead>
+                  <tr>
+                    <th>交易类型</th>
+                    <th>关联备注</th>
+                    <th style={{ textAlign: "right" }}>点数变更</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((transaction) => (
+                    <tr key={transaction.id}>
+                      <td><strong>{transaction.transaction_type}</strong></td>
+                      <td>{transaction.reason ?? "无备注"}</td>
+                      <td style={{ textAlign: "right", fontWeight: "bold", color: transaction.amount > 0 ? "#10b981" : "#ef4444", fontSize: "14px" }}>
+                        {transaction.amount > 0 ? "+" : ""}
+                        {transaction.amount} 点
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         ) : (
-          <div className="project-list">
+          <div className="credits-list">
             {rechargeRecords.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "24px", color: "#9ca3af" }}>
+              <div style={{ textAlign: "center", padding: "24px", color: "#a8a29e", fontSize: "13px" }}>
                 暂无充值历史记录
               </div>
             ) : (
-              rechargeRecords.map((record) => (
-                <div
-                  className="project-row"
-                  key={record.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "12px",
-                    borderBottom: "1px solid #f3f4f6",
-                  }}
-                >
-                  <div>
-                    <strong style={{ display: "block" }}>
-                      {record.recharge_type === "plan_monthly"
-                        ? "套餐赠送 (Subscription)"
-                        : "系统补点 (Adjustment)"}
-                    </strong>
-                    <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                      订单号:{" "}
-                      {record.order_id ? <code>{record.order_id}</code> : "管理员补发"}
-                    </span>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <small style={{ fontWeight: "bold", color: "#10b981", fontSize: "14px" }}>
-                      +{record.credits_added} 点
-                    </small>
-                    <span style={{ display: "block", fontSize: "10px", color: "#9ca3af" }}>
-                      {new Date(record.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              ))
+              <table className="credits-data-table">
+                <thead>
+                  <tr>
+                    <th>来源项目</th>
+                    <th>订单单号 / 说明</th>
+                    <th>时间</th>
+                    <th style={{ textAlign: "right" }}>变更数值</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rechargeRecords.map((record) => (
+                    <tr key={record.id}>
+                      <td>
+                        <strong>
+                          {record.recharge_type === "plan_monthly"
+                            ? "套餐赠送 (Subscription)"
+                            : "系统补点 (Adjustment)"}
+                        </strong>
+                      </td>
+                      <td>
+                        {record.order_id ? <code>{record.order_id}</code> : <span style={{ color: "#78716c" }}>管理员补发</span>}
+                      </td>
+                      <td style={{ fontSize: "12px", color: "#78716c" }}>
+                        {new Date(record.created_at).toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: "bold", color: "#10b981", fontSize: "14px" }}>
+                        +{record.credits_added} 点
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         )}

@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { AssetSummary, UserSummary, WorkflowResult } from "../../types";
-import { assetUrl, assetTitle } from "../../utils";
+import { assetUrl, assetTitle, getAssetMetadata } from "../../utils";
 
 interface WorkflowHistoryFeedProps {
   aiAssets: AssetSummary[];
@@ -97,10 +97,12 @@ export function WorkflowHistoryFeed({
       ) : (
         aiAssets.map((asset) => {
           const isImage = asset.asset_type === "image";
-          const promptText = (asset.metadata as any)?.prompt || (asset.metadata as any)?.brief || (isImage ? "创意绘图" : "文字工作流");
-          const modelName = (asset.metadata as any)?.model || "GPT Image 2";
-          const sizeStr = (asset.metadata as any)?.size || "16:9(2k)";
-          const qualityStr = (asset.metadata as any)?.quality || "medium";
+          const meta = getAssetMetadata(asset);
+          const promptText = meta?.prompt || meta?.brief || (isImage ? "创意绘图" : "文字工作流");
+          const rawModelName = meta?.model || "GPT Image 2";
+          const modelName = typeof rawModelName === "string" ? rawModelName.replace(/\s*\(.*?\)\s*/g, "") : String(rawModelName);
+          const sizeStr = meta?.size_str || meta?.dimensions || (typeof meta?.size === "string" ? meta.size : "16:9(2k)");
+          const qualityStr = meta?.quality || "medium";
           
           return (
             <div key={asset.id} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -118,8 +120,8 @@ export function WorkflowHistoryFeed({
                 <div className="gen-msg-body">
                   {/* 元信息 */}
                   <div className="gen-msg-ai-meta">
-                    <span>✨ {(asset.metadata as any)?.title || (isImage ? "图像" : "创意生成")}</span>
-                    <span>@</span>
+                    <span>✨ {isImage ? "图像" : "创意生成"}</span>
+                    <span>·</span>
                     <span style={{ fontWeight: 600 }}>{modelName}</span>
                     {isImage && (
                       <>

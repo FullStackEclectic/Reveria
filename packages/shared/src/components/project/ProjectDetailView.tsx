@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Loader2,
@@ -58,6 +58,9 @@ import { LeftAssetsDrawer } from "./LeftAssetsDrawer";
 import { RightWorkflowDrawer } from "./RightWorkflowDrawer";
 import { ProjectDetailTopbar } from "./ProjectDetailTopbar";
 import { exportCanvasToSVG } from "./canvasExportUtils";
+import { TemplateSelectModal } from "./TemplateSelectModal";
+import { PromptTemplate } from "../../types";
+import { runTemplateGeneration } from "./templateWorkflowUtils";
 
 interface ProjectDetailViewProps {
   projects: ProjectSummary[];
@@ -112,6 +115,7 @@ export function ProjectDetailView({
 }: ProjectDetailViewProps) {
   // 左右独立抽屉状态
   const [isLeftDrawerOpen, setIsLeftDrawerOpen] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [activeLeftTab, setActiveLeftTab] = useState<"library" | "share" | "settings">("library");
   const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -164,6 +168,40 @@ export function ProjectDetailView({
   const [toastMessage, setToastMessage] = useState("");
   const showToast = (msg: string) => setToastMessage(msg);
 
+  // --- 撤销与重做历史控制 ---
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const undoStack = useRef<ProjectCanvasDocument[]>([]);
+  const redoStack = useRef<ProjectCanvasDocument[]>([]);
+
+  const pushToHistory = (canvas: ProjectCanvasDocument) => {
+    undoStack.current.push(JSON.parse(JSON.stringify(canvas)));
+    redoStack.current = [];
+    setCanUndo(true);
+    setCanRedo(false);
+  };
+
+  const undo = () => {
+    if (undoStack.current.length === 0) return;
+    const currentCanvas = JSON.parse(JSON.stringify(projectCanvas));
+    redoStack.current.push(currentCanvas);
+    const prevCanvas = undoStack.current.pop()!;
+    setProjectCanvas(prevCanvas);
+    setCanUndo(undoStack.current.length > 0);
+    setCanRedo(true);
+  };
+
+  const redo = () => {
+    if (redoStack.current.length === 0) return;
+    const currentCanvas = JSON.parse(JSON.stringify(projectCanvas));
+    undoStack.current.push(currentCanvas);
+    const nextCanvas = redoStack.current.pop()!;
+    setProjectCanvas(nextCanvas);
+    setCanUndo(true);
+    setCanRedo(redoStack.current.length > 0);
+  };
+
   useEffect(() => {
     if (!toastMessage) return;
     const timer = setTimeout(() => setToastMessage(""), 2000);
@@ -183,11 +221,34 @@ export function ProjectDetailView({
     setPanY(projectCanvas.panY ?? 0);
     setZoom(projectCanvas.zoom ?? 1.0);
     setSelectedItemId("");
+    // 切换项目清空撤销栈
+    undoStack.current = [];
+    redoStack.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
   }, [selectedProjectId, projectCanvas.panX, projectCanvas.panY, projectCanvas.zoom]);
 
   // Keyboard shortcuts listener (Nudge, Delete, Copy, Paste, zoom reset)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Undo Ctrl + Z
+      if (e.ctrlKey && e.key === "z") {
+        const isInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
+        if (isInput) return;
+        undo();
+        e.preventDefault();
+        return;
+      }
+
+      // Redo Ctrl + Y
+      if (e.ctrlKey && e.key === "y") {
+        const isInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
+        if (isInput) return;
+        redo();
+        e.preventDefault();
+        return;
+      }
+
       const isInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
       if (isInput) return;
 
@@ -220,6 +281,7 @@ export function ProjectDetailView({
               y: copiedItem.y + 30,
               board_id: activeBoardId,
             };
+            pushToHistory(projectCanvas);
             setProjectCanvas((current) => ({
               ...current,
               items: [...current.items, newItem],
@@ -241,6 +303,7 @@ export function ProjectDetailView({
         if (e.key === "ArrowLeft") dx = -dist;
         if (e.key === "ArrowRight") dx = dist;
         
+        pushToHistory(projectCanvas);
         setProjectCanvas((current) => ({
           ...current,
           items: current.items.map((item) => {
@@ -283,6 +346,7 @@ export function ProjectDetailView({
 
   function addAssetToCanvas(asset: AssetSummary) {
     const insert = (w: number, h: number) => {
+      pushToHistory(projectCanvas);
       setProjectCanvas((current) => ({
         ...current,
         version: 1,
@@ -321,6 +385,7 @@ export function ProjectDetailView({
   }
 
   function addNoteToCanvas() {
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       version: 1,
@@ -341,7 +406,10 @@ export function ProjectDetailView({
     }));
   }
 
+
+
   function removeCanvasItem(itemId: string) {
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       version: 1,
@@ -384,6 +452,7 @@ export function ProjectDetailView({
     const boardId = `board-${Date.now()}`;
     const newBoard = { id: boardId, name: name.trim() };
 
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       boards: [...(current.boards || []), newBoard],
@@ -393,6 +462,7 @@ export function ProjectDetailView({
 
   // Add output card back to canvas
   function addWorkflowResultToCanvas(title: string, output: any) {
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       version: 1,
@@ -428,6 +498,7 @@ export function ProjectDetailView({
     const name = prompt("请输入新画板名称：", currentBoard.name);
     if (!name || !name.trim()) return;
 
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       boards: (current.boards || activeBoardsList).map((b) =>
@@ -443,6 +514,7 @@ export function ProjectDetailView({
     }
     if (!confirm("确定要删除此画板吗？该画板下的所有卡片都将被清除。")) return;
 
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => {
       const newBoards = (current.boards || []).filter((b) => b.id !== boardId);
       const newItems = current.items.filter(
@@ -463,6 +535,7 @@ export function ProjectDetailView({
 
   // Card Formatting Helpers
   function updateItemProperty(itemId: string, properties: Partial<CanvasItem>) {
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       items: current.items.map((item) =>
@@ -471,7 +544,9 @@ export function ProjectDetailView({
     }));
   }
 
+  // Layer Actions
   function updateItemLayer(itemId: string, action: "front" | "back") {
+    pushToHistory(projectCanvas);
     setProjectCanvas((current) => {
       const items = [...current.items];
       const index = items.findIndex((item) => item.id === itemId);
@@ -517,6 +592,7 @@ export function ProjectDetailView({
         selectedItemId={selectedItemId}
         setSelectedItemId={setSelectedItemId}
         assets={assets}
+        setAssets={setAssets}
         panX={panX}
         setPanX={setPanX}
         panY={panY}
@@ -526,6 +602,9 @@ export function ProjectDetailView({
         removeCanvasItem={removeCanvasItem}
         setWorkflowRefAsset={setWorkflowRefAsset}
         setIsRightDrawerOpen={setIsRightDrawerOpen}
+        workspaceId={activeWorkspace?.id || ""}
+        projectId={selectedProject.id}
+        pushToHistory={pushToHistory}
       />
 
       {/* 2. 顶部悬浮顶栏 */}
@@ -555,6 +634,10 @@ export function ProjectDetailView({
         isLeftDrawerOpen={isLeftDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         handleToggleRightTab={handleToggleRightTab}
+        undo={undo}
+        redo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       {/* 3. 左侧悬浮资源抽屉 */}
@@ -604,17 +687,11 @@ export function ProjectDetailView({
         <button
           className="rv-toolbar-btn"
           type="button"
-          onClick={() => {
-            if (canvasAssets.length) {
-              addFirstAssetToCanvas();
-            } else {
-              setIsLeftDrawerOpen(true);
-              setActiveLeftTab("library");
-            }
-          }}
-          title="将第一个项目素材添加至画布"
+          onClick={() => setIsTemplateModalOpen(true)}
+          title="从模板创建提示词卡片"
+          style={{ color: "var(--rv-color-primary)" }}
         >
-          <FolderOpen size={16} />
+          <Sparkles size={16} />
         </button>
         <button
           className="rv-toolbar-btn"
@@ -784,6 +861,37 @@ export function ProjectDetailView({
         <div className="rv-toast-notification">
           <span>{toastMessage}</span>
         </div>
+      )}
+
+      {isTemplateModalOpen && (
+        <TemplateSelectModal
+          onClose={() => setIsTemplateModalOpen(false)}
+          onGenerate={(template, payload) => {
+            void runTemplateGeneration({
+              template,
+              payload,
+              workspaceId: activeWorkspace?.id ?? "",
+              projectId: selectedProject.id,
+              customerId: selectedProject.customer_id,
+              currentUserId: currentUser?.id,
+              panX,
+              panY,
+              activeBoardId,
+              itemsCount: projectCanvas.items.length,
+              createCanvasItemId,
+              setProjectCanvas,
+              setAssets,
+              showToast,
+              pushToHistory,
+              projectCanvas,
+            });
+            setIsTemplateModalOpen(false);
+          }}
+          workspaceId={activeWorkspace?.id ?? ""}
+          projectId={selectedProject.id}
+          customerId={selectedProject.customer_id}
+          currentUserId={currentUser?.id}
+        />
       )}
     </div>
   );
