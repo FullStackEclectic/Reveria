@@ -15,7 +15,7 @@ Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xA
    * 基于 **Gin (Go)** 构建的高并发 REST API 服务。
    * 采用 **纯 Go 版本 SQLite (`github.com/glebarez/sqlite`)** 作为本地关系数据库，消除对 CGO 和 GCC 编译链的硬性依赖，支持开箱即用。
 2. **桌面视窗容器 (`apps/desktop`)**：
-   * 基于 **Wails (Go)** 构建的轻量级桌面客户端底座（替代 Tauri），通过系统原生 WebView2 渲染 React 前端。
+   * 基于 **Wails (Go)** 构建的轻量级桌面客户端底座，通过系统原生 WebView2 渲染 React 前端。
 3. **网页端与商业版控制台 (`apps/web-next`)**：
    * 基于 **Next.js (React)** 开发的 Web 主站与商业版独立管理后台。
    * 完美的 **SEO 搜索引擎优化**支持与 **服务端渲染 (SSR)** 兼容性保障。
