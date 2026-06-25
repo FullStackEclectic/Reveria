@@ -6,6 +6,7 @@ import (
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
+	"reveria/services/api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,19 +28,33 @@ func GetCreditBalance(c *gin.Context) {
 		return
 	}
 
-	var ws model.Workspace
-	if err := database.DB.Where("id = ?", workspaceID).First(&ws).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "工作区不存在"})
+	// 使用账务服务查询
+	billingSvc := service.GetBillingService()
+	total, err := billingSvc.GetBalance(actorID, workspaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取积分余额失败: " + err.Error()})
 		return
 	}
 
-	total := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
+	// 加载本地工作区，只为了前端做旧字段兼容
+	var ws model.Workspace
+	database.DB.Where("id = ?", workspaceID).First(&ws)
+
+	var recharge, gift, refund int64
+	var settings model.ClientSettings
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
+		gift = total // 桥接模式下将总额度当做赠送积分返回，保证前端大盘完美展示
+	} else {
+		recharge = ws.RechargeBalance
+		gift = ws.GiftBalance
+		refund = ws.RefundBalance
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"workspace_id":     ws.ID,
-		"recharge_credits": ws.RechargeBalance,
-		"gift_credits":     ws.GiftBalance,
-		"refund_credits":   ws.RefundBalance,
+		"workspace_id":     workspaceID,
+		"recharge_credits": recharge,
+		"gift_credits":     gift,
+		"refund_credits":   refund,
 		"total_credits":    total,
 	})
 }
@@ -235,9 +250,26 @@ func MockPayOrder(c *gin.Context) {
 		return
 	}
 
+	var settings model.ClientSettings
+	var isBridge = false
+	if err := tx.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
+		isBridge = true
+	}
+
 	ws.PlanID = order.PlanID
 	ws.StorageQuota = plan.StorageQuotaBytes
-	ws.GiftBalance += plan.MonthlyCredits
+	if isBridge {
+		// 桥接模式下本地不累加 GiftBalance，而是直接同步充值到主站
+		billingSvc := service.GetBillingService()
+		err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, plan.MonthlyCredits, "订阅套餐支付成功，同步加额到主站", nil)
+		if err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步充值额度至主站失败: " + err.Error()})
+			return
+		}
+	} else {
+		ws.GiftBalance += plan.MonthlyCredits
+	}
 	ws.UpdatedAt = time.Now()
 	if err := tx.Save(&ws).Error; err != nil {
 		tx.Rollback()

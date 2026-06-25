@@ -19,6 +19,7 @@ type CreateProjectRequest struct {
 	Name          string     `json:"name" binding:"required"`
 	Brief         *string    `json:"brief"`
 	BudgetCredits *int64     `json:"budget_credits"`
+	ProjectType   string     `json:"project_type"`
 }
 
 // UpdateProjectRequest 更新项目请求载荷
@@ -67,6 +68,11 @@ func CreateProject(c *gin.Context) {
 		}
 	}
 
+	projType := req.ProjectType
+	if projType == "" {
+		projType = "ai_canvas"
+	}
+
 	project := model.Project{
 		ID:            uuid.New(),
 		WorkspaceID:   req.WorkspaceID,
@@ -76,6 +82,7 @@ func CreateProject(c *gin.Context) {
 		Brief:         req.Brief,
 		Status:        "draft",
 		BudgetCredits: req.BudgetCredits,
+		ProjectType:   projType,
 		CreatedBy:     &actorID,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),

@@ -73,6 +73,8 @@ func AutoMigrate() {
 		&model.Project{},
 		&model.ProjectCanvas{},
 		&model.Asset{},
+		&model.AssetRetouchSettings{},
+		&model.AssetComment{},
 		&model.GenerationTask{},
 		&model.CreditTransaction{},
 		&model.AuditLog{},

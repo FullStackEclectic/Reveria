@@ -1,4 +1,4 @@
-import { FolderKanban, BriefcaseBusiness, UsersRound, Library, Boxes, History, Coins, Settings, Sparkles } from "lucide-react";
+import { FolderKanban, BriefcaseBusiness, UsersRound, Library, Boxes, History, Coins, Settings, Sparkles, Wand2 } from "lucide-react";
 
 export type AppView =
   | "square"
@@ -125,6 +125,7 @@ export type ProjectSummary = {
   status: string;
   budget_credits?: number | null;
   consumed_credits: number;
+  project_type: string;
 };
 
 export type CustomerSummary = {
@@ -153,6 +154,8 @@ export type AssetSummary = {
   asset_type: string;
   source: string;
   file_url?: string | null;
+  local_path?: string | null;
+  selection_status?: string;
   thumbnail_url?: string | null;
   metadata: {
     title?: string;

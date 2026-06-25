@@ -13,10 +13,12 @@ import {
   UserPlus, 
   Activity, 
   UserX,
-  Sliders
+  Sliders,
+  Coins
 } from "lucide-react";
 import { WorkspaceMemberSummary, WorkspaceSummary, UserSummary } from "../../types";
 import { postJson, deleteJson } from "../../utils";
+import { AdjustCreditsModal } from "./AdjustCreditsModal";
 
 interface WorkspaceMemberPanelProps {
   workspaceMembers: WorkspaceMemberSummary[];
@@ -28,6 +30,9 @@ interface WorkspaceMemberPanelProps {
   setAdminUsers: React.Dispatch<React.SetStateAction<UserSummary[]>>;
   setAdminMessage: (msg: string) => void;
   refreshAll?: () => Promise<void>;
+  transactions: any[];
+  setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
+  setWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceSummary[]>>;
 }
 
 const CURRENT_USER_STORAGE_KEY = "reveria.currentUser";
@@ -42,6 +47,9 @@ export function WorkspaceMemberPanel({
   setAdminUsers,
   setAdminMessage,
   refreshAll,
+  transactions,
+  setTransactions,
+  setWorkspaces,
 }: WorkspaceMemberPanelProps) {
   // 检索与筛选状态
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,6 +61,10 @@ export function WorkspaceMemberPanel({
   // 席位配置 Modal 状态
   const [showSeatModal, setShowSeatModal] = useState(false);
   const [selectedUserForSeat, setSelectedUserForSeat] = useState<UserSummary | null>(null);
+
+  // 手动调额 Modal 状态
+  const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [selectedUserForCredits, setSelectedUserForCredits] = useState<UserSummary | null>(null);
   
   // 席位表单字段
   const [role, setRole] = useState("member");
@@ -519,6 +531,31 @@ export function WorkspaceMemberPanel({
                             {wsMember ? "修改配额" : "分配席位"}
                           </button>
 
+                          {/* 2.5. 手动调额 (仅对已加入工作区席位的成员开放) */}
+                          {wsMember && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUserForCredits(user);
+                                setShowCreditsModal(true);
+                              }}
+                              className="secondary-button"
+                              style={{
+                                padding: "6px 10px",
+                                fontSize: "11px",
+                                minHeight: "28px",
+                                color: "var(--rv-color-primary)",
+                                borderColor: "var(--rv-color-primary)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px"
+                              }}
+                            >
+                              <Coins size={12} />
+                              手动调额
+                            </button>
+                          )}
+
                           {/* 3. 一键移出席位 */}
                           {wsMember && (
                             <button
@@ -759,6 +796,22 @@ export function WorkspaceMemberPanel({
           </div>
         </div>
       )}
+
+      {/* 5. 手动调额磨砂模态框 */}
+      <AdjustCreditsModal
+        isOpen={showCreditsModal}
+        onClose={() => {
+          setShowCreditsModal(false);
+          setSelectedUserForCredits(null);
+        }}
+        user={selectedUserForCredits}
+        activeWorkspace={activeWorkspace}
+        currentUser={currentUser}
+        transactions={transactions}
+        setTransactions={setTransactions}
+        setWorkspaces={setWorkspaces}
+        setAdminMessage={setAdminMessage}
+      />
     </div>
   );
 }

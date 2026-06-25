@@ -1,0 +1,11 @@
+[package]
+name = "native-engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "native_engine"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+libc = "0.2"

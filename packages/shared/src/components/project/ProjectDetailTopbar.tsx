@@ -285,84 +285,88 @@ export function ProjectDetailTopbar({
           </div>
         )}
 
-        <div className="rv-utility-divider" style={{ margin: "0 4px" }} />
+        {selectedProject.project_type !== "retouch" && (
+          <>
+            <div className="rv-utility-divider" style={{ margin: "0 4px" }} />
 
-        {/* 画板切换下拉菜单 */}
-        <div className="rv-topbar-menu-wrapper">
-          <button
-            className="rv-topbar-btn"
-            type="button"
-            onClick={() => setIsBoardMenuOpen(!isBoardMenuOpen)}
-            title="切换当前画板"
-          >
-            <span>{activeBoard.name}</span>
-            <ChevronDown size={14} />
-          </button>
-
-          {isBoardMenuOpen && (
-            <div className="rv-topbar-dropdown" style={{ left: 0, right: "auto", width: "180px" }}>
-              {[{ id: "default", name: "主画板" }, ...boards].map((board) => (
-                <button
-                  key={board.id}
-                  className="rv-topbar-dropdown-item"
-                  type="button"
-                  style={{
-                    fontWeight: activeBoardId === board.id ? "bold" : "normal",
-                    color: activeBoardId === board.id ? "var(--rv-color-primary)" : "#d4d4d8",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                  }}
-                  onClick={() => {
-                    handleSetActiveBoardId(board.id);
-                    setIsBoardMenuOpen(false);
-                  }}
-                >
-                  <span>{board.name}</span>
-                  {board.id !== "default" && (
-                    <span style={{ fontSize: "10px", opacity: 0.6 }}>Pages</span>
-                  )}
-                </button>
-              ))}
-              <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", margin: "4px 0" }} />
+            {/* 画板切换下拉菜单 */}
+            <div className="rv-topbar-menu-wrapper">
               <button
-                className="rv-topbar-dropdown-item"
+                className="rv-topbar-btn"
                 type="button"
-                onClick={() => {
-                  handleCreateBoard();
-                  setIsBoardMenuOpen(false);
-                }}
-                style={{ color: "var(--rv-color-primary)" }}
+                onClick={() => setIsBoardMenuOpen(!isBoardMenuOpen)}
+                title="切换当前画板"
               >
-                ➕ 新建画板
+                <span>{activeBoard.name}</span>
+                <ChevronDown size={14} />
               </button>
+
+              {isBoardMenuOpen && (
+                <div className="rv-topbar-dropdown" style={{ left: 0, right: "auto", width: "180px" }}>
+                  {[{ id: "default", name: "主画板" }, ...boards].map((board) => (
+                    <button
+                      key={board.id}
+                      className="rv-topbar-dropdown-item"
+                      type="button"
+                      style={{
+                        fontWeight: activeBoardId === board.id ? "bold" : "normal",
+                        color: activeBoardId === board.id ? "var(--rv-color-primary)" : "#d4d4d8",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}
+                      onClick={() => {
+                        handleSetActiveBoardId(board.id);
+                        setIsBoardMenuOpen(false);
+                      }}
+                    >
+                      <span>{board.name}</span>
+                      {board.id !== "default" && (
+                        <span style={{ fontSize: "10px", opacity: 0.6 }}>Pages</span>
+                      )}
+                    </button>
+                  ))}
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", margin: "4px 0" }} />
+                  <button
+                    className="rv-topbar-dropdown-item"
+                    type="button"
+                    onClick={() => {
+                      handleCreateBoard();
+                      setIsBoardMenuOpen(false);
+                    }}
+                    style={{ color: "var(--rv-color-primary)" }}
+                  >
+                    ➕ 新建画板
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="rv-utility-divider" style={{ margin: "0 6px" }} />
+            <div className="rv-utility-divider" style={{ margin: "0 6px" }} />
 
-        {/* 撤销 & 重做按钮 */}
-        <button
-          className="rv-topbar-btn"
-          type="button"
-          disabled={!canUndo}
-          onClick={undo}
-          title="撤销 (Ctrl+Z)"
-          style={{ width: "32px", padding: 0, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? "pointer" : "not-allowed" }}
-        >
-          <Undo size={14} />
-        </button>
-        <button
-          className="rv-topbar-btn"
-          type="button"
-          disabled={!canRedo}
-          onClick={redo}
-          title="重做 (Ctrl+Y)"
-          style={{ width: "32px", padding: 0, opacity: canRedo ? 1 : 0.4, cursor: canRedo ? "pointer" : "not-allowed" }}
-        >
-          <Redo size={14} />
-        </button>
+            {/* 撤销 & 重做按钮 */}
+            <button
+              className="rv-topbar-btn"
+              type="button"
+              disabled={!canUndo}
+              onClick={undo}
+              title="撤销 (Ctrl+Z)"
+              style={{ width: "32px", padding: 0, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? "pointer" : "not-allowed" }}
+            >
+              <Undo size={14} />
+            </button>
+            <button
+              className="rv-topbar-btn"
+              type="button"
+              disabled={!canRedo}
+              onClick={redo}
+              title="重做 (Ctrl+Y)"
+              style={{ width: "32px", padding: 0, opacity: canRedo ? 1 : 0.4, cursor: canRedo ? "pointer" : "not-allowed" }}
+            >
+              <Redo size={14} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* 右侧：点数、状态、手动保存、导出下拉 */}
@@ -393,27 +397,30 @@ export function ProjectDetailTopbar({
         </span>
 
         {/* 保存画布 */}
-        <button
-          className="rv-topbar-btn"
-          type="button"
-          disabled={isSavingCanvas}
-          onClick={saveProjectCanvas}
-          style={{
-            background: "rgba(255, 255, 255, 0.8)",
-            border: "1px solid var(--rv-color-border-thin)",
-            color: "var(--rv-color-text-main)",
-            boxShadow: "var(--rv-shadow-sm)",
-            cursor: isSavingCanvas ? "not-allowed" : "pointer",
-            fontWeight: 600
-          }}
-        >
-          {isSavingCanvas ? (
-            <Loader2 className="spin" size={14} />
-          ) : (
-            <Save size={14} style={{ color: "var(--rv-color-primary)" }} />
-          )}
-          <span>保存画布</span>
-        </button>
+        {/* 保存画布 */}
+        {selectedProject.project_type !== "retouch" && (
+          <button
+            className="rv-topbar-btn"
+            type="button"
+            disabled={isSavingCanvas}
+            onClick={saveProjectCanvas}
+            style={{
+              background: "rgba(255, 255, 255, 0.8)",
+              border: "1px solid var(--rv-color-border-thin)",
+              color: "var(--rv-color-text-main)",
+              boxShadow: "var(--rv-shadow-sm)",
+              cursor: isSavingCanvas ? "not-allowed" : "pointer",
+              fontWeight: 600
+            }}
+          >
+            {isSavingCanvas ? (
+              <Loader2 className="spin" size={14} />
+            ) : (
+              <Save size={14} style={{ color: "var(--rv-color-primary)" }} />
+            )}
+            <span>保存画布</span>
+          </button>
+        )}
 
         {/* 导出下拉菜单 */}
         <div className="rv-topbar-menu-wrapper">
@@ -457,54 +464,58 @@ export function ProjectDetailTopbar({
               >
                 导出 Markdown 简报
               </button>
-              <button
-                className="rv-topbar-dropdown-item"
-                type="button"
-                onClick={() => {
-                  exportCanvasToSVG();
-                  setIsExportMenuOpen(false);
-                }}
-              >
-                导出 SVG 矢量快照
-              </button>
+              {selectedProject.project_type !== "retouch" && (
+                <button
+                  className="rv-topbar-dropdown-item"
+                  type="button"
+                  onClick={() => {
+                    exportCanvasToSVG();
+                    setIsExportMenuOpen(false);
+                  }}
+                >
+                  导出 SVG 矢量快照
+                </button>
+              )}
             </div>
           )}
         </div>
 
         {/* AI 对话快捷开关 - 炫彩渐变与悬浮触感 */}
-        <button
-          className="rv-topbar-btn"
-          type="button"
-          onClick={handleToggleRightTab}
-          title="对话：运行创意生成工作流"
-          style={{
-            background: isRightDrawerOpen 
-              ? "linear-gradient(135deg, #4f46e5 0%, #0891b2 100%)" 
-              : "linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)",
-            color: "#ffffff",
-            border: "none",
-            boxShadow: isRightDrawerOpen 
-              ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
-              : "0 4px 12px rgba(6, 182, 212, 0.25)",
-            cursor: "pointer",
-            fontWeight: 700,
-            transition: "all 0.2s ease",
-            marginLeft: "4px"
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.boxShadow = "0 6px 16px rgba(6, 182, 212, 0.35)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "none";
-            e.currentTarget.style.boxShadow = isRightDrawerOpen 
-              ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
-              : "0 4px 12px rgba(6, 182, 212, 0.25)";
-          }}
-        >
-          <MessageSquare size={14} />
-          <span>对话</span>
-        </button>
+        {selectedProject.project_type !== "retouch" && (
+          <button
+            className="rv-topbar-btn"
+            type="button"
+            onClick={handleToggleRightTab}
+            title="对话：运行创意生成工作流"
+            style={{
+              background: isRightDrawerOpen 
+                ? "linear-gradient(135deg, #4f46e5 0%, #0891b2 100%)" 
+                : "linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)",
+              color: "#ffffff",
+              border: "none",
+              boxShadow: isRightDrawerOpen 
+                ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
+                : "0 4px 12px rgba(6, 182, 212, 0.25)",
+              cursor: "pointer",
+              fontWeight: 700,
+              transition: "all 0.2s ease",
+              marginLeft: "4px"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "0 6px 16px rgba(6, 182, 212, 0.35)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "none";
+              e.currentTarget.style.boxShadow = isRightDrawerOpen 
+                ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
+                : "0 4px 12px rgba(6, 182, 212, 0.25)";
+            }}
+          >
+            <MessageSquare size={14} />
+            <span>对话</span>
+          </button>
+        )}
       </div>
     </header>
   );

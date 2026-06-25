@@ -31,6 +31,7 @@ export function NewProjectModal({
   onError,
 }: NewProjectModalProps) {
   const [projectCreationMode, setProjectCreationMode] = useState<"standalone" | "existing" | "new_bundle">("standalone");
+  const [projectType, setProjectType] = useState<"ai_canvas" | "retouch">("ai_canvas");
   const [selectedCustomerIdForNewProject, setSelectedCustomerIdForNewProject] = useState("");
   const [selectedBrandKitIdForNewProject, setSelectedBrandKitIdForNewProject] = useState("");
   const [newProjectFields, setNewProjectFields] = useState({
@@ -71,6 +72,7 @@ export function NewProjectModal({
           created_by: currentUser?.id ?? null,
           name: newProjectFields.name,
           brief: newProjectFields.brief || null,
+          project_type: projectType,
         });
         onSuccess(createdProject);
       } else if (projectCreationMode === "existing") {
@@ -81,6 +83,7 @@ export function NewProjectModal({
           created_by: currentUser?.id ?? null,
           name: newProjectFields.name,
           brief: newProjectFields.brief || null,
+          project_type: projectType,
         });
         onSuccess(
           createdProject,
@@ -111,6 +114,7 @@ export function NewProjectModal({
           created_by: currentUser?.id ?? null,
           name: businessForm.projectName,
           brief: businessForm.brief || null,
+          project_type: projectType,
         });
 
         onSuccess(createdProject, customer, brandKit);
@@ -156,6 +160,110 @@ export function NewProjectModal({
         </div>
 
         <form className="form-grid business-form" onSubmit={handleProjectCreateSubmit}>
+          {/* 项目类型选择卡片 */}
+          <div className="wide-field" style={{ marginBottom: "20px" }}>
+            <span style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#a8a29e", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              项目类型
+            </span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+              <div
+                onClick={() => setProjectType("ai_canvas")}
+                style={{
+                  border: projectType === "ai_canvas" ? "2px solid #6366f1" : "1px solid rgba(28,25,23,0.1)",
+                  background: projectType === "ai_canvas" ? "rgba(99, 102, 241, 0.04)" : "rgba(255, 255, 255, 0.4)",
+                  padding: "16px",
+                  borderRadius: "12px",
+                  cursor: "pointer",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  boxShadow: projectType === "ai_canvas" ? "0 4px 14px rgba(99, 102, 241, 0.08)" : "none",
+                  transform: projectType === "ai_canvas" ? "translateY(-1px)" : "none"
+                }}
+                onMouseEnter={(e) => {
+                  if (projectType !== "ai_canvas") {
+                    e.currentTarget.style.border = "1px solid rgba(99, 102, 241, 0.4)";
+                    e.currentTarget.style.background = "rgba(99, 102, 241, 0.02)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (projectType !== "ai_canvas") {
+                    e.currentTarget.style.border = "1px solid rgba(28,25,23,0.1)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.4)";
+                  }
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: projectType === "ai_canvas" ? "#6366f1" : "var(--rv-color-text-main, #1c1917)" }}>
+                    🎨 AI 创意画布
+                  </span>
+                  <div
+                    style={{
+                      width: "16px",
+                      height: "16px",
+                      borderRadius: "50%",
+                      border: projectType === "ai_canvas" ? "5px solid #6366f1" : "2px solid #a8a29e",
+                      background: "#ffffff",
+                      transition: "all 0.15s ease"
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: "11px", color: "#78716c", lineHeight: "1.4" }}>
+                  支持无限自由画布，卡片式工作流，多板面管理与多AI模型组合生成。
+                </span>
+              </div>
+
+              <div
+                onClick={() => setProjectType("retouch")}
+                style={{
+                  border: projectType === "retouch" ? "2px solid #06b6d4" : "1px solid rgba(28,25,23,0.1)",
+                  background: projectType === "retouch" ? "rgba(6, 182, 212, 0.04)" : "rgba(255, 255, 255, 0.4)",
+                  padding: "16px",
+                  borderRadius: "12px",
+                  cursor: "pointer",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  boxShadow: projectType === "retouch" ? "0 4px 14px rgba(6, 182, 212, 0.08)" : "none",
+                  transform: projectType === "retouch" ? "translateY(-1px)" : "none"
+                }}
+                onMouseEnter={(e) => {
+                  if (projectType !== "retouch") {
+                    e.currentTarget.style.border = "1px solid rgba(6, 182, 212, 0.4)";
+                    e.currentTarget.style.background = "rgba(6, 182, 212, 0.02)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (projectType !== "retouch") {
+                    e.currentTarget.style.border = "1px solid rgba(28,25,23,0.1)";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.4)";
+                  }
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: projectType === "retouch" ? "#06b6d4" : "var(--rv-color-text-main, #1c1917)" }}>
+                    📸 批量照片精修
+                  </span>
+                  <div
+                    style={{
+                      width: "16px",
+                      height: "16px",
+                      borderRadius: "50%",
+                      border: projectType === "retouch" ? "5px solid #06b6d4" : "2px solid #a8a29e",
+                      background: "#ffffff",
+                      transition: "all 0.15s ease"
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: "11px", color: "#78716c", lineHeight: "1.4" }}>
+                  AI 智能高精磨皮、液化与色彩滤镜，支持相机联机拍摄与批量无损导出。
+                </span>
+              </div>
+            </div>
+          </div>
+
           {projectCreationMode === "standalone" && (
             <>
               <label>

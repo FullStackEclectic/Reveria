@@ -11,6 +11,7 @@ import (
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
+	"reveria/services/api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,31 +50,61 @@ func AdjustCredits(c *gin.Context) {
 		return
 	}
 
-	// 调额写入对应的余额
-	if req.Amount >= 0 {
-		ws.RechargeBalance += req.Amount
-	} else {
-		// 负数调减
-		absAmount := -req.Amount
-		if ws.RechargeBalance >= absAmount {
-			ws.RechargeBalance -= absAmount
-		} else {
-			remaining := absAmount - ws.RechargeBalance
-			ws.RechargeBalance = 0
-			if ws.GiftBalance >= remaining {
-				ws.GiftBalance -= remaining
-			} else {
+	var settings model.ClientSettings
+	var isBridge = false
+	if err := tx.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
+		isBridge = true
+	}
+
+	if isBridge {
+		billingSvc := service.GetBillingService()
+		if req.Amount >= 0 {
+			err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, req.Amount, "管理员手动加额: "+req.Reason, nil)
+			if err != nil {
 				tx.Rollback()
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区额度余额不足，扣减失败"})
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步加额至主站失败: " + err.Error()})
+				return
+			}
+		} else {
+			success, err := billingSvc.DeductCredits(ws.OwnerUserID, ws.ID, -req.Amount, "管理员手动扣额: "+req.Reason, nil)
+			if err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步扣额至主站发生错误: " + err.Error()})
+				return
+			}
+			if !success {
+				tx.Rollback()
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "该用户主站配额余额不足，扣减失败"})
 				return
 			}
 		}
-	}
+	} else {
+		// 调额写入对应的余额
+		if req.Amount >= 0 {
+			ws.RechargeBalance += req.Amount
+		} else {
+			// 负数调减
+			absAmount := -req.Amount
+			if ws.RechargeBalance >= absAmount {
+				ws.RechargeBalance -= absAmount
+			} else {
+				remaining := absAmount - ws.RechargeBalance
+				ws.RechargeBalance = 0
+				if ws.GiftBalance >= remaining {
+					ws.GiftBalance -= remaining
+				} else {
+					tx.Rollback()
+					c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区额度余额不足，扣减失败"})
+					return
+				}
+			}
+		}
 
-	if err := tx.Save(&ws).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存账本失败"})
-		return
+		if err := tx.Save(&ws).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存账本失败"})
+			return
+		}
 	}
 
 	// 记录流水
@@ -477,8 +508,133 @@ func DeleteProvider(c *gin.Context) {
 
 // 2. 算力模型管理
 
+type BridgeModelMeta struct {
+	ID           int    `json:"id"`
+	ModelName    string `json:"model_name"`
+	Description  string `json:"description"`
+	Capabilities string `json:"capabilities"`
+}
+
 // ListModels 获取模型列表 (GET /api/admin/models)
 func ListModels(c *gin.Context) {
+	var settings model.ClientSettings
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
+		// 桥接模式下实时拉取主站模型数据
+		if settings.BridgeMainStationURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "主站根地址未配置，请先在全局配置中完成设置"})
+			return
+		}
+
+		url := fmt.Sprintf("%s/api/internal/models", strings.TrimSuffix(settings.BridgeMainStationURL, "/"))
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建主站模型拉取请求失败"})
+			return
+		}
+		if settings.BridgeInternalSecret != "" {
+			req.Header.Set("X-Internal-Secret", settings.BridgeInternalSecret)
+		}
+
+		client := &http.Client{Timeout: 8 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "获取主站模型超时，请检查主站连接状态: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": fmt.Sprintf("主站返回了异常状态码: %d", resp.StatusCode)})
+			return
+		}
+
+		var mainResp struct {
+			Success bool              `json:"success"`
+			Models  []BridgeModelMeta `json:"models"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&mainResp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "解析主站模型数据格式失败"})
+			return
+		}
+
+		// 校验过滤：只有当非 all 参数且站长配置过至少一个模型时，我们才做前台列表过滤
+		all := c.Query("all") == "true"
+		var filteredList []model.Model
+
+		allowedModels := make(map[string]bool)
+		hasConfigured := false
+
+		if !all {
+			// 将逗号分隔的已配置模型列表拆分放入 map
+			for _, mName := range strings.Split(settings.BridgeTextModel, ",") {
+				if mName = strings.TrimSpace(mName); mName != "" {
+					allowedModels[mName] = true
+					hasConfigured = true
+				}
+			}
+			for _, mName := range strings.Split(settings.BridgeImageModel, ",") {
+				if mName = strings.TrimSpace(mName); mName != "" {
+					allowedModels[mName] = true
+					hasConfigured = true
+				}
+			}
+			for _, mName := range strings.Split(settings.BridgeVideoModel, ",") {
+				if mName = strings.TrimSpace(mName); mName != "" {
+					allowedModels[mName] = true
+					hasConfigured = true
+				}
+			}
+		}
+
+		for _, m := range mainResp.Models {
+			// 解析 capabilities 划分模型类型 (chat/image/video)
+			modelType := "chat"
+			var caps []string
+			if strings.HasPrefix(m.Capabilities, "[") {
+				_ = json.Unmarshal([]byte(m.Capabilities), &caps)
+			} else if m.Capabilities != "" {
+				caps = strings.Split(m.Capabilities, ",")
+			}
+
+			for _, capVal := range caps {
+				capVal = strings.TrimSpace(strings.ToLower(capVal))
+				if capVal == "image_generation" || capVal == "image" || capVal == "drawing" {
+					modelType = "image"
+					break
+				}
+				if capVal == "video_generation" || capVal == "video" {
+					modelType = "video"
+					break
+				}
+			}
+
+			dispName := m.ModelName
+			if m.Description != "" {
+				dispName = fmt.Sprintf("%s (%s)", m.ModelName, m.Description)
+			}
+
+			// 如果没加 all，且站长已经配置过受限模型，只返回被允许的
+			if !all && hasConfigured && !allowedModels[m.ModelName] {
+				continue
+			}
+
+			filteredList = append(filteredList, model.Model{
+				ID:          m.ModelName,
+				ProviderID:  "bridge_main_station",
+				Name:        m.ModelName,
+				DisplayName: dispName,
+				ModelType:   modelType,
+				Enabled:     true,
+				CreditsCost: 0,
+				Tags:        m.Tags,
+				CreatedAt:   time.Now(),
+			})
+		}
+		c.JSON(http.StatusOK, filteredList)
+		return
+	}
+
+	// 独立模式走本地数据库查询
 	var list []model.Model
 	if err := database.DB.Order("created_at desc").Find(&list).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取模型列表失败"})

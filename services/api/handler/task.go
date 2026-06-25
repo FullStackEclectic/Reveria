@@ -15,6 +15,7 @@ import (
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
+	"reveria/services/api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -37,7 +38,7 @@ type CreateTaskRequest struct {
 	WorkspaceID  uuid.UUID       `json:"workspace_id" binding:"required"`
 	ProjectID    uuid.UUID       `json:"project_id" binding:"required"`
 	TaskType     string          `json:"task_type" binding:"required"` // image_generation / video_generation / text
-	SelectedModel string          `json:"selected_model" binding:"required"`
+	SelectedModel string          `json:"selected_model"`
 	InputPayload json.RawMessage `json:"input_payload" binding:"required"`
 }
 
@@ -67,7 +68,7 @@ func EstimateTask(c *gin.Context) {
 
 	// 支持根据站长加价率进行换算
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
 		estCredits = int64(float64(estCredits) * settings.PriceRate)
 	}
 
@@ -151,121 +152,63 @@ func CreateTask(c *gin.Context) {
 	}
 
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
+	_ = database.DB.First(&settings).Error
+
+	if settings.BillingMode != "bridge" {
 		estCredits = int64(float64(estCredits) * settings.PriceRate)
+	} else {
+		// 桥接模式下的默认模型分配：如果 SelectedModel 为空，则从已配置的逗号分隔列表中提取第一个作为兜底
+		if req.SelectedModel == "" {
+			var fallbackModel string
+			if req.TaskType == "video_generation" || req.TaskType == "image_to_video" {
+				fallbackModel = settings.BridgeVideoModel
+			} else {
+				fallbackModel = settings.BridgeImageModel
+			}
+			
+			if fallbackModel != "" {
+				parts := strings.Split(fallbackModel, ",")
+				req.SelectedModel = strings.TrimSpace(parts[0])
+			}
+		}
 	}
 
-	// 校验工作区余额并执行积分冻结事务
-	tx := database.DB.Begin()
-	var ws model.Workspace
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", req.WorkspaceID).First(&ws).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到工作区账户"})
+	// 准备 GenerationTask 记录
+	taskID := uuid.New()
+	inputStr := string(req.InputPayload)
+	task := model.GenerationTask{
+		ID:               taskID,
+		WorkspaceID:      req.WorkspaceID,
+		ProjectID:        req.ProjectID,
+		UserID:           &actorID,
+		TaskType:         req.TaskType,
+		InputPayload:     inputStr,
+		SelectedModel:    &req.SelectedModel,
+		EstimatedCredits: estCredits,
+		Status:           "pending",
+		CreatedAt:        time.Now(),
+	}
+
+	// 统一账务接口校验与预扣
+	billingSvc := service.GetBillingService()
+	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, estCredits, fmt.Sprintf("AI 生成任务 %s 积分预冻结", req.TaskType), &task)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算失败: " + err.Error()})
 		return
 	}
 
-	totalBalance := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
-	if totalBalance < estCredits {
-		tx.Rollback()
+	if !success {
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区积分余额不足，请联系管理员充值"})
 		return
 	}
 
-	// 扣减冻结积分逻辑 (扣减优先级: 赠送余额 -> 退款余额 -> 充值余额)
-	var frozenGift, frozenRefund, frozenRecharge int64
-	remainingToFreeze := estCredits
-
-	if ws.GiftBalance >= remainingToFreeze {
-		frozenGift = remainingToFreeze
-		ws.GiftBalance -= remainingToFreeze
-		remainingToFreeze = 0
-	} else {
-		frozenGift = ws.GiftBalance
-		remainingToFreeze -= ws.GiftBalance
-		ws.GiftBalance = 0
-	}
-
-	if remainingToFreeze > 0 {
-		if ws.RefundBalance >= remainingToFreeze {
-			frozenRefund = remainingToFreeze
-			ws.RefundBalance -= remainingToFreeze
-			remainingToFreeze = 0
-		} else {
-			frozenRefund = ws.RefundBalance
-			remainingToFreeze -= ws.RefundBalance
-			ws.RefundBalance = 0
-		}
-	}
-
-	if remainingToFreeze > 0 {
-		if ws.RechargeBalance >= remainingToFreeze {
-			frozenRecharge = remainingToFreeze
-			ws.RechargeBalance -= remainingToFreeze
-			remainingToFreeze = 0
-		} else {
-			// 防超卖
-			tx.Rollback()
-			c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区积分余额不足"})
-			return
-		}
-	}
-
-	if err := tx.Save(&ws).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "冻结积分失败: " + err.Error()})
-		return
-	}
-
-	taskID := uuid.New()
-	inputStr := string(req.InputPayload)
-	task := model.GenerationTask{
-		ID:                    taskID,
-		WorkspaceID:           req.WorkspaceID,
-		ProjectID:             req.ProjectID,
-		UserID:                &actorID,
-		TaskType:              req.TaskType,
-		InputPayload:          inputStr,
-		SelectedModel:         &req.SelectedModel,
-		EstimatedCredits:      estCredits,
-		FrozenCredits:         estCredits,
-		FrozenGiftCredits:     frozenGift,
-		FrozenRefundCredits:   frozenRefund,
-		FrozenRechargeCredits: frozenRecharge,
-		Status:                "pending",
-		CreatedAt:             time.Now(),
-	}
-
-	if err := tx.Create(&task).Error; err != nil {
-		tx.Rollback()
+	// 创建本地生成任务
+	if err := database.DB.Create(&task).Error; err != nil {
+		// 如果扣费成功了但任务建表失败，原路退回！
+		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, estCredits, "创建本地任务记录失败，触发自动退款", &task)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建本地生成任务失败"})
 		return
 	}
-
-	// 记录积分冻结流水
-	freezeReason := fmt.Sprintf("AI 生成任务 %s 积分预冻结", task.TaskType)
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     req.WorkspaceID,
-		UserID:          &actorID,
-		ProjectID:       &req.ProjectID,
-		TaskID:          &taskID,
-		TransactionType: "freeze",
-		Amount:          estCredits,
-		GiftAmount:      frozenGift,
-		RefundAmount:    frozenRefund,
-		RechargeAmount:  frozenRecharge,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &freezeReason,
-		CreatedAt:       time.Now(),
-	}
-
-	if err := tx.Create(&transaction).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "生成流水记录失败"})
-		return
-	}
-
-	tx.Commit()
 
 	// 3. 调用 12ZX-AI 网关
 	if c.FullPath() == "/api/workflows/image-generation" {
@@ -357,30 +300,38 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	var upstreamURL string
 	var reqBody []byte
 
-	// 获取真实的网关模型 API 英文标识（m.name）
+	// 获取真实的网关模型 API 英文标识
 	gatewayModelName := ""
-	if task.SelectedModel != nil {
-		var dbModel model.Model
-		if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err == nil {
-			gatewayModelName = dbModel.Name
-			log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
-
-			// 读取模型对应的 Provider，覆盖 settings 的 API 密钥和地址以做多渠道动态分发
-			var provider model.Provider
-			if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
-				if provider.ApiURL != "" {
-					settings.UpstreamAPIURL = provider.ApiURL
-				}
-				if provider.ApiKey != "" {
-					settings.UpstreamAPIKey = provider.ApiKey
-				}
-				log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
-			} else {
-				log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
-			}
-		} else {
+	if settings.BillingMode == "bridge" {
+		if task.SelectedModel != nil {
 			gatewayModelName = *task.SelectedModel
-			log.Printf("[callUpstreamGateway] Using raw model name and global settings: %s", gatewayModelName)
+		}
+		settings.UpstreamAPIURL = settings.BridgeMainStationURL
+		log.Printf("[callUpstreamGateway] Bridge Mode: Model=%s, URL=%s", gatewayModelName, settings.UpstreamAPIURL)
+	} else {
+		if task.SelectedModel != nil {
+			var dbModel model.Model
+			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err == nil {
+				gatewayModelName = dbModel.Name
+				log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
+
+				// 读取模型对应的 Provider，覆盖 settings 的 API 密钥和地址以做多渠道动态分发
+				var provider model.Provider
+				if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
+					if provider.ApiURL != "" {
+						settings.UpstreamAPIURL = provider.ApiURL
+					}
+					if provider.ApiKey != "" {
+						settings.UpstreamAPIKey = provider.ApiKey
+					}
+					log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
+				} else {
+					log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
+				}
+			} else {
+				gatewayModelName = *task.SelectedModel
+				log.Printf("[callUpstreamGateway] Using raw model name and global settings: %s", gatewayModelName)
+			}
 		}
 	}
 
@@ -759,57 +710,35 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 func handleTaskFailure(taskID uuid.UUID, errorCode string, errorMsg string) {
 	log.Printf("[TaskFailed] 任务 %s 失败: [%s] %s，正在执行退款...", taskID, errorCode, errorMsg)
 
-	tx := database.DB.Begin()
 	var task model.GenerationTask
-	if err := tx.Where("id = ?", taskID).First(&task).Error; err != nil {
-		tx.Rollback()
+	if err := database.DB.Where("id = ?", taskID).First(&task).Error; err != nil {
 		return
 	}
 
 	if task.Status != "running" && task.Status != "pending" {
-		tx.Rollback()
 		return // 防止重复结算
 	}
 
-	// 退回冻结的 workspace 积分
-	var ws model.Workspace
-	tx.Where("id = ?", task.WorkspaceID).First(&ws)
-	ws.GiftBalance += task.FrozenGiftCredits
-	ws.RefundBalance += task.FrozenRefundCredits
-	ws.RechargeBalance += task.FrozenRechargeCredits
-	tx.Save(&ws)
+	// 统一账务接口进行退额/退款
+	billingSvc := service.GetBillingService()
+	actorID := uuid.Nil
+	if task.UserID != nil {
+		actorID = *task.UserID
+	}
+
+	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", taskID.String())
+	err := billingSvc.RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, refundReason, &task)
+	if err != nil {
+		log.Printf("[TaskFailed] 积分退回失败: %v", err)
+	}
 
 	// 更新任务状态为失败
 	task.Status = "failed"
 	task.ErrorCode = &errorCode
 	task.ErrorMessage = &errorMsg
-	task.FrozenCredits = 0
-	task.FrozenGiftCredits = 0
-	task.FrozenRefundCredits = 0
-	task.FrozenRechargeCredits = 0
 	task.CompletedAt = ptrTime(time.Now())
-	tx.Save(&task)
+	database.DB.Save(&task)
 
-	// 写入退款流水记录
-	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", taskID.String())
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     task.WorkspaceID,
-		UserID:          task.UserID,
-		ProjectID:       &task.ProjectID,
-		TaskID:          &task.ID,
-		TransactionType: "refund",
-		Amount:          task.EstimatedCredits,
-		GiftAmount:      task.FrozenGiftCredits,
-		RefundAmount:    task.FrozenRefundCredits,
-		RechargeAmount:  task.FrozenRechargeCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &refundReason,
-		CreatedAt:       time.Now(),
-	}
-	tx.Create(&transaction)
-
-	tx.Commit()
 	log.Printf("[TaskFailed] 任务 %s 退款流程闭环完成。", taskID)
 }
 

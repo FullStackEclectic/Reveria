@@ -92,6 +92,7 @@ type Project struct {
 	Status          string     `gorm:"type:varchar(32);default:'draft';index" json:"status"`
 	BudgetCredits   *int64     `json:"budget_credits"`
 	ConsumedCredits int64      `gorm:"default:0;not null" json:"consumed_credits"`
+	ProjectType     string     `gorm:"type:varchar(64);default:'ai_canvas';not null" json:"project_type"`
 	DueAt           *time.Time `json:"due_at"`
 	CreatedBy       *uuid.UUID `gorm:"type:uuid" json:"created_by"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -100,17 +101,19 @@ type Project struct {
 
 // Asset 素材/资产表
 type Asset struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	WorkspaceID  uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
-	ProjectID    uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
-	CustomerID   *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
-	AssetType    string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
-	Source       string     `gorm:"type:varchar(32);not null" json:"source"`
-	FileURL      string     `gorm:"type:text;not null" json:"file_url"`
-	ThumbnailURL *string    `gorm:"type:text" json:"thumbnail_url"`
-	Metadata     *string    `gorm:"type:jsonb" json:"metadata"`
-	CreatedBy    *uuid.UUID `gorm:"type:uuid" json:"created_by"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	ProjectID       uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	CustomerID      *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	AssetType       string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
+	Source          string     `gorm:"type:varchar(32);not null" json:"source"`
+	FileURL         string     `gorm:"type:text;not null" json:"file_url"`
+	LocalPath       *string    `gorm:"type:text" json:"local_path"`                               // 本地硬盘照片路径（仅客户端有用）
+	SelectionStatus string     `gorm:"type:varchar(32);default:'pending';index" json:"selection_status"` // 客户选片状态：pending / approved / rejected
+	ThumbnailURL    *string    `gorm:"type:text" json:"thumbnail_url"`
+	Metadata        *string    `gorm:"type:jsonb" json:"metadata"`
+	CreatedBy       *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // GenerationTask 生成任务表
@@ -181,6 +184,15 @@ type ClientSettings struct {
 	AllowUserRegister     bool      `gorm:"default:true;not null" json:"allow_user_register"`
 	GiftCreditsOnRegister int64     `gorm:"default:0;not null" json:"gift_credits_on_register"`
 	PriceRate             float64   `gorm:"type:numeric(4,2);default:1.00;not null" json:"price_rate"`
+	BillingMode           string    `gorm:"type:varchar(32);default:'standalone';not null" json:"billing_mode"`
+	BridgeMainStationURL  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_main_station_url"`
+	BridgeInternalSecret  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_internal_secret"`
+	BridgeTextModel       string    `gorm:"type:text;not null" json:"bridge_text_model"`
+	BridgeImageModel      string    `gorm:"type:text;not null" json:"bridge_image_model"`
+	BridgeVideoModel      string    `gorm:"type:text;not null" json:"bridge_video_model"`
+	BridgeTextPools       string    `gorm:"type:text;not null" json:"bridge_text_pools"`
+	BridgeImagePools      string    `gorm:"type:text;not null" json:"bridge_image_pools"`
+	BridgeVideoPools      string    `gorm:"type:text;not null" json:"bridge_video_pools"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
@@ -305,6 +317,7 @@ type Model struct {
 	ModelType   string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"` // 模型类型：chat (对话), image (图像), video (视频)
 	Enabled     bool      `gorm:"default:true;not null" json:"enabled"`
 	CreditsCost int64     `gorm:"default:0" json:"credits_cost"` // 调用定价扣点
+	Tags        string    `gorm:"-" json:"tags,omitempty"`       // 虚拟字段：主站标签资源池
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -338,6 +351,32 @@ type PromptTemplate struct {
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// AssetRetouchSettings 资产修图参数表
+type AssetRetouchSettings struct {
+	AssetID      uuid.UUID `gorm:"type:uuid;primaryKey;index" json:"asset_id"` // 关联资产ID
+	ProjectID    uuid.UUID `gorm:"type:uuid;index" json:"project_id"`
+	Exposure     float64   `gorm:"default:0.0" json:"exposure"`               // 曝光度 (-100 ~ 100)
+	Contrast     float64   `gorm:"default:0.0" json:"contrast"`               // 对比度 (-100 ~ 100)
+	Saturation   float64   `gorm:"default:0.0" json:"saturation"`             // 饱和度 (-100 ~ 100)
+	BlurStrength float64   `gorm:"default:0.0" json:"blur_strength"`          // 磨皮强度 (0 ~ 100)
+	EyeEnlarge   float64   `gorm:"default:0.0" json:"eye_enlarge"`            // 大眼强度 (0 ~ 100)
+	SlimFace     float64   `gorm:"default:0.0" json:"slim_face"`              // 瘦脸强度 (0 ~ 100)
+	LUTFile      string    `gorm:"type:varchar(255)" json:"lut_file"`         // 应用的 3D LUT 文件路径
+	AdvancedJSON string    `gorm:"type:text" json:"advanced_json"`            // 其它高级/自定义参数 (如 AI 关键点数据)
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// AssetComment 资产评论表（用于单张照片的精修意见沟通）
+type AssetComment struct {
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	AssetID    uuid.UUID  `gorm:"type:uuid;index" json:"asset_id"`    // 关联资产ID
+	ProjectID  uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	UserID     *uuid.UUID `gorm:"type:uuid" json:"user_id"`           // 如果是登录用户（修图师/销售）
+	ClientName *string    `gorm:"type:varchar(80)" json:"client_name"` // 如果是免登客户
+	Content    string     `gorm:"type:text;not null" json:"content"`   // 评论内容
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 

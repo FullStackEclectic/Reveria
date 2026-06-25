@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ExternalLink, Download } from "lucide-react";
+import { ExternalLink, Download, Wand2 } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl, assetMimeType, formatFileSize } from "../../utils";
 
@@ -25,11 +25,13 @@ async function downloadImage(url: string, filename: string) {
 interface AssetPreviewDialogProps {
   asset: AssetSummary;
   setPreviewAsset: (asset: AssetSummary | null) => void;
+  onEnterEditor?: (asset: AssetSummary) => void; // 进入 AI 智能精修编辑器回调
 }
 
 export function AssetPreviewDialog({
   asset,
   setPreviewAsset,
+  onEnterEditor,
 }: AssetPreviewDialogProps) {
   const [resolution, setResolution] = useState<string>("");
   const title = assetTitle(asset);
@@ -111,6 +113,20 @@ export function AssetPreviewDialog({
         <div className="task-actions">
           {sourceUrl ? (
             <>
+              {asset.asset_type === "image" && onEnterEditor && (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    onEnterEditor(asset);
+                    setPreviewAsset(null);
+                  }}
+                  style={{ background: "#4f46e5", color: "#ffffff" }}
+                >
+                  <Wand2 size={16} aria-hidden="true" style={{ marginRight: "6px" }} />
+                  AI 智能精修
+                </button>
+              )}
               <button
                 className="secondary-button"
                 type="button"

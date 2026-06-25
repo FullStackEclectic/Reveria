@@ -49,6 +49,9 @@ interface ProjectsViewProps {
   projectsViewMode: "list" | "detail";
   setProjectsViewMode: (mode: "list" | "detail") => void;
   models: ModelSummary[];
+  onEnterEditor: (asset: AssetSummary, initialSettings?: any) => void;
+  onSaveSettings: (assetId: string, settings: any) => Promise<boolean>;
+  onExportImage: (assetId: string, settings: any) => Promise<boolean>;
 }
 
 export function ProjectsView({
@@ -79,6 +82,9 @@ export function ProjectsView({
   projectsViewMode,
   setProjectsViewMode,
   models,
+  onEnterEditor,
+  onSaveSettings,
+  onExportImage,
 }: ProjectsViewProps) {
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -104,6 +110,8 @@ export function ProjectsView({
       alert(`删除项目失败: ${err.message || err}`);
     }
   }
+  const [filterType, setFilterType] = useState<"all" | "ai_canvas" | "retouch">("all");
+
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("reveria.recentProjects");
@@ -129,6 +137,22 @@ export function ProjectsView({
     }
     return projects.slice(0, 4);
   }, [projects, recentIds]);
+
+  const displayedProjects = useMemo(() => {
+    let list = filteredProjects;
+    if (filterType !== "all") {
+      list = list.filter((p) => p.project_type === filterType);
+    }
+    return list;
+  }, [filteredProjects, filterType]);
+
+  const displayedRecentProjects = useMemo(() => {
+    let list = recentProjects;
+    if (filterType !== "all") {
+      list = list.filter((p) => p.project_type === filterType);
+    }
+    return list;
+  }, [recentProjects, filterType]);
 
   const handleProjectClick = (projectId: string) => {
     setRecentIds((prev) => {
@@ -238,15 +262,11 @@ export function ProjectsView({
     </svg>
   );
 
-  const renderThumbnailSVG = (projectId: string) => {
-    let sum = 0;
-    for (let i = 0; i < projectId.length; i++) {
-      sum += projectId.charCodeAt(i);
+  const renderThumbnailSVG = (projectType?: string) => {
+    if (projectType === "retouch") {
+      return renderImageSVG();
     }
-    const type = sum % 3;
-    if (type === 0) return renderCanvasSVG();
-    if (type === 1) return renderImageSVG();
-    return renderVideoSVG();
+    return renderCanvasSVG();
   };
 
   const getIconBgColor = (status: string) => {
@@ -314,6 +334,9 @@ export function ProjectsView({
         setPreviewAsset={setPreviewAsset}
         setProjectsViewMode={setProjectsViewMode}
         models={models}
+        onEnterEditor={onEnterEditor}
+        onSaveSettings={onSaveSettings}
+        onExportImage={onExportImage}
       />
     );
   }
@@ -347,8 +370,77 @@ export function ProjectsView({
     >
       <section className="page-grid" style={{ gridTemplateColumns: "1fr" }}>
         <div className="panel list-panel" style={{ width: "100%", background: "none", border: "none", boxShadow: "none", padding: 0 }}>
+          {/* 项目类别筛选 Tab */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              background: "rgba(28, 25, 23, 0.04)",
+              padding: "3px",
+              borderRadius: "10px",
+              gap: "2px",
+              border: "1px solid rgba(28, 25, 23, 0.05)",
+              marginBottom: "24px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setFilterType("all")}
+              style={{
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                borderRadius: "8px",
+                border: "none",
+                background: filterType === "all" ? "#ffffff" : "transparent",
+                color: filterType === "all" ? "var(--rv-color-primary, #6366f1)" : "#78716c",
+                boxShadow: filterType === "all" ? "0 2px 6px rgba(0,0,0,0.06)" : "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              全部项目 ({projects.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType("ai_canvas")}
+              style={{
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                borderRadius: "8px",
+                border: "none",
+                background: filterType === "ai_canvas" ? "#ffffff" : "transparent",
+                color: filterType === "ai_canvas" ? "#6366f1" : "#78716c",
+                boxShadow: filterType === "ai_canvas" ? "0 2px 6px rgba(99, 102, 241, 0.08)" : "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              🎨 AI创意画布 ({projects.filter(p => p.project_type !== "retouch").length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType("retouch")}
+              style={{
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                borderRadius: "8px",
+                border: "none",
+                background: filterType === "retouch" ? "#ffffff" : "transparent",
+                color: filterType === "retouch" ? "#06b6d4" : "#78716c",
+                boxShadow: filterType === "retouch" ? "0 2px 6px rgba(6, 182, 212, 0.08)" : "none",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              📸 批量照片精修 ({projects.filter(p => p.project_type === "retouch").length})
+            </button>
+          </div>
+
           {/* 最近修改/最新项目 */}
-          {!searchQuery && recentProjects.length > 0 && (
+          {!searchQuery && displayedRecentProjects.length > 0 && (
             <div className="recent-projects-section" style={{ marginBottom: "32px" }}>
               <div className="panel-header" style={{ marginBottom: "12px" }}>
                 <h4 style={{ fontSize: "15px", fontWeight: "bold", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "6px", margin: 0 }}>
@@ -357,7 +449,7 @@ export function ProjectsView({
                 </h4>
               </div>
               <div className="project-cards-grid" style={{ marginTop: "12px" }}>
-                {recentProjects.map((project) => {
+                {displayedRecentProjects.map((project) => {
                   const customerName = customerNameFor(project.customer_id);
                   return (
                     <div
@@ -366,8 +458,35 @@ export function ProjectsView({
                       onClick={() => handleProjectClick(project.id)}
                     >
                       {/* 上部：项目缩略图预览（Figma风） */}
-                      <div className="thumbnail-area">
-                        {renderThumbnailSVG(project.id)}
+                      <div className="thumbnail-area" style={{ position: "relative" }}>
+                        {renderThumbnailSVG(project.project_type)}
+                        
+                        {/* 类型浮动指示器 */}
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: "8px",
+                            top: "8px",
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            background: project.project_type === "retouch" 
+                              ? "rgba(6, 182, 212, 0.12)" 
+                              : "rgba(99, 102, 241, 0.12)",
+                            color: project.project_type === "retouch" 
+                              ? "#0891b2" 
+                              : "#4f46e5",
+                            border: "1px solid " + (project.project_type === "retouch" 
+                              ? "rgba(6, 182, 212, 0.2)" 
+                              : "rgba(99, 102, 241, 0.2)"),
+                            backdropFilter: "blur(4px)",
+                            zIndex: 2,
+                          }}
+                        >
+                          {project.project_type === "retouch" ? "📸 批量修图" : "🎨 AI画布"}
+                        </span>
+
                         <button
                           className="project-delete-btn"
                           type="button"
@@ -407,11 +526,11 @@ export function ProjectsView({
 
           <div className="panel-header" style={{ marginBottom: "16px" }}>
             <h3 style={{ fontSize: "20px", fontWeight: "bold", color: "var(--rv-color-text-main)", margin: 0 }}>项目列表</h3>
-            <span style={{ fontSize: "13px", color: "#8b7e66", marginTop: "4px", display: "inline-block" }}>点击卡片进入详情与画布工作台</span>
+            <span style={{ fontSize: "13px", color: "#8b7e66", marginTop: "4px", display: "inline-block" }}>点击卡片进入详情与专属工作台</span>
           </div>
-          {filteredProjects.length > 0 ? (
+          {displayedProjects.length > 0 ? (
             <div className="project-cards-grid" style={{ marginTop: "20px" }}>
-              {filteredProjects.map((project) => {
+              {displayedProjects.map((project) => {
                 const customerName = customerNameFor(project.customer_id);
                 return (
                   <div
@@ -420,8 +539,35 @@ export function ProjectsView({
                     onClick={() => handleProjectClick(project.id)}
                   >
                     {/* 上部：项目缩略图预览（Figma风） */}
-                    <div className="thumbnail-area">
-                      {renderThumbnailSVG(project.id)}
+                    <div className="thumbnail-area" style={{ position: "relative" }}>
+                      {renderThumbnailSVG(project.project_type)}
+
+                      {/* 类型浮动指示器 */}
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: "8px",
+                          top: "8px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          background: project.project_type === "retouch" 
+                            ? "rgba(6, 182, 212, 0.12)" 
+                            : "rgba(99, 102, 241, 0.12)",
+                          color: project.project_type === "retouch" 
+                            ? "#0891b2" 
+                            : "#4f46e5",
+                          border: "1px solid " + (project.project_type === "retouch" 
+                            ? "rgba(6, 182, 212, 0.2)" 
+                            : "rgba(99, 102, 241, 0.2)"),
+                          backdropFilter: "blur(4px)",
+                          zIndex: 2,
+                        }}
+                      >
+                        {project.project_type === "retouch" ? "📸 批量修图" : "🎨 AI画布"}
+                      </span>
+
                       <button
                         className="project-delete-btn"
                         type="button"

@@ -12,5 +12,7 @@ apps/desktop/src-tauri/gen/
 .next/
 apps/desktop/build/bin/
 *.exe
+services/api/storage/uploads/
+
 
 

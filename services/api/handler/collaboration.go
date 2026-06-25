@@ -432,3 +432,230 @@ func ApprovePortalProject(c *gin.Context) {
 		"status":  project.Status,
 	})
 }
+
+// --------------------------------------------------------------------
+// AI 修图同步与单图选片协作接口 (新加)
+// --------------------------------------------------------------------
+
+type RetouchAssetSync struct {
+	AssetID         uuid.UUID `json:"asset_id" binding:"required"`
+	SelectionStatus string    `json:"selection_status"`
+	RetouchSettings *struct {
+		Exposure     float64 `json:"exposure"`
+		Contrast     float64 `json:"contrast"`
+		Saturation   float64 `json:"saturation"`
+		BlurStrength float64 `json:"blur_strength"`
+		EyeEnlarge   float64 `json:"eye_enlarge"`
+		SlimFace     float64 `json:"slim_face"`
+		LUTFile      string  `json:"lut_file"`
+		AdvancedJSON string  `json:"advanced_json"`
+	} `json:"retouch_settings"`
+}
+
+// SyncRetouchSettings 同步修图参数与选片状态 (POST /api/projects/:id/retouch-sync)
+func SyncRetouchSettings(c *gin.Context) {
+	projectIDStr := c.Param("id")
+	projectID, err := uuid.Parse(projectIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "项目 ID 格式错误"})
+		return
+	}
+
+	var req struct {
+		Assets []RetouchAssetSync `json:"assets" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	actorID := c.MustGet("user_id").(uuid.UUID)
+
+	var project model.Project
+	if err := database.DB.Where("id = ?", projectID).First(&project).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到项目"})
+		return
+	}
+
+	if !hasWorkspaceRole(project.WorkspaceID, actorID, []string{"owner", "admin", "member"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限同步此项目"})
+		return
+	}
+
+	tx := database.DB.Begin()
+	for _, assetSync := range req.Assets {
+		// 1. 更新 Asset 状态
+		var asset model.Asset
+		if err := tx.Where("id = ? AND project_id = ?", assetSync.AssetID, projectID).First(&asset).Error; err == nil {
+			if assetSync.SelectionStatus != "" {
+				asset.SelectionStatus = assetSync.SelectionStatus
+				tx.Save(&asset)
+			}
+		}
+
+		// 2. 更新或新建修图参数
+		if assetSync.RetouchSettings != nil {
+			var settings model.AssetRetouchSettings
+			err := tx.Where("asset_id = ?", assetSync.AssetID).First(&settings).Error
+			if err != nil {
+				// 新建
+				settings = model.AssetRetouchSettings{
+					AssetID:      assetSync.AssetID,
+					ProjectID:    projectID,
+					Exposure:     assetSync.RetouchSettings.Exposure,
+					Contrast:     assetSync.RetouchSettings.Contrast,
+					Saturation:   assetSync.RetouchSettings.Saturation,
+					BlurStrength: assetSync.RetouchSettings.BlurStrength,
+					EyeEnlarge:   assetSync.RetouchSettings.EyeEnlarge,
+					SlimFace:     assetSync.RetouchSettings.SlimFace,
+					LUTFile:      assetSync.RetouchSettings.LUTFile,
+					AdvancedJSON: assetSync.RetouchSettings.AdvancedJSON,
+					UpdatedAt:    time.Now(),
+				}
+				tx.Create(&settings)
+			} else {
+				// 更新
+				settings.Exposure = assetSync.RetouchSettings.Exposure
+				settings.Contrast = assetSync.RetouchSettings.Contrast
+				settings.Saturation = assetSync.RetouchSettings.Saturation
+				settings.BlurStrength = assetSync.RetouchSettings.BlurStrength
+				settings.EyeEnlarge = assetSync.RetouchSettings.EyeEnlarge
+				settings.SlimFace = assetSync.RetouchSettings.SlimFace
+				settings.LUTFile = assetSync.RetouchSettings.LUTFile
+				settings.AdvancedJSON = assetSync.RetouchSettings.AdvancedJSON
+				settings.UpdatedAt = time.Now()
+				tx.Save(&settings)
+			}
+		}
+	}
+	tx.Commit()
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "同步成功"})
+}
+
+// PullRetouchCollaboration 拉取协作与选片结果 (GET /api/projects/:id/retouch-sync)
+func PullRetouchCollaboration(c *gin.Context) {
+	projectIDStr := c.Param("id")
+	projectID, err := uuid.Parse(projectIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "项目 ID 格式错误"})
+		return
+	}
+
+	actorID := c.MustGet("user_id").(uuid.UUID)
+
+	var project model.Project
+	if err := database.DB.Where("id = ?", projectID).First(&project).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到项目"})
+		return
+	}
+
+	if !hasWorkspaceRole(project.WorkspaceID, actorID, []string{"owner", "admin", "member"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限查看"})
+		return
+	}
+
+	// 1. 获取所有资产和修图参数
+	var assets []model.Asset
+	database.DB.Where("project_id = ?", projectID).Find(&assets)
+
+	var retouchList []model.AssetRetouchSettings
+	database.DB.Where("project_id = ?", projectID).Find(&retouchList)
+
+	// 2. 获取所有单图评论
+	var comments []model.AssetComment
+	database.DB.Where("project_id = ?", projectID).Order("created_at asc").Find(&comments)
+
+	c.JSON(http.StatusOK, gin.H{
+		"assets":   assets,
+		"retouch":  retouchList,
+		"comments": comments,
+	})
+}
+
+// SelectPortalAsset 免密客户选片确认 (POST /portal/shares/:token/assets/:asset_id/select)
+func SelectPortalAsset(c *gin.Context) {
+	token := c.Param("token")
+	assetIDStr := c.Param("asset_id")
+	assetID, err := uuid.Parse(assetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "资产 ID 格式错误"})
+		return
+	}
+
+	var req struct {
+		Status string `json:"status" binding:"required"` // approved / rejected / pending
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "状态参数不正确"})
+		return
+	}
+
+	var share model.ProjectShare
+	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链失效"})
+		return
+	}
+
+	var asset model.Asset
+	if err := database.DB.Where("id = ? AND project_id = ?", assetID, share.ProjectID).First(&asset).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "图片不存在"})
+		return
+	}
+
+	asset.SelectionStatus = req.Status
+	if err := database.DB.Save(&asset).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "修改状态失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "status": asset.SelectionStatus})
+}
+
+// CreatePortalAssetComment 免密客户对单图写评论/精修意见 (POST /portal/shares/:token/assets/:asset_id/comments)
+func CreatePortalAssetComment(c *gin.Context) {
+	token := c.Param("token")
+	assetIDStr := c.Param("asset_id")
+	assetID, err := uuid.Parse(assetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "资产 ID 格式错误"})
+		return
+	}
+
+	var req struct {
+		ClientName string `json:"client_name" binding:"required"`
+		Content    string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "名称和评论内容不能为空"})
+		return
+	}
+
+	var share model.ProjectShare
+	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链失效"})
+		return
+	}
+
+	var asset model.Asset
+	if err := database.DB.Where("id = ? AND project_id = ?", assetID, share.ProjectID).First(&asset).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "图片不存在"})
+		return
+	}
+
+	comment := model.AssetComment{
+		ID:         uuid.New(),
+		AssetID:    assetID,
+		ProjectID:  share.ProjectID,
+		ClientName: &req.ClientName,
+		Content:    req.Content,
+		CreatedAt:  time.Now(),
+	}
+
+	if err := database.DB.Create(&comment).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "发表评论失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, comment)
+}

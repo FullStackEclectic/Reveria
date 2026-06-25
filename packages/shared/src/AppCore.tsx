@@ -44,6 +44,7 @@ import {
   handleExportProject,
   formatCredits,
   fetchDashboardData,
+  uploadAsset,
 } from "./utils";
 
 // Subview components
@@ -56,6 +57,7 @@ import { AssetsView } from "./components/asset/AssetsView";
 import { HistoryView } from "./components/history/HistoryView";
 import { CreditsView } from "./components/credits/CreditsView";
 import { AdminConsole } from "./components/admin/AdminConsole";
+import { RetouchView } from "./components/asset/RetouchView";
 
 // Dialog/Modal components
 import { NewProjectModal } from "./components/project/NewProjectModal";
@@ -63,6 +65,8 @@ import { InvitationModal } from "./components/auth/InvitationModal";
 import { AssetPreviewDialog } from "./components/asset/AssetPreviewDialog";
 import { ClientPortalView } from "./components/portal/ClientPortalView";
 import { Sidebar } from "./components/common/Sidebar";
+import { AssetEditorWorkbench } from "./components/asset/AssetEditorWorkbench";
+import type { RetouchSettings } from "./components/asset/AssetEditorWorkbench";
 
 export function AppCore() {
   const [currentUser, setCurrentUser] = useState<UserSummary | null>(null);
@@ -168,8 +172,139 @@ export function AppCore() {
   const [tasks, setTasks] = useState<GenerationTaskSummary[]>([]);
 
   const [previewAsset, setPreviewAsset] = useState<AssetSummary | null>(null);
+  const [editingAsset, setEditingAsset] = useState<AssetSummary | null>(null);
+  const [retouchInitialSettings, setRetouchInitialSettings] = useState<RetouchSettings | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState("");
   const [adminMessage, setAdminMessage] = useState("");
+
+  const handleSaveRetouchSettings = async (assetId: string, settings: RetouchSettings) => {
+    if (!selectedProjectId) return false;
+    try {
+      const res = await postJson<{ success: boolean }>(
+        `/api/projects/${selectedProjectId}/retouch-sync`,
+        {
+          assets: [
+            {
+              asset_id: assetId,
+              retouch_settings: {
+                exposure: settings.exposure,
+                contrast: settings.contrast,
+                saturation: settings.saturation,
+                blur_strength: settings.blur_strength,
+                eye_enlarge: settings.eye_enlarge,
+                slim_face: settings.slim_face,
+                lut_file: settings.lut_file,
+                advanced_json: "",
+              }
+            }
+          ]
+        }
+      );
+      return res.success !== false;
+    } catch (err) {
+      console.error("Failed to save retouch settings:", err);
+      return false;
+    }
+  };
+
+  const handleExportRetouchImage = async (assetId: string, settings: RetouchSettings) => {
+    const asset = assets.find((a) => a.id === assetId);
+    if (!asset) {
+      alert("找不到要导出的素材");
+      return false;
+    }
+
+    const wailsApp = (window as any).go?.main?.App;
+    if (!wailsApp) {
+      alert("导出功能仅在 Reveria 桌面客户端中可用");
+      return false;
+    }
+
+    try {
+      const defaultFilename = asset.metadata?.title || asset.metadata?.file_name || "retouched_image.jpg";
+      const savePath = await wailsApp.SelectSavePath(defaultFilename);
+      if (!savePath) {
+        return false;
+      }
+
+      const localPath = asset.local_path || "";
+      const fileURL = asset.file_url || "";
+
+      const errCode = await wailsApp.ExportRetouchedImage(
+        fileURL,
+        localPath,
+        savePath,
+        settings.exposure,
+        settings.contrast,
+        settings.saturation,
+        settings.blur_strength,
+        settings.eye_enlarge,
+        settings.slim_face,
+        settings.lut_file || ""
+      );
+
+      if (errCode === 0) {
+        alert(`导出成功！已保存至：${savePath}`);
+        try {
+          const recentListStr = localStorage.getItem("reveria.recentExports") || "[]";
+          const recentList = JSON.parse(recentListStr);
+          recentList.unshift({
+            id: assetId,
+            title: defaultFilename,
+            path: savePath,
+            time: new Date().toLocaleTimeString(),
+          });
+          if (recentList.length > 5) recentList.pop();
+          localStorage.setItem("reveria.recentExports", JSON.stringify(recentList));
+          window.dispatchEvent(new Event("recentExportsUpdated"));
+        } catch (e) {
+          console.error("Failed to update export history", e);
+        }
+        return true;
+      } else {
+        alert(`导出失败，错误码：${errCode}`);
+        return false;
+      }
+    } catch (err: any) {
+      console.error("Export error:", err);
+      alert(`导出过程中发生错误: ${err.message || err}`);
+      return false;
+    }
+  };
+
+  const handleUploadAndEditQuick = async (file: File) => {
+    if (!currentUser) {
+      setLoginCallback(() => () => {
+        void handleUploadAndEditQuick(file);
+      });
+      setIsLoginModalOpen(true);
+      return;
+    }
+
+    if (!activeWorkspace) {
+      alert("未选择工作区，无法上传");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("workspace_id", activeWorkspace.id);
+      if (selectedProjectId) {
+        formData.append("project_id", selectedProjectId);
+      }
+      if (selectedCustomer?.id) {
+        formData.append("customer_id", selectedCustomer.id);
+      }
+      formData.append("file", file);
+
+      const asset = await uploadAsset(formData);
+      setAssets((current) => [asset, ...current]);
+      setEditingAsset(asset);
+    } catch (err: any) {
+      console.error("Failed to upload image for retouching:", err);
+      alert(`上传失败: ${err.message || err}`);
+    }
+  };
 
   const activeWorkspace = workspaces[0];
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) ?? customers[0];
@@ -691,9 +826,15 @@ export function AppCore() {
             setTaskDetail={setTaskDetail}
             deletingAssetId={deletingAssetId}
             deleteAsset={deleteAsset}
-            setPreviewAsset={setPreviewAsset}
             setIsNewProjectModalOpen={setIsNewProjectModalOpen}
             models={models}
+            onEnterEditor={(asset, settings) => {
+              setRetouchInitialSettings(settings || null);
+              setEditingAsset(asset);
+            }}
+            setPreviewAsset={setPreviewAsset}
+            onSaveSettings={handleSaveRetouchSettings}
+            onExportImage={handleExportRetouchImage}
           />
         );
       case "customers":
@@ -774,25 +915,27 @@ export function AppCore() {
     }
   }
 
-  const isNoSidebar = (activeView === "projects" && projectsViewMode === "detail") || !currentUser || activeView === "admin";
+  const isNoSidebar = (activeView === "projects" && projectsViewMode === "detail") || activeView === "admin";
 
   const renderHeader = () => {
     return (
       <header className="rv-global-header">
         {/* 左侧：菜单开关 + Logo */}
         <div className="header-left">
-          <button 
-            type="button" 
-            className="rv-header-toggle-btn"
-            onClick={() => {
-              const nextState = !isSidebarCollapsed;
-              setIsSidebarCollapsed(nextState);
-              localStorage.setItem("reveria.sidebarCollapsed", String(nextState));
-            }}
-            title={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-          >
-            <Menu size={18} />
-          </button>
+          {!isNoSidebar && (
+            <button 
+              type="button" 
+              className="rv-header-toggle-btn"
+              onClick={() => {
+                const nextState = !isSidebarCollapsed;
+                setIsSidebarCollapsed(nextState);
+                localStorage.setItem("reveria.sidebarCollapsed", String(nextState));
+              }}
+              title={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            >
+              <Menu size={18} />
+            </button>
+          )}
           
           <div 
             className="header-brand" 
@@ -992,8 +1135,30 @@ export function AppCore() {
         {renderActiveView()}
 
         {previewAsset ? (
-          <AssetPreviewDialog asset={previewAsset} setPreviewAsset={setPreviewAsset} />
+          <AssetPreviewDialog
+            asset={previewAsset}
+            setPreviewAsset={setPreviewAsset}
+            onEnterEditor={
+              typeof window !== "undefined" && (window as any).go?.main?.App
+                ? (asset) => setEditingAsset(asset)
+                : undefined
+            }
+          />
         ) : null}
+
+        {editingAsset && (
+          <AssetEditorWorkbench
+            asset={editingAsset}
+            projectAssets={assets}
+            onClose={() => {
+              setEditingAsset(null);
+              setRetouchInitialSettings(null);
+            }}
+            onSaveSettings={handleSaveRetouchSettings}
+            onExportImage={handleExportRetouchImage}
+            initialSettings={retouchInitialSettings || undefined}
+          />
+        )}
 
         <InvitationModal
           inviteToken={inviteToken}

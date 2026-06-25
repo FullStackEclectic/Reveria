@@ -52,6 +52,8 @@ func main() {
 		api.GET("/portal/shares/:token", handler.GetPortalProject)
 		api.POST("/portal/shares/:token/comments", handler.CreatePortalComment)
 		api.POST("/portal/shares/:token/approve", handler.ApprovePortalProject)
+		api.POST("/portal/shares/:token/assets/:asset_id/select", handler.SelectPortalAsset)
+		api.POST("/portal/shares/:token/assets/:asset_id/comments", handler.CreatePortalAssetComment)
 
 		// 3. 站长本地网关配置（站长自身配置）
 		adminSettings := api.Group("/admin")
@@ -105,6 +107,8 @@ func main() {
 			auth.GET("/projects/:id/shares", handler.ListProjectShares)
 			auth.POST("/projects/:id/shares", handler.CreateProjectShare)
 			auth.DELETE("/shares/:id", handler.RevokeProjectShare)
+			auth.POST("/projects/:id/retouch-sync", handler.SyncRetouchSettings)
+			auth.GET("/projects/:id/retouch-sync", handler.PullRetouchCollaboration)
 
 			// 素材资产 API
 			auth.GET("/assets", handler.ListAssets)          // 获取素材列表 (支持 project_id 过滤)
@@ -236,6 +240,15 @@ func initDefaultSettings() {
 			AllowUserRegister:     true,
 			GiftCreditsOnRegister: 100, // 默认新注册用户送 100 积分
 			PriceRate:             1.00,
+			BillingMode:           "standalone",
+			BridgeMainStationURL:  "",
+			BridgeInternalSecret:  "",
+			BridgeTextModel:       "",
+			BridgeImageModel:      "",
+			BridgeVideoModel:      "",
+			BridgeTextPools:       "",
+			BridgeImagePools:      "",
+			BridgeVideoPools:      "",
 		}
 		if err := database.DB.Create(&settings).Error; err != nil {
 			log.Printf("初始化默认配置记录失败: %v", err)
@@ -278,6 +291,15 @@ func updateClientSettings(c *gin.Context) {
 	settings.AllowUserRegister = req.AllowUserRegister
 	settings.GiftCreditsOnRegister = req.GiftCreditsOnRegister
 	settings.PriceRate = req.PriceRate
+	settings.BillingMode = req.BillingMode
+	settings.BridgeMainStationURL = req.BridgeMainStationURL
+	settings.BridgeInternalSecret = req.BridgeInternalSecret
+	settings.BridgeTextModel = req.BridgeTextModel
+	settings.BridgeImageModel = req.BridgeImageModel
+	settings.BridgeVideoModel = req.BridgeVideoModel
+	settings.BridgeTextPools = req.BridgeTextPools
+	settings.BridgeImagePools = req.BridgeImagePools
+	settings.BridgeVideoPools = req.BridgeVideoPools
 
 	if err := database.DB.Save(&settings).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "保存失败: " + err.Error()})
@@ -300,3 +322,5 @@ func getBuildVersion(c *gin.Context) {
 		"database_connected": true,
 	})
 }
+
+

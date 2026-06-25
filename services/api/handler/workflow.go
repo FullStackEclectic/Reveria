@@ -17,6 +17,7 @@ import (
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
+	"reveria/services/api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,44 +50,21 @@ func RunBriefAnalysis(c *gin.Context) {
 	// 1. 扣减 2 个积分点数
 	var costCredits int64 = 2
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 
-	tx := database.DB.Begin()
-	var ws model.Workspace
-	tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", req.WorkspaceID).First(&ws)
-
-	total := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
-	if total < costCredits {
-		tx.Rollback()
+	reason := "分析 Brief 需求工作流消费"
+	billingSvc := service.GetBillingService()
+	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, costCredits, reason, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算服务出错: " + err.Error()})
+		return
+	}
+	if !success {
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区余额不足"})
 		return
 	}
-
-	// 积分扣除
-	ws.GiftBalance -= costCredits // 简写，直接扣减
-	if ws.GiftBalance < 0 {
-		ws.RechargeBalance += ws.GiftBalance
-		ws.GiftBalance = 0
-	}
-	tx.Save(&ws)
-
-	// 记录流水
-	reason := "分析 Brief 需求工作流消费"
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     req.WorkspaceID,
-		UserID:          &actorID,
-		ProjectID:       &req.ProjectID,
-		TransactionType: "consume",
-		Amount:          costCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &reason,
-		CreatedAt:       time.Now(),
-	}
-	tx.Create(&transaction)
-	tx.Commit()
 
 	// 2. 调用 12ZX-AI 大语言模型进行 Brief 提取
 	prompt := fmt.Sprintf("请作为专业的广告策划大师，分析以下创意大纲，并提炼成简明扼要的摘要、受众定位、三个核心方向、以及一个风险分析提示。内容: %s", req.Brief)
@@ -246,10 +224,24 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 
 // callUpstreamLLM 发包调用 12ZX-AI 大语言模型
 func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
-	apiURL := fmt.Sprintf("%s/v1/chat/completions", settings.UpstreamAPIURL)
+	var apiURL string
+	modelName := "deepseek-chat"
+
+	if settings.BillingMode == "bridge" {
+		baseURL := strings.TrimSuffix(settings.BridgeMainStationURL, "/")
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
+		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
+		if settings.BridgeTextModel != "" {
+			modelName = settings.BridgeTextModel
+		}
+	} else {
+		baseURL := strings.TrimSuffix(settings.UpstreamAPIURL, "/")
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
+		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
+	}
 
 	reqBody := map[string]any{
-		"model": "deepseek-chat", // 默认大语言模型
+		"model": modelName,
 		"messages": []map[string]string{
 			{
 				"role":    "user",
@@ -328,44 +320,21 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 	// 1. 扣除 5 点积分
 	var costCredits int64 = 5
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 
-	tx := database.DB.Begin()
-	var ws model.Workspace
-	tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", req.WorkspaceID).First(&ws)
-
-	total := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
-	if total < costCredits {
-		tx.Rollback()
+	reason := "小红书封面批量大纲分析消费"
+	billingSvc := service.GetBillingService()
+	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, costCredits, reason, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算服务出错: " + err.Error()})
+		return
+	}
+	if !success {
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区积分不足"})
 		return
 	}
-
-	// 积分扣除
-	ws.GiftBalance -= costCredits
-	if ws.GiftBalance < 0 {
-		ws.RechargeBalance += ws.GiftBalance
-		ws.GiftBalance = 0
-	}
-	tx.Save(&ws)
-
-	// 记录流水
-	reason := "小红书封面批量大纲分析消费"
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     req.WorkspaceID,
-		UserID:          &actorID,
-		ProjectID:       &req.ProjectID,
-		TransactionType: "consume",
-		Amount:          costCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &reason,
-		CreatedAt:       time.Now(),
-	}
-	tx.Create(&transaction)
-	tx.Commit()
 
 	// 2. 调用 12ZX-AI 上游网关 LLM 进行提炼
 	styleStr := ""
@@ -430,42 +399,21 @@ func RunMagicAction(c *gin.Context) {
 	// 2. 扣减积分 (抠图/超分/擦除统一扣除 2 个积分点数)
 	var costCredits int64 = 2
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
+	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 
-	tx := database.DB.Begin()
-	var ws model.Workspace
-	tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", req.WorkspaceID).First(&ws)
-
-	total := ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance
-	if total < costCredits {
-		tx.Rollback()
+	reason := fmt.Sprintf("画布 AI 魔法操作 (%s) 消费", req.Action)
+	billingSvc := service.GetBillingService()
+	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, costCredits, reason, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算服务出错: " + err.Error()})
+		return
+	}
+	if !success {
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区余额不足，本次操作需要 " + fmt.Sprintf("%d", costCredits) + " 个点数"})
 		return
 	}
-
-	ws.GiftBalance -= costCredits
-	if ws.GiftBalance < 0 {
-		ws.RechargeBalance += ws.GiftBalance
-		ws.GiftBalance = 0
-	}
-	tx.Save(&ws)
-
-	reason := fmt.Sprintf("画布 AI 魔法操作 (%s) 消费", req.Action)
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     req.WorkspaceID,
-		UserID:          &actorID,
-		ProjectID:       &req.ProjectID,
-		TransactionType: "consume",
-		Amount:          costCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &reason,
-		CreatedAt:       time.Now(),
-	}
-	tx.Create(&transaction)
-	tx.Commit()
 
 	// 3. 查询原始 Asset
 	var asset model.Asset
