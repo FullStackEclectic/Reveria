@@ -638,6 +638,7 @@ export function ProjectDetailView({
         redo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+        currentUser={currentUser}
       />
 
       {/* 3. 左侧悬浮资源抽屉 */}

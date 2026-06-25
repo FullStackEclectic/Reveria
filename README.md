@@ -4,11 +4,6 @@ Reveria 是一个面向中小型传媒工作室的跨平台 AI 创意生产桌�
 
 Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xAI 等主流供应商持续竞争，我们不自研基础模型，而是把最强模型编排进真实的传媒工作室生产流程里。
 
-```text
-Lovart 是 AI 设计师。
-LibTV 是 AI 视频导演。
-Reveria 要做传媒工作室的 AI 制片主任和创意交付工作台。
-```
 
 ---
 

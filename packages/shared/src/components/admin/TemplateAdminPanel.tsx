@@ -526,28 +526,6 @@ export function TemplateAdminPanel() {
             overflow: "hidden"
           }}
         >
-          {/* 新增/修改模板内联表单 */}
-          {showAddTemplate && (
-            <div style={{ marginBottom: "20px" }}>
-              <TemplateForm
-                initialData={{ workflow_type: activeTab }}
-                models={models}
-                onSubmit={handleAddTemplate}
-                onCancel={() => setShowAddTemplate(false)}
-              />
-            </div>
-          )}
-
-          {editingTemplate && (
-            <div style={{ marginBottom: "20px" }}>
-              <TemplateForm
-                initialData={editingTemplate}
-                models={models}
-                onSubmit={handleUpdateTemplate}
-                onCancel={() => setEditingTemplate(null)}
-              />
-            </div>
-          )}
 
           {/* 模板列表网格 */}
           <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px" }}>
@@ -807,6 +785,53 @@ export function TemplateAdminPanel() {
                 保存
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. 模态弹窗 - 新建/修改提示词模板 */}
+      {(showAddTemplate || editingTemplate) && (
+        <div
+          onClick={() => {
+            setShowAddTemplate(false);
+            setEditingTemplate(null);
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.35)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            animation: "fadeIn 0.2s ease-out"
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "1400px",
+              maxWidth: "98%",
+              maxHeight: "95vh",
+              overflowY: "auto",
+              borderRadius: "16px",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.05)",
+              animation: "scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)"
+            }}
+          >
+            <TemplateForm
+              initialData={editingTemplate ? editingTemplate : { workflow_type: activeTab }}
+              models={models}
+              onSubmit={editingTemplate ? handleUpdateTemplate : handleAddTemplate}
+              onCancel={() => {
+                setShowAddTemplate(false);
+                setEditingTemplate(null);
+              }}
+            />
           </div>
         </div>
       )}

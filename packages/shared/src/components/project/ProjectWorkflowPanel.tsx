@@ -72,12 +72,11 @@ export function ProjectWorkflowPanel({
   setPreviewAsset,
 }: ProjectWorkflowPanelProps) {
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowType | null>("image-generation");
-  const [workflowInput, setWorkflowInput] = useState("为一家新开咖啡店做小红书开业推广");
+  const [workflowInput, setWorkflowInput] = useState("");
   const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null);
   const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
 
   // 控制台专属状态
-  const [isBannerOpen, setIsBannerOpen] = useState(true);
   const [isParamPopupOpen, setIsParamPopupOpen] = useState(false);
   const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
   const [isRefSelectorOpen, setIsRefSelectorOpen] = useState(false);
@@ -472,22 +471,8 @@ export function ProjectWorkflowPanel({
         setPreviewAsset={setPreviewAsset}
       />
 
-      {/* 2. 底部固定区域（含促销横幅与控制台输入卡片） */}
+      {/* 2. 底部固定区域（含控制台输入卡片） */}
       <div className="gen-sticky-bottom">
-        {/* 促销横幅 */}
-        {isBannerOpen && (
-          <div className="gen-console-banner">
-            <span>大促返场：升级会员最高立享 57% OFF!</span>
-            <button 
-              type="button" 
-              onClick={() => setIsBannerOpen(false)}
-              style={{ border: "none", background: "transparent", cursor: "pointer", color: "inherit", fontWeight: "bold", fontSize: "12px", marginLeft: "8px" }}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
         {/* AI 创意控制台 (Prompt Bar Card) */}
         <div className="gen-prompt-card">
           
@@ -533,7 +518,7 @@ export function ProjectWorkflowPanel({
               rows={inputRows}
               placeholder={
                 selectedWorkflow === "image-generation"
-                  ? "今天我们要创作什么图像..."
+                  ? "例如：生成咖啡店推广海报"
                   : selectedWorkflow === "video-generation"
                   ? "今天我们要生成什么视频..."
                   : "输入任务提示词或创意大纲..."

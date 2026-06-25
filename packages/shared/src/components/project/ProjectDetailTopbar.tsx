@@ -1,5 +1,7 @@
-import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles, Undo, Redo } from "lucide-react";
-import { ProjectSummary, ProjectCanvasDocument, WorkspaceSummary } from "../../types";
+import { useState, useRef, useEffect } from "react";
+import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles, Undo, Redo, LogOut, MessageSquare } from "lucide-react";
+import { ProjectSummary, ProjectCanvasDocument, WorkspaceSummary, UserSummary } from "../../types";
+import { postJson } from "../../utils";
 
 interface ProjectDetailTopbarProps {
   selectedProject: ProjectSummary;
@@ -35,6 +37,9 @@ interface ProjectDetailTopbarProps {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+
+  // 当前登录用户
+  currentUser: UserSummary | null;
 }
 
 export function ProjectDetailTopbar({
@@ -67,9 +72,25 @@ export function ProjectDetailTopbar({
   redo,
   canUndo,
   canRedo,
+  currentUser,
 }: ProjectDetailTopbarProps) {
   const boards = projectCanvas.boards || [];
   const activeBoard = boards.find((b) => b.id === activeBoardId) || { id: "default", name: "主画板" };
+
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const openClass = 
     isLeftDrawerOpen && isRightDrawerOpen ? "drawer-open-both" :
@@ -80,15 +101,159 @@ export function ProjectDetailTopbar({
     <header className={`rv-floating-topbar ${openClass}`}>
       {/* 左侧：返回、项目名编辑、画板下拉 */}
       <div className="rv-topbar-section">
-        <button
-          className="rv-topbar-btn"
-          type="button"
-          onClick={() => setProjectsViewMode("list")}
-          title="返回项目列表"
-          style={{ width: "32px", padding: 0 }}
-        >
-          <ArrowLeft size={16} />
-        </button>
+        {/* 用户头像下拉菜单（返回按钮集成在第一项） */}
+        <div className="rv-topbar-menu-wrapper" ref={userMenuRef}>
+          <button
+            className="user-profile-menu-trigger"
+            type="button"
+            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+            title="用户菜单"
+            style={{
+              padding: "4px 8px 4px 4px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              borderRadius: "20px",
+              border: "1px solid var(--rv-color-border-thin, rgba(28,25,23,0.08))",
+              background: "rgba(255, 255, 255, 0.6)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)";
+              e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.6)";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          >
+            <div
+              className="user-avatar-circle"
+              style={{
+                width: "24px",
+                height: "24px",
+                fontSize: "11px",
+                margin: 0,
+                boxShadow: "0 2px 4px rgba(99, 102, 241, 0.2)"
+              }}
+            >
+              {(currentUser?.display_name || "U").slice(0, 1).toUpperCase()}
+            </div>
+            <ChevronDown
+              size={12}
+              style={{
+                color: "#a8a29e",
+                transform: isUserMenuOpen ? "rotate(180deg)" : "none",
+                transition: "transform 0.2s"
+              }}
+            />
+          </button>
+
+          {isUserMenuOpen && (
+            <div
+              className="rv-topbar-dropdown"
+              style={{
+                left: 0,
+                right: "auto",
+                width: "180px",
+                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)"
+              }}
+            >
+              <div
+                className="dropdown-header"
+                style={{
+                  padding: "8px 12px",
+                  borderBottom: "1px solid rgba(28, 25, 23, 0.05)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "2px"
+                }}
+              >
+                <strong
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--rv-color-text-main, #1c1917)",
+                    display: "block",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                >
+                  {currentUser?.display_name || "未登录"}
+                </strong>
+                {currentUser?.email && (
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "#a8a29e",
+                      display: "block",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {currentUser.email}
+                  </span>
+                )}
+              </div>
+              
+              <button
+                className="rv-topbar-dropdown-item"
+                type="button"
+                onClick={() => {
+                  setProjectsViewMode("list");
+                  setIsUserMenuOpen(false);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  marginTop: "4px"
+                }}
+              >
+                <ArrowLeft size={14} />
+                <span>返回项目列表</span>
+              </button>
+
+              <div
+                style={{
+                  height: "1px",
+                  background: "rgba(28, 25, 23, 0.05)",
+                  margin: "4px 0"
+                }}
+              />
+
+              <button
+                className="rv-topbar-dropdown-item"
+                type="button"
+                onClick={async () => {
+                  setIsUserMenuOpen(false);
+                  try {
+                    await postJson("/api/auth/logout", {});
+                  } catch {
+                    // Quiet fail
+                  } finally {
+                    localStorage.removeItem("reveria.currentUser");
+                    localStorage.removeItem("reveria.accessToken");
+                    window.location.reload();
+                  }
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  color: "#ef4444"
+                }}
+              >
+                <LogOut size={14} />
+                <span>退出登录</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* 气泡项目名原位编辑 */}
         {isEditingName ? (
@@ -201,18 +366,24 @@ export function ProjectDetailTopbar({
       </div>
 
       {/* 右侧：点数、状态、手动保存、导出下拉 */}
-      <div className="rv-topbar-section">
-        {/* 点数胶囊 */}
-        <span className="rv-topbar-badge" style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fbbf24" }}>
-          🪙 {activeWorkspace?.credit_balance ?? 0} 点
-        </span>
+      <div className="rv-topbar-section" style={{ gap: "10px" }}>
+        {/* PRO 算力额度 - 沿用首页设计样式 */}
+        <div className="pro-credits-badge" style={{ height: "30px", marginLeft: "4px" }}>
+          <span className="pro-label" style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)" }}>PRO</span>
+          <span className="credits-val">{activeWorkspace?.credit_balance ?? 0} 点</span>
+        </div>
 
-        {/* 状态徽章 */}
+        {/* 状态徽章 - 精致磨砂边缘 */}
         <span
           className="rv-topbar-badge"
           style={{
-            background: "rgba(15, 118, 110, 0.15)",
-            color: "#2dd4bf"
+            background: selectedProject.status === "draft" ? "rgba(120, 113, 108, 0.1)" : "rgba(15, 118, 110, 0.1)",
+            color: selectedProject.status === "draft" ? "#78716c" : "var(--rv-color-primary)",
+            border: "1px solid " + (selectedProject.status === "draft" ? "rgba(120, 113, 108, 0.15)" : "rgba(15, 118, 110, 0.15)"),
+            padding: "4px 10px",
+            fontSize: "11px",
+            fontWeight: 600,
+            borderRadius: "12px"
           }}
         >
           {selectedProject.status === "draft" ? "草稿" :
@@ -223,15 +394,23 @@ export function ProjectDetailTopbar({
 
         {/* 保存画布 */}
         <button
-          className="rv-topbar-btn primary"
+          className="rv-topbar-btn"
           type="button"
           disabled={isSavingCanvas}
           onClick={saveProjectCanvas}
+          style={{
+            background: "rgba(255, 255, 255, 0.8)",
+            border: "1px solid var(--rv-color-border-thin)",
+            color: "var(--rv-color-text-main)",
+            boxShadow: "var(--rv-shadow-sm)",
+            cursor: isSavingCanvas ? "not-allowed" : "pointer",
+            fontWeight: 600
+          }}
         >
           {isSavingCanvas ? (
             <Loader2 className="spin" size={14} />
           ) : (
-            <Save size={14} />
+            <Save size={14} style={{ color: "var(--rv-color-primary)" }} />
           )}
           <span>保存画布</span>
         </button>
@@ -243,10 +422,17 @@ export function ProjectDetailTopbar({
             type="button"
             onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
             title="导出项目数据"
+            style={{
+              background: "rgba(255, 255, 255, 0.8)",
+              border: "1px solid var(--rv-color-border-thin)",
+              color: "var(--rv-color-text-main)",
+              boxShadow: "var(--rv-shadow-sm)",
+              fontWeight: 600
+            }}
           >
             <Download size={14} />
             <span>导出</span>
-            <ChevronDown size={12} />
+            <ChevronDown size={12} style={{ opacity: 0.7, marginLeft: "-2px" }} />
           </button>
 
           {isExportMenuOpen && (
@@ -285,21 +471,39 @@ export function ProjectDetailTopbar({
           )}
         </div>
 
-        {/* AI 创意工坊快捷开关 */}
+        {/* AI 对话快捷开关 - 炫彩渐变与悬浮触感 */}
         <button
-          className={`rv-topbar-btn ${isRightDrawerOpen ? "active" : ""}`}
+          className="rv-topbar-btn"
           type="button"
           onClick={handleToggleRightTab}
-          title="AI工坊：运行创意生成工作流"
+          title="对话：运行创意生成工作流"
           style={{
-            background: isRightDrawerOpen ? "var(--rv-color-primary)" : "transparent",
-            color: isRightDrawerOpen ? "#ffffff" : "var(--rv-color-primary)",
-            borderColor: "var(--rv-color-primary)",
+            background: isRightDrawerOpen 
+              ? "linear-gradient(135deg, #4f46e5 0%, #0891b2 100%)" 
+              : "linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)",
+            color: "#ffffff",
+            border: "none",
+            boxShadow: isRightDrawerOpen 
+              ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
+              : "0 4px 12px rgba(6, 182, 212, 0.25)",
+            cursor: "pointer",
+            fontWeight: 700,
+            transition: "all 0.2s ease",
             marginLeft: "4px"
           }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-1px)";
+            e.currentTarget.style.boxShadow = "0 6px 16px rgba(6, 182, 212, 0.35)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "none";
+            e.currentTarget.style.boxShadow = isRightDrawerOpen 
+              ? "0 2px 8px rgba(6, 182, 212, 0.2)" 
+              : "0 4px 12px rgba(6, 182, 212, 0.25)";
+          }}
         >
-          <Sparkles size={14} />
-          <span>AI工坊</span>
+          <MessageSquare size={14} />
+          <span>对话</span>
         </button>
       </div>
     </header>

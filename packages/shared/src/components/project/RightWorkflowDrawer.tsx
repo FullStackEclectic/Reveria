@@ -58,14 +58,14 @@ export function RightWorkflowDrawer({
       >
         <h3
           style={{
-            margin: 0,
-            fontSize: "14px",
-            fontWeight: "bold",
-            color: "var(--rv-color-text-main)",
-          }}
-        >
-          AI 创意工坊
-        </h3>
+          margin: 0,
+          fontSize: "14px",
+          fontWeight: "bold",
+          color: "var(--rv-color-text-main)",
+        }}
+      >
+        AI 对话
+      </h3>
         <button
           type="button"
           onClick={() => setIsDrawerOpen(false)}

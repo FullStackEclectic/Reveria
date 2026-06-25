@@ -152,7 +152,7 @@ export function TemplateForm({
       }}
     >
       {/* 左栏：基础与 AI 配置面板 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px", borderRight: "1px solid var(--rv-color-border-thin)", paddingRight: "24px", maxHeight: "680px", overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", borderRight: "1px solid var(--rv-color-border-thin)", paddingRight: "24px", maxHeight: "82vh", overflowY: "auto" }}>
         <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
           <span>⚙️ 核心参数与生成配置</span>
         </div>
