@@ -85,6 +85,7 @@ export function AssetPreviewDialog({
       <section
         aria-label="素材预览"
         className="asset-dialog"
+        style={{ background: "#ffffff" }}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="panel-header">
