@@ -235,9 +235,19 @@ export function CustomersView({
               type="button"
               onClick={() => setIsAddingCustomerInline(!isAddingCustomerInline)}
               title="快速录入客户"
-              style={{ width: "32px", height: "32px", padding: 0 }}
+              style={{
+                width: "32px",
+                height: "32px",
+                minWidth: "32px",
+                minHeight: "32px",
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
+              }}
             >
-              <Plus size={16} />
+              <Plus size={16} style={{ width: "16px", height: "16px", display: "block" }} />
             </button>
           </div>
 
