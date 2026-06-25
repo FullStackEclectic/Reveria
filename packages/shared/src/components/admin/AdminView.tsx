@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { RefreshCw, Monitor, Cpu, Users, Layers, ShieldCheck, FileText, Settings, Globe, Server, CheckCircle, Info, HelpCircle } from "lucide-react";
+import { RefreshCw, LayoutDashboard, Cpu, Users, Layers, ShieldCheck, FileText, Settings, Globe, Server, CheckCircle, Info, HelpCircle } from "lucide-react";
 import {
   WorkspaceSummary,
   ProviderSummary,
@@ -106,7 +106,7 @@ export function AdminView({
   }, []);
 
   const tabItems = [
-    { id: "system", label: "运行监测", icon: Monitor },
+    { id: "system", label: "系统大盘", icon: LayoutDashboard },
     { id: "channels", label: "算力通道", icon: Cpu },
     { id: "members", label: "人员管理", icon: Users },
     { id: "workflows", label: "调度配置", icon: ShieldCheck },
@@ -196,13 +196,13 @@ export function AdminView({
         {/* 子视图分发 */}
         <section className="admin-tab-content" style={{ minWidth: 0 }}>
           {activeTab === "system" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "32px", background: "#ffffff", minHeight: "100vh", width: "100%", boxSizing: "border-box" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "32px", background: "#f8fafc", minHeight: "100vh", width: "100%", boxSizing: "border-box" }}>
               <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
                 <div>
-                  <h2 style={{ fontSize: "24px", fontWeight: "700", margin: "0 0 4px 0", color: "var(--rv-color-text-main)" }}>大模型算力控制台</h2>
-                  <p style={{ fontSize: "13px", color: "var(--rv-color-text-muted)", margin: 0 }}>
+                  <h2 style={{ fontSize: "22px", fontWeight: "800", margin: "0 0 4px 0", color: "var(--rv-color-text-main)" }}>系统运行数据仪表盘</h2>
+                  <p style={{ fontSize: "12px", color: "var(--rv-color-text-muted)", margin: 0 }}>
                     {activeWorkspace
-                      ? `当前工作区: ${activeWorkspace.name} · ${isApiOnline ? "运营策略生效中" : "服务已断开"}`
+                      ? `当前活跃工作区: ${activeWorkspace.name} · ${isApiOnline ? "大模型运营策略与计费实时生效中" : "API 服务连接已断开"}`
                       : "大模型后台管理"}
                   </p>
                 </div>
@@ -211,30 +211,31 @@ export function AdminView({
                   type="button"
                   disabled={isRefreshing}
                   onClick={refreshAll}
+                  style={{
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                    border: "1px solid var(--rv-color-border-thin)",
+                    background: "#ffffff"
+                  }}
                 >
                   <RefreshCw
                     className={isRefreshing ? "spin" : undefined}
-                    size={16}
+                    size={15}
                     aria-hidden="true"
                   />
                   刷新配置
                 </button>
               </header>
 
-              <section className="metrics" style={{ marginBottom: 0 }}>
-                <Metric label="工作区算力余额" value={formattedCredits} />
-                <Metric
-                  label="已消耗算力"
-                  value={`${costReport?.total_consumed_credits ?? 0} 点`}
-                />
-                <Metric label="上游供应商接入" value={`${providers.length} 家`} />
-                <Metric label="激活算力模型" value={`${models.length} 个`} />
-              </section>
-
               <SystemStatusPanel
                 activeWorkspace={activeWorkspace}
                 buildInfo={buildInfo}
                 currentUser={currentUser}
+                tasks={tasks}
+                transactions={transactions}
+                formattedCredits={formattedCredits}
+                costReport={costReport}
+                providersCount={providers.length}
+                modelsCount={models.length}
               />
             </div>
           )}

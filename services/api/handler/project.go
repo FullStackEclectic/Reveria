@@ -34,9 +34,35 @@ type UpdateProjectRequest struct {
 
 // ListProjects 获取项目列表 (GET /projects)
 func ListProjects(c *gin.Context) {
+	actorID := c.MustGet("user_id").(uuid.UUID)
+	workspaceIDStr := c.Query("workspace_id")
+	var workspaceID uuid.UUID
+	var err error
+
+	if workspaceIDStr == "" || workspaceIDStr == "undefined" || workspaceIDStr == "null" {
+		// 自动获取该用户加入的第一个工作区以兼容前端并行初始化
+		var memberRelation model.WorkspaceMember
+		if err := database.DB.Where("user_id = ? AND status = 'joined'", actorID).First(&memberRelation).Error; err != nil {
+			c.JSON(http.StatusOK, []model.Project{})
+			return
+		}
+		workspaceID = memberRelation.WorkspaceID
+	} else {
+		workspaceID, err = uuid.Parse(workspaceIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区 ID 格式有误"})
+			return
+		}
+	}
+
+	// 权限检查：需是工作区的拥有者、管理员或成员
+	if !hasWorkspaceRole(workspaceID, actorID, []string{"owner", "admin", "member"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限操作此工作区"})
+		return
+	}
+
 	var projects []model.Project
-	// Gorm 查询最近的 50 个项目
-	if err := database.DB.Order("created_at desc").Limit(50).Find(&projects).Error; err != nil {
+	if err := database.DB.Where("workspace_id = ?", workspaceID).Order("created_at desc").Limit(50).Find(&projects).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取项目列表失败: " + err.Error()})
 		return
 	}

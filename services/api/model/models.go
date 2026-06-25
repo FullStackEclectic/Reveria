@@ -187,12 +187,12 @@ type ClientSettings struct {
 	BillingMode           string    `gorm:"type:varchar(32);default:'standalone';not null" json:"billing_mode"`
 	BridgeMainStationURL  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_main_station_url"`
 	BridgeInternalSecret  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_internal_secret"`
-	BridgeTextModel       string    `gorm:"type:text;not null" json:"bridge_text_model"`
-	BridgeImageModel      string    `gorm:"type:text;not null" json:"bridge_image_model"`
-	BridgeVideoModel      string    `gorm:"type:text;not null" json:"bridge_video_model"`
-	BridgeTextPools       string    `gorm:"type:text;not null" json:"bridge_text_pools"`
-	BridgeImagePools      string    `gorm:"type:text;not null" json:"bridge_image_pools"`
-	BridgeVideoPools      string    `gorm:"type:text;not null" json:"bridge_video_pools"`
+	BridgeTextModel       string    `gorm:"type:text;default:'';not null" json:"bridge_text_model"`
+	BridgeImageModel      string    `gorm:"type:text;default:'';not null" json:"bridge_image_model"`
+	BridgeVideoModel      string    `gorm:"type:text;default:'';not null" json:"bridge_video_model"`
+	BridgeTextPools       string    `gorm:"type:text;default:'';not null" json:"bridge_text_pools"`
+	BridgeImagePools      string    `gorm:"type:text;default:'';not null" json:"bridge_image_pools"`
+	BridgeVideoPools      string    `gorm:"type:text;default:'';not null" json:"bridge_video_pools"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }

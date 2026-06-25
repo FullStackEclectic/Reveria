@@ -22,7 +22,11 @@ import {
 } from "./types";
 
 export const API_BASE = typeof window !== "undefined"
-  ? (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:4100" : "")
+  ? (window.location.hostname === "localhost" || 
+     window.location.hostname === "127.0.0.1" || 
+     window.location.hostname.includes("wails")
+       ? "http://127.0.0.1:4100" 
+       : "")
   : "http://127.0.0.1:4100";
 export const CURRENT_USER_STORAGE_KEY = "reveria.currentUser";
 export const ACCESS_TOKEN_STORAGE_KEY = "reveria.accessToken";

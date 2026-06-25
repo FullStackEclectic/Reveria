@@ -38,7 +38,7 @@ func ListCustomers(c *gin.Context) {
 	var workspaceID uuid.UUID
 	var err error
 
-	if workspaceIDStr == "" {
+	if workspaceIDStr == "" || workspaceIDStr == "undefined" || workspaceIDStr == "null" {
 		// 自动获取该用户加入的第一个工作区以兼容前端并行初始化
 		var memberRelation model.WorkspaceMember
 		if err := database.DB.Where("user_id = ? AND status = 'joined'", actorID).First(&memberRelation).Error; err != nil {

@@ -513,6 +513,7 @@ type BridgeModelMeta struct {
 	ModelName    string `json:"model_name"`
 	Description  string `json:"description"`
 	Capabilities string `json:"capabilities"`
+	Tags         string `json:"tags"`
 }
 
 // ListModels 获取模型列表 (GET /api/admin/models)
