@@ -9,7 +9,7 @@ Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xA
 
 ## 🏛️ 系统架构 (Go / Web 大一统)
 
-项目已完全重构去 Rust 化，采用了高性能、极速轻量的 **Go 语言生态** 与 **pnpm workspace Monorepo 前端共享架构**：
+本项目采用了高性能、极速轻量的 **Go 语言生态** 与 **pnpm workspace Monorepo 前端共享架构**：
 
 1. **后端 API 分站 (`services/api`)**：
    * 基于 **Gin (Go)** 构建的高并发 REST API 服务。
@@ -45,31 +45,25 @@ reveria/
 
 ## 🚀 快速本地开发联调
 
-在开始之前，请确保本地已安装 **Go (1.21+)**、**Node.js (18+)** 且全局配置了 **pnpm**。
+在开始开发前，请确保本地已准备好 **Go (1.21+)**、**Node.js (18+)** 并且全局安装了 **pnpm**。
 
-### 1. 运行 Go 后端 API 服务
-进入后端目录，启动服务。服务会自动在本地连接 SQLite 数据库并完成数据表迁移：
+### 1. 初始化本地开发环境
+在项目根目录下直接运行以下命令，脚本会自动校验系统环境依赖，生成 `.env` 配置文件，并下载安装全部前端依赖：
 ```powershell
-cd services/api
-go run main.go
-# 默认将在 127.0.0.1:4100 监听 HTTP 请求
+pnpm env:init
 ```
+*(注：如果需要手动检查当前系统的依赖健康度，可以运行 `pnpm env:check`)*
 
-### 2. 运行桌面端开发视窗 (Wails)
-进入桌面端目录，拉起前端热重载并在桌面上弹出测试客户端：
+### 2. 一键启动所有开发服务
+在项目根目录下运行一键启动脚本，它会开启新终端窗口并自动并发运行：**Go 后端 API、Next.js 网页端主站、以及 Wails 桌面客户端开发视窗**：
 ```powershell
-cd apps/desktop
-wails dev
+pnpm dev:all
 ```
-*(注：Wails 内部会代理 Vite 开发服务器，渲染地址为 http://localhost:1420)*
+* **后端 API**：默认监听在 `http://127.0.0.1:4100`。首次启动会自动生成 SQLite 本地关系数据库 `reveria.db` 并完成表结构迁移。
+* **网页端与商业管理后台**：可通过浏览器访问主页 `http://localhost:3000` 以及超级管理员独立控制台 `http://localhost:3000/admin`。
+* **Wails 桌面端**：桌面上会自动弹出应用视窗，其对应的热重载调试地址为 `http://localhost:1420`。
 
-### 3. 运行网页端 Next.js（包含 /admin 商业后台）
-进入网页端目录，拉起 Next.js 调试服务器：
-```powershell
-cd apps/web-next
-pnpm dev
-# 默认可通过浏览器访问 http://localhost:3000 和管理员后台 http://localhost:3000/admin
-```
+*(注：如果需要手动分步调试，也可以直接运行 `pnpm web:dev` 启动网页端；或者在 `apps/desktop` 下执行 `wails dev` 拉起桌面端)*
 
 ---
 
@@ -77,14 +71,16 @@ pnpm dev
 
 * **打包桌面端可执行程序 (Reveria.exe)**：
   ```powershell
+  # 在根目录下直接通过命令打包：
+  pnpm desktop:build
+  # 或者进入 apps/desktop 目录下通过 Wails 工具链打包：
   cd apps/desktop
   wails build
-  # 打包完成后，将在 apps/desktop/build/bin 下产出生产级单体 EXE 运行文件
+  # 打包完成后，将在 apps/desktop/build/bin 下产出单体 EXE 运行文件
   ```
 * **打包网页端静态资源**：
   ```powershell
-  cd apps/web-next
-  pnpm build
+  pnpm web:build
   ```
 
 ---
