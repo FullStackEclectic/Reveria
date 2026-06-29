@@ -97,6 +97,7 @@ type Project struct {
 	CreatedBy       *uuid.UUID `gorm:"type:uuid" json:"created_by"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	CoverURL        string     `gorm:"-" json:"cover_url"`
 }
 
 // Asset 素材/资产表

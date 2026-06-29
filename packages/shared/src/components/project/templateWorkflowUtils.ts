@@ -1,5 +1,5 @@
 import { PromptTemplate, AssetSummary, ProjectCanvasDocument } from "../../types";
-import { postJson, getJson, assetTitle } from "../../utils";
+import { postJson, putJson, getJson, assetTitle } from "../../utils";
 
 interface GenerateParams {
   template: PromptTemplate;
@@ -38,44 +38,95 @@ export async function runTemplateGeneration({
   pushToHistory,
   projectCanvas,
 }: GenerateParams) {
-  // 1. 根据 ratio 判断尺寸
-  let w = 220;
-  let h = 140;
+  // 智能自动同步画布内容到后端数据库，防止刷新页面后卡片或状态丢失
+  const saveCanvasData = async (updatedItems: any[]) => {
+    try {
+      const updatedCanvas: ProjectCanvasDocument = {
+        ...projectCanvas,
+        version: 1,
+        panX,
+        panY,
+        activeBoardId,
+        items: updatedItems,
+      };
+      await putJson(`/api/projects/${projectId}/canvas`, { canvas: updatedCanvas });
+    } catch (e) {
+      console.error("[runTemplateGeneration] 自动同步画布失败:", e);
+    }
+  };
+
+  // 1. 智能提取选定分辨率或从 ratio 推导初始大小，使占位符比例与真图 100% 保持一致
+  let w = 320;
+  let h = 320;
   const ratio = payload.ratio;
-  if (ratio.includes("1:1")) {
-    w = 180; h = 180;
-  } else if (ratio.includes("9:16")) {
-    w = 140; h = 248;
-  } else if (ratio.includes("3:4")) {
-    w = 150; h = 200;
-  } else if (ratio.includes("4:3")) {
-    w = 200; h = 150;
-  } else if (ratio.includes("16:9")) {
-    w = 248; h = 140;
+  
+  // 优先提取高级生成参数中设定的分辨率大小
+  let targetWidth = 1024;
+  let targetHeight = 1024;
+  try {
+    if (template.advanced_params) {
+      const adv = JSON.parse(template.advanced_params);
+      if (adv.width) targetWidth = adv.width;
+      if (adv.height) targetHeight = adv.height;
+    }
+  } catch (e) {}
+
+  // 限制最大边为 320 像素，另一边根据原始比例等比例缩放
+  const maxCanvasSide = 320;
+  if (targetWidth === targetHeight) {
+    w = maxCanvasSide;
+    h = maxCanvasSide;
+  } else if (targetWidth > targetHeight) {
+    w = maxCanvasSide;
+    h = Math.round(maxCanvasSide * (targetHeight / targetWidth));
+  } else {
+    h = maxCanvasSide;
+    w = Math.round(maxCanvasSide * (targetWidth / targetHeight));
+  }
+
+  // 备用 fallback: 如果无法解析，则使用 ratio 字符串的模糊匹配
+  if (!targetWidth || !targetHeight) {
+    if (ratio.includes("1:1")) {
+      w = 320; h = 320;
+    } else if (ratio.includes("9:16")) {
+      w = 220; h = 390;
+    } else if (ratio.includes("16:9")) {
+      w = 390; h = 220;
+    } else if (ratio.includes("3:4")) {
+      w = 260; h = 345;
+    } else if (ratio.includes("4:3")) {
+      w = 345; h = 260;
+    }
   }
 
   // 2. 先往画布添加一个占位卡片
   const placeholderId = createCanvasItemId();
   
   pushToHistory(projectCanvas);
+  
+  const initialItems = [
+    ...projectCanvas.items,
+    {
+      id: placeholderId,
+      type: "note",
+      title: `✨ 正在生成 ${template.title}...`,
+      text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
+      x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
+      y: Math.round(-panY + 100 + (itemsCount % 5) * 30),
+      w,
+      h,
+      board_id: activeBoardId,
+    },
+  ];
+
   setProjectCanvas((current) => ({
     ...current,
     version: 1,
-    items: [
-      ...current.items,
-      {
-        id: placeholderId,
-        type: "note",
-        title: `✨ 正在生成 ${template.title}...`,
-        text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
-        x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
-        y: Math.round(-panY + 100 + (itemsCount % 5) * 30),
-        w,
-        h,
-        board_id: activeBoardId,
-      },
-    ],
+    items: initialItems,
   }));
+  
+  // 立即自动保存占位卡片状态到数据库，确保刷新不丢失
+  void saveCanvasData(initialItems);
 
   showToast(`“${template.title}”任务已提交，正在生成中...`);
 
@@ -126,7 +177,6 @@ export async function runTemplateGeneration({
         quality: "medium",
         image_count: 1,
         ref_image_url: payload.ref_image_url,
-        // 透传高级生成参数
         steps: advParams.steps ?? 28,
         cfg_scale: advParams.cfg_scale ?? 7.0,
         denoising_strength: advParams.denoising_strength ?? 0.5,
@@ -152,7 +202,6 @@ export async function runTemplateGeneration({
         negative_prompt: payload.negative_prompt || template.negative_prompt || "",
         size: sizePayload,
         ref_image_url: payload.ref_image_url,
-        // 透传高级生成参数
         steps: advParams.steps ?? 28,
         cfg_scale: advParams.cfg_scale ?? 7.0,
         denoising_strength: advParams.denoising_strength ?? 0.5,
@@ -196,24 +245,28 @@ export async function runTemplateGeneration({
         if (setAssets) {
           setAssets((curr) => [asset, ...curr]);
         }
+        
+        const syncItems = projectCanvas.items.map((item) =>
+          item.id === placeholderId
+            ? {
+                id: placeholderId,
+                type: "asset",
+                asset_id: asset.id,
+                title: assetTitle(asset) || template.title,
+                x: item.x,
+                y: item.y,
+                w: item.w,
+                h: item.h,
+                board_id: item.board_id,
+              }
+            : item
+        );
+        
         setProjectCanvas((current) => ({
           ...current,
-          items: current.items.map((item) =>
-            item.id === placeholderId
-              ? {
-                  id: placeholderId,
-                  type: "asset",
-                  asset_id: asset.id,
-                  title: assetTitle(asset) || template.title,
-                  x: item.x,
-                  y: item.y,
-                  w: item.w,
-                  h: item.h,
-                  board_id: item.board_id,
-                }
-              : item
-          ),
+          items: syncItems,
         }));
+        void saveCanvasData(syncItems);
         showToast(`“${template.title}”生成成功！`);
       } else if (response.output) {
         const outputText = typeof response.output === "string" 
@@ -222,22 +275,35 @@ export async function runTemplateGeneration({
           ? response.output.summary
           : JSON.stringify(response.output, null, 2);
 
+        const textItems = projectCanvas.items.map((item) =>
+          item.id === placeholderId
+            ? {
+                ...item,
+                title: template.title,
+                text: outputText,
+              }
+            : item
+        );
+
         setProjectCanvas((current) => ({
           ...current,
-          items: current.items.map((item) =>
-            item.id === placeholderId
-              ? {
-                  ...item,
-                  title: template.title,
-                  text: outputText,
-                }
-              : item
-          ),
+          items: textItems,
         }));
+        void saveCanvasData(textItems);
         showToast(`“${template.title}”创意生成成功！`);
       } else if (task && task.id) {
         const taskId = task.id;
         
+        // 绑定 task_id 并持久化保存到后端
+        const idItems = initialItems.map((item) =>
+          item.id === placeholderId ? { ...item, task_id: taskId } : item
+        );
+        setProjectCanvas((current) => ({
+          ...current,
+          items: idItems,
+        }));
+        void saveCanvasData(idItems);
+
         const pollInterval = setInterval(async () => {
           try {
             const taskRes = await getJson<{ success: boolean; data: any }>(`/api/tasks/${taskId}`);
@@ -253,40 +319,48 @@ export async function runTemplateGeneration({
                   if (setAssets) {
                     setAssets(assetsRes.data);
                   }
+                  
+                  const successItems = projectCanvas.items.map((item) =>
+                    item.id === placeholderId
+                      ? {
+                          id: placeholderId,
+                          type: "asset",
+                          asset_id: latestAsset.id,
+                          title: assetTitle(latestAsset) || template.title,
+                          x: item.x,
+                          y: item.y,
+                          w: item.w,
+                          h: item.h,
+                          board_id: item.board_id,
+                        }
+                      : item
+                  );
+
                   setProjectCanvas((current) => ({
                     ...current,
-                    items: current.items.map((item) =>
-                      item.id === placeholderId
-                        ? {
-                            id: placeholderId,
-                            type: "asset",
-                            asset_id: latestAsset.id,
-                            title: assetTitle(latestAsset) || template.title,
-                            x: item.x,
-                            y: item.y,
-                            w: item.w,
-                            h: item.h,
-                            board_id: item.board_id,
-                          }
-                        : item
-                    ),
+                    items: successItems,
                   }));
+                  void saveCanvasData(successItems);
                 }
                 showToast(`“${template.title}”生成完毕！`);
               } else if (taskStatus === "failed") {
                 clearInterval(pollInterval);
+                
+                const failItems = projectCanvas.items.map((item) =>
+                  item.id === placeholderId
+                    ? {
+                        ...item,
+                        title: `❌ ${template.title} 生成失败`,
+                        text: `错误信息: ${taskRes.data.error_message || "未知服务商内部错误"}`,
+                      }
+                    : item
+                );
+
                 setProjectCanvas((current) => ({
                   ...current,
-                  items: current.items.map((item) =>
-                    item.id === placeholderId
-                      ? {
-                          ...item,
-                          title: `❌ ${template.title} 生成失败`,
-                          text: `错误信息: ${taskRes.data.error_message || "未知服务商内部错误"}`,
-                        }
-                      : item
-                  ),
+                  items: failItems,
                 }));
+                void saveCanvasData(failItems);
                 showToast("任务生成失败");
               }
             }
@@ -304,18 +378,22 @@ export async function runTemplateGeneration({
     }
   } catch (err: any) {
     console.error("模板直接生成失败:", err);
+    
+    const errorItems = projectCanvas.items.map((item) =>
+      item.id === placeholderId
+        ? {
+            ...item,
+            title: `❌ ${template.title} 生成出错`,
+            text: `生成时发生错误，请重试。\n具体原因: ${err.message || err}`,
+          }
+        : item
+    );
+
     setProjectCanvas((current) => ({
       ...current,
-      items: current.items.map((item) =>
-        item.id === placeholderId
-          ? {
-              ...item,
-              title: `❌ ${template.title} 生成出错`,
-              text: `生成时发生错误，请重试。\n具体原因: ${err.message || err}`,
-            }
-          : item
-      ),
+      items: errorItems,
     }));
+    void saveCanvasData(errorItems);
     showToast("任务提交失败，请检查积分余额或输入");
   }
 }

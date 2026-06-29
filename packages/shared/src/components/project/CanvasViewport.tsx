@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
 import { CanvasItemCard, getCardColorStyle } from "./CanvasItemCard";
 import { CanvasSelectionOverlay } from "./CanvasSelectionOverlay";
+import { assetUrl } from "../../utils";
 
 export interface CanvasViewportProps {
   projectCanvas: ProjectCanvasDocument;
@@ -137,7 +138,7 @@ export function CanvasViewport({
         const asset = assets.find((a) => a.id === item.asset_id);
         if (asset && (asset.thumbnail_url || asset.file_url) && !realResolutions[asset.id]) {
           const img = new Image();
-          img.src = asset.thumbnail_url ?? asset.file_url ?? "";
+          img.src = assetUrl(asset.thumbnail_url ?? asset.file_url ?? "");
           img.onload = () => {
             setRealResolutions((prev) => ({
               ...prev,
@@ -727,7 +728,9 @@ export function CanvasViewport({
               <CanvasItemCard
                 key={item.id}
                 item={item}
+                projectId={projectId}
                 asset={asset}
+                assets={assets}
                 isSelected={isSelected}
                 readOnly={readOnly}
                 colors={colors}

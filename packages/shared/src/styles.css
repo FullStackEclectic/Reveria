@@ -767,3 +767,20 @@ select {
   margin: 4px 0;
 }
 
+/* AI 创意生图卡片扫光动画 */
+@keyframes shimmerSlide {
+  0% {
+    transform: translateX(-150%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.shimmer-slide-bar {
+  animation: shimmerSlide 2s infinite ease-in-out;
+}
+

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { Sparkles, Image as ImageIcon, Loader2 } from "lucide-react";
 import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
-import { assetUrl } from "../../utils";
+import { assetUrl, getJson, putJson, assetTitle, getAssetMetadata } from "../../utils";
 
 export function getCardColorStyle(colorTheme?: string) {
   switch (colorTheme) {
@@ -46,6 +47,7 @@ export function getCardColorStyle(colorTheme?: string) {
 
 export interface CanvasItemCardProps {
   item: CanvasItem;
+  projectId?: string; // 关联的项目 ID
   asset: AssetSummary | null | undefined;
   isSelected: boolean;
   readOnly: boolean;
@@ -61,6 +63,7 @@ export interface CanvasItemCardProps {
 
 export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
   item,
+  projectId,
   asset,
   isSelected,
   readOnly,
@@ -72,8 +75,129 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
   setProjectCanvas,
   onMouseDownCard,
   handleResizeStart,
+  assets,
 }) => {
+  // 智能断网/刷新自愈：如果检测到是正在生成的 AI 节点且附带 task_id，自动启动查询或轮询，将真实结果写回后端
+  useEffect(() => {
+    const isAiGen = item.type === "note" && item.title && (item.title.includes("正在生成") || item.title.includes("生成中"));
+    if (!isAiGen || !item.task_id || readOnly || !setProjectCanvas || !projectId) return;
+
+    let isMounted = true;
+    let pollInterval: NodeJS.Timeout;
+
+    const saveCanvasData = async (updatedItems: any[]) => {
+      try {
+        await putJson(`/api/projects/${projectId}/canvas`, {
+          canvas: {
+            items: updatedItems,
+            version: 1
+          }
+        });
+      } catch (e) {
+        console.error("[CanvasItemCard] 自愈保存失败:", e);
+      }
+    };
+
+    const checkStatus = async () => {
+      try {
+        const res = await getJson<{ success: boolean; data: any }>(`/api/tasks/${item.task_id}`);
+        if (!isMounted) return;
+
+        if (res.success && res.data) {
+          const status = res.data.status;
+          if (status === "succeeded") {
+            clearInterval(pollInterval);
+
+            const assetsRes = await getJson<{ success: boolean; data: AssetSummary[] }>(
+              `/api/projects/${projectId}/assets`
+            );
+            if (!isMounted) return;
+
+            if (assetsRes.success && assetsRes.data.length > 0) {
+              const latestAsset = assetsRes.data[0];
+              
+              setProjectCanvas((current) => {
+                const nextItems = current.items.map((i) =>
+                  i.id === item.id
+                    ? {
+                        id: item.id,
+                        type: "asset",
+                        asset_id: latestAsset.id,
+                        title: assetTitle(latestAsset) || item.title,
+                        x: i.x,
+                        y: i.y,
+                        w: i.w,
+                        h: i.h,
+                        board_id: i.board_id,
+                      }
+                    : i
+                );
+                void saveCanvasData(nextItems);
+                return { ...current, items: nextItems };
+              });
+            }
+          } else if (status === "failed") {
+            clearInterval(pollInterval);
+
+            const errorMsg = res.data.error_message || "未知服务商内部错误";
+            setProjectCanvas((current) => {
+              const nextItems = current.items.map((i) =>
+                i.id === item.id
+                  ? {
+                      ...i,
+                      title: `❌ AI 生成失败`,
+                      text: `生成时发生错误，请重试。\n具体原因: ${errorMsg}`,
+                    }
+                  : i
+              );
+              void saveCanvasData(nextItems);
+              return { ...current, items: nextItems };
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[CanvasItemCard] 自愈轮询异常:", err);
+      }
+    };
+
+    void checkStatus();
+    pollInterval = setInterval(checkStatus, 4000);
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [item.id, item.task_id, projectId, readOnly]);
+
+  // 画板节点局部大图切换选中的 asset.id
+  const [selectedId, setSelectedId] = React.useState<string>("");
+
   const isAssetCard = item.type === "asset" && asset;
+
+  // 聚类获取当前生成资产同批次下的所有图片
+  const getSiblingImages = () => {
+    if (!assets || !asset || asset.asset_type !== "image" || asset.source !== "generated") {
+      return [];
+    }
+    const meta = getAssetMetadata(asset);
+    const prompt = (meta?.prompt || "").trim();
+    if (!prompt) return [];
+
+    const createdTime = new Date(asset.created_at).getTime();
+
+    return assets.filter(a => {
+      if (a.asset_type !== "image" || a.source !== "generated") return false;
+      const m = getAssetMetadata(a);
+      const p = (m?.prompt || "").trim();
+      if (p !== prompt) return false;
+      const t = new Date(a.created_at).getTime();
+      return Math.abs(t - createdTime) <= 10000; // 10秒内
+    });
+  };
+
+  const siblings = getSiblingImages();
+  const activeSiblingId = selectedId || (asset ? asset.id : "");
+  const activeSibling = (siblings.length >= 2 && siblings.find(s => s.id === activeSiblingId)) || asset;
 
   return (
     <article
@@ -139,6 +263,67 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
             style={{ width: "100%", height: "100%", objectFit: "contain" }}
             draggable={false}
           />
+        ) : siblings.length >= 2 && activeSibling ? (
+          /* 画布上的微型多图切换画廊组件 */
+          <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden", pointerEvents: "auto" }}>
+            {/* 左侧：主图显示 */}
+            <div style={{ flex: 1, height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
+              <img
+                alt="AI focus sibling"
+                src={assetUrl(activeSibling.file_url ?? activeSibling.thumbnail_url ?? "")}
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+              />
+              {/* 微型多图标签 */}
+              <div style={{ position: "absolute", bottom: "6px", left: "6px", background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: "3px", fontSize: "9px", pointerEvents: "none" }}>
+                画廊 1/{siblings.length}
+              </div>
+            </div>
+            
+            {/* 右侧：超细垂直缩略图选项卡 (阻止拖拽干扰) */}
+            <div 
+              style={{ 
+                width: "36px", 
+                display: "flex", 
+                flexDirection: "column", 
+                gap: "4px", 
+                padding: "4px 2px", 
+                overflowY: "auto", 
+                background: "var(--rv-color-bg-sidebar)",
+                borderLeft: "1px solid var(--rv-color-border-thin)",
+                boxSizing: "border-box"
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {siblings.map((s, idx) => {
+                const isSel = s.id === activeSibling.id;
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "4px",
+                      overflow: "hidden",
+                      border: isSel ? "1.5px solid var(--rv-color-primary)" : "1.5px solid transparent",
+                      cursor: "pointer",
+                      opacity: isSel ? 1 : 0.6,
+                      boxSizing: "border-box",
+                      flexShrink: 0
+                    }}
+                  >
+                    <img 
+                      src={assetUrl(s.thumbnail_url ?? s.file_url ?? "")} 
+                      alt={`sib ${idx}`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : asset.file_url || asset.thumbnail_url ? (
           <img
             alt=""
@@ -149,97 +334,234 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
         ) : (
           <div className="canvas-item-fallback">{asset.asset_type}</div>
         )
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-          {readOnly ? (
-            <>
-              <div
-                style={{
-                  fontWeight: "bold",
-                  fontSize:
-                    item.titleSize === "lg"
-                      ? "18px"
-                      : item.titleSize === "sm"
-                      ? "12px"
-                      : "14px",
-                  color: colors.text,
-                  padding: "2px 4px",
-                  width: "100%",
-                  wordBreak: "break-all",
+      ) : (() => {
+        const isAiGenerationNode = item.type === "note" && item.title && (item.title.includes("正在生成") || item.title.includes("生成中"));
+        
+        if (isAiGenerationNode) {
+          const displayPrompt = (item.text || "").replace(/^提示词:\s*/, "");
+          return (
+            <div 
+              style={{ 
+                display: "flex", 
+                flexDirection: "column", 
+                height: "100%", 
+                background: "#ffffff", 
+                borderRadius: "10px", 
+                overflow: "hidden", 
+                boxShadow: "0 4px 15px rgba(0,0,0,0.04)",
+                border: "1px solid var(--rv-color-border-thin)",
+                boxSizing: "border-box"
+              }}
+            >
+              {/* 头部 Bar */}
+              <div 
+                style={{ 
+                  background: "linear-gradient(135deg, var(--rv-color-primary) 0%, #6366f1 100%)", 
+                  padding: "6px 12px", 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "space-between",
+                  color: "#ffffff",
+                  height: "28px",
+                  boxSizing: "border-box",
+                  flexShrink: 0
                 }}
               >
-                {item.title}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontWeight: "bold" }}>
+                  <Sparkles size={11} style={{ animation: "pulse 1.5s infinite" }} />
+                  <span>AI 创意画面渲染中...</span>
+                </div>
+                <div 
+                  style={{ 
+                    fontSize: "8px", 
+                    background: "rgba(255,255,255,0.25)", 
+                    padding: "1px 5px", 
+                    borderRadius: "100px", 
+                    fontWeight: "bold" 
+                  }}
+                >
+                  RUNNING
+                </div>
               </div>
-              <div
-                style={{
-                  flex: 1,
-                  fontSize:
-                    item.fontSize === "lg"
-                      ? "16px"
-                      : item.fontSize === "sm"
-                      ? "12px"
-                      : "14px",
-                  color: colors.text,
-                  padding: "4px",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  overflowY: "auto",
+              
+              {/* 主体：“以图为主”的 AI 画面占位渲染预留区 */}
+              <div 
+                style={{ 
+                  flex: 1, 
+                  background: "radial-gradient(circle at center, rgba(15, 118, 110, 0.04) 0%, rgba(99, 102, 241, 0.02) 100%)", 
+                  display: "flex", 
+                  flexDirection: "column", 
+                  alignItems: "center", 
+                  justifyContent: "center", 
+                  gap: "10px",
+                  position: "relative",
+                  overflow: "hidden",
+                  minHeight: 0
                 }}
               >
-                {item.text}
+                {/* 旋转加呼吸的双重 Loader 动画 */}
+                <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <ImageIcon size={32} style={{ color: "var(--rv-color-primary)", opacity: 0.35, strokeWidth: 1.5 }} />
+                  <Loader2 
+                    size={48} 
+                    style={{ 
+                      position: "absolute", 
+                      color: "var(--rv-color-primary)", 
+                      opacity: 0.45, 
+                      animation: "spin 3s linear infinite",
+                      strokeWidth: 1.2
+                    }} 
+                  />
+                </div>
+                
+                <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "bold", textAlign: "center", padding: "0 16px" }}>
+                  正在努力渲染电商多图场景...
+                </span>
+
+                {/* 底部跑马灯进度条 */}
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "3px", background: "rgba(0,0,0,0.02)" }}>
+                  <div 
+                    className="shimmer-slide-bar"
+                    style={{ 
+                      height: "100%", 
+                      width: "60%", 
+                      background: "linear-gradient(90deg, var(--rv-color-primary) 0%, #6366f1 100%)",
+                      borderRadius: "100px"
+                    }} 
+                  />
+                </div>
               </div>
-            </>
-          ) : (
-            <>
-              <input
-                type="text"
-                className="canvas-item-title-input"
-                value={item.title}
-                onChange={(e) => {
-                  if (!setProjectCanvas) return;
-                  const val = e.target.value;
-                  setProjectCanvas((curr) => ({
-                    ...curr,
-                    items: curr.items.map((i) =>
-                      i.id === item.id ? { ...i, title: val } : i
-                    ),
-                  }));
+
+              {/* 底部：提示词完整滚动面板 */}
+              <div 
+                style={{ 
+                  height: "64px", 
+                  background: "var(--rv-color-bg-sidebar)", 
+                  borderTop: "1px solid var(--rv-color-border-thin)", 
+                  display: "flex", 
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  padding: "6px 12px",
+                  boxSizing: "border-box",
+                  flexShrink: 0
                 }}
-                style={{
-                  fontWeight: "bold",
-                  fontSize:
-                    item.titleSize === "lg"
-                      ? "18px"
-                      : item.titleSize === "sm"
-                      ? "12px"
-                      : "14px",
-                  color: colors.text,
-                  background: "transparent",
-                  border: 0,
-                  outline: 0,
-                  padding: "2px 4px",
-                  width: "calc(100% - 24px)",
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-              <textarea
-                value={item.text ?? ""}
-                onChange={(event) => updateCanvasNote(item.id, event.target.value)}
-                onMouseDown={(event) => event.stopPropagation()}
-                style={{
-                  fontSize:
-                    item.fontSize === "lg"
-                      ? "16px"
-                      : item.fontSize === "sm"
-                      ? "12px"
-                      : "14px",
-                  color: colors.text,
-                }}
-              />
-            </>
-          )}
-        </div>
-      )}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "var(--rv-color-text-muted)", fontWeight: "bold", marginBottom: "2px" }}>
+                  <span>提示词指令</span>
+                </div>
+                <div 
+                  style={{ 
+                    flex: 1, 
+                    fontSize: "9px", 
+                    color: "var(--rv-color-text-main)", 
+                    overflowY: "auto", 
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    fontFamily: "JetBrains Mono, monospace",
+                    lineHeight: "1.4"
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title={displayPrompt}
+                >
+                  {displayPrompt}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {readOnly ? (
+              <>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    fontSize:
+                      item.titleSize === "lg"
+                        ? "18px"
+                        : item.titleSize === "sm"
+                        ? "12px"
+                        : "14px",
+                    color: colors.text,
+                    padding: "2px 4px",
+                    width: "100%",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {item.title}
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    fontSize:
+                      item.fontSize === "lg"
+                        ? "16px"
+                        : item.fontSize === "sm"
+                        ? "12px"
+                        : "14px",
+                    color: colors.text,
+                    padding: "4px",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    overflowY: "auto",
+                  }}
+                >
+                  {item.text}
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  className="canvas-item-title-input"
+                  value={item.title}
+                  onChange={(e) => {
+                    if (!setProjectCanvas) return;
+                    const val = e.target.value;
+                    setProjectCanvas((curr) => ({
+                      ...curr,
+                      items: curr.items.map((i) =>
+                        i.id === item.id ? { ...i, title: val } : i
+                      ),
+                    }));
+                  }}
+                  style={{
+                    fontWeight: "bold",
+                    fontSize:
+                      item.titleSize === "lg"
+                        ? "18px"
+                        : item.titleSize === "sm"
+                        ? "12px"
+                        : "14px",
+                    color: colors.text,
+                    background: "transparent",
+                    border: 0,
+                    outline: 0,
+                    padding: "2px 4px",
+                    width: "calc(100% - 24px)",
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+                <textarea
+                  value={item.text ?? ""}
+                  onChange={(event) => updateCanvasNote(item.id, event.target.value)}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  style={{
+                    fontSize:
+                      item.fontSize === "lg"
+                        ? "16px"
+                        : item.fontSize === "sm"
+                        ? "12px"
+                        : "14px",
+                    color: colors.text,
+                  }}
+                />
+              </>
+            )}
+          </div>
+        );
+      })()}
     </article>
   );
 };

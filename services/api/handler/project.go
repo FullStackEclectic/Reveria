@@ -32,6 +32,19 @@ type UpdateProjectRequest struct {
 	BudgetCredits *int64     `json:"budget_credits"`
 }
 
+// fillProjectCoverURL 查询项目下最新的一张资产（图片/视频/输出等）作为缩略图封面
+func fillProjectCoverURL(proj *model.Project) {
+	var latestAsset model.Asset
+	// 查找项目下最新的图片资产，只要有 file_url 且非空
+	if err := database.DB.Where("project_id = ? AND file_url IS NOT NULL AND file_url != ''", proj.ID).Order("created_at desc").First(&latestAsset).Error; err == nil {
+		if latestAsset.ThumbnailURL != nil && *latestAsset.ThumbnailURL != "" {
+			proj.CoverURL = *latestAsset.ThumbnailURL
+		} else {
+			proj.CoverURL = latestAsset.FileURL
+		}
+	}
+}
+
 // ListProjects 获取项目列表 (GET /projects)
 func ListProjects(c *gin.Context) {
 	actorID := c.MustGet("user_id").(uuid.UUID)
@@ -65,6 +78,10 @@ func ListProjects(c *gin.Context) {
 	if err := database.DB.Where("workspace_id = ?", workspaceID).Order("created_at desc").Limit(50).Find(&projects).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取项目列表失败: " + err.Error()})
 		return
+	}
+
+	for i := range projects {
+		fillProjectCoverURL(&projects[i])
 	}
 
 	c.JSON(http.StatusOK, projects)
@@ -144,6 +161,8 @@ func GetProject(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限查看此项目"})
 		return
 	}
+
+	fillProjectCoverURL(&project)
 
 	c.JSON(http.StatusOK, project)
 }

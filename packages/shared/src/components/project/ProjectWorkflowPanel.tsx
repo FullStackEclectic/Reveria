@@ -3,16 +3,10 @@ import {
   Play,
   Loader2,
   Sparkles,
-  FileText,
-  Palette,
-  Layers,
-  Film,
-  ArrowLeft,
-  Image,
-  ChevronRight,
   ChevronDown,
   X,
-  Zap
+  Zap,
+  Image
 } from "lucide-react";
 import {
   ProjectSummary,
@@ -25,16 +19,25 @@ import {
   AssetSummary,
   ModelSummary,
 } from "../../types";
-import { postJson, assetUrl, assetTitle } from "../../utils";
+import { getJson, postJson, assetUrl, assetTitle, uploadAsset } from "../../utils";
 import { WorkflowHistoryFeed } from "./WorkflowHistoryFeed";
 import {
   quickTasks,
   isWorkflowRunnable,
   getWorkflowIcon,
-  getWorkflowDesc,
   getRatioBoxStyle,
   getQualityLabel,
 } from "./workflowUtils";
+import { WorkflowParamPopup } from "./WorkflowParamPopup";
+import { SessionHeader } from "./SessionHeader";
+import { WorkflowPromptConsole } from "./WorkflowPromptConsole";
+
+interface AISession {
+  id: string;
+  title: string;
+  createdAt: number;
+  assetIds: string[];
+}
 
 interface ProjectWorkflowPanelProps {
   selectedProject: ProjectSummary;
@@ -52,6 +55,7 @@ interface ProjectWorkflowPanelProps {
   workflowRefAsset: AssetSummary | null;
   setWorkflowRefAsset: (asset: AssetSummary | null) => void;
   setPreviewAsset: (asset: AssetSummary | null) => void;
+  onClose?: () => void;
 }
 
 export function ProjectWorkflowPanel({
@@ -70,6 +74,7 @@ export function ProjectWorkflowPanel({
   workflowRefAsset,
   setWorkflowRefAsset,
   setPreviewAsset,
+  onClose,
 }: ProjectWorkflowPanelProps) {
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowType | null>("image-generation");
   const [workflowInput, setWorkflowInput] = useState("");
@@ -80,6 +85,9 @@ export function ProjectWorkflowPanel({
   const [isParamPopupOpen, setIsParamPopupOpen] = useState(false);
   const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
   const [isRefSelectorOpen, setIsRefSelectorOpen] = useState(false);
+  const [isRefMenuOpen, setIsRefMenuOpen] = useState(false);
+  const [isUploadingRef, setIsUploadingRef] = useState(false);
+  const [activeProgress, setActiveProgress] = useState(0);
   
   // 聊天评价反馈与自动滚动
   const [feedbacks, setFeedbacks] = useState<Record<string, "up" | "down" | "">>({});
@@ -111,67 +119,99 @@ export function ProjectWorkflowPanel({
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const refMenuTriggerRef = useRef<HTMLDivElement>(null);
+  const fileRefInputRef = useRef<HTMLInputElement>(null);
 
-  function getAvailableModels() {
-    const isImageModel = (m: ModelSummary) => {
-      const n = (m.name || "").toLowerCase();
-      const dn = (m.display_name || "").toLowerCase();
-      return n.includes("image") || n.includes("dall") || n.includes("midjourney") || n.includes("flux") || n.includes("sd") || n.includes("diffusion") ||
-             dn.includes("image") || dn.includes("dall") || dn.includes("midjourney") || dn.includes("flux") || dn.includes("sd") || dn.includes("diffusion") || dn.includes("图");
-    };
+  // 多会话管理状态
+  const [sessions, setSessions] = useState<AISession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>("");
+  const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
+  const sessionDropdownRef = useRef<HTMLDivElement>(null);
 
-    const isVideoModel = (m: ModelSummary) => {
-      const n = (m.name || "").toLowerCase();
-      const dn = (m.display_name || "").toLowerCase();
-      return n.includes("video") || n.includes("luma") || n.includes("runway") || n.includes("sora") || n.includes("kling") || n.includes("cogvideo") ||
-             dn.includes("video") || dn.includes("luma") || dn.includes("runway") || dn.includes("sora") || dn.includes("kling") || dn.includes("cogvideo") || dn.includes("视频");
-    };
+  // 任务管理状态
+  const [localTasks, setLocalTasks] = useState<GenerationTaskSummary[]>([]);
 
-    if (selectedWorkflow === "image-generation") {
-      const filtered = models
-        .filter((m) => m.enabled && isImageModel(m))
-        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
-      if (filtered.length > 0) {
-        return filtered;
-      }
-      return [
-        { id: "gpt-image-2", name: "gpt-image-2", display_name: "GPT Image 2" },
-        { id: "dall-e-3", name: "dall-e-3", display_name: "DALL-E 3" },
-        { id: "midjourney-v6", name: "midjourney-v6", display_name: "Midjourney v6" },
-      ];
-    } else if (selectedWorkflow === "video-generation") {
-      const filtered = models
-        .filter((m) => m.enabled && isVideoModel(m))
-        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
-      if (filtered.length > 0) {
-        return filtered;
-      }
-      return [
-        { id: "luma-video", name: "luma-video", display_name: "Luma Video" },
-        { id: "runway-gen3", name: "runway-gen3", display_name: "Runway Gen-3" },
-      ];
-    } else {
-      const filtered = models
-        .filter((m) => m.enabled && !isImageModel(m) && !isVideoModel(m))
-        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
-      if (filtered.length > 0) {
-        return filtered;
-      }
-      return [
-        { id: "gpt-4o", name: "gpt-4o", display_name: "GPT-4o" },
-        { id: "claude-3.5-sonnet", name: "claude-3.5-sonnet", display_name: "Claude 3.5 Sonnet" },
-        { id: "deepseek-v3", name: "deepseek-v3", display_name: "DeepSeek-V3" },
-      ];
-    }
-  }
-
+  // 1. 根据项目物理隔离加载/同步 sessions
   useEffect(() => {
-    const available = getAvailableModels();
-    if (!available.some((m) => m.id === selectedModel)) {
-      setSelectedModel(available[0]?.id || "");
+    const key = `reveria_sessions_${selectedProjectId}`;
+    const stored = localStorage.getItem(key);
+    let parsed: AISession[] = [];
+    if (stored) {
+      try {
+        parsed = JSON.parse(stored);
+      } catch (e) {
+        console.error("解析本地会话缓存失败:", e);
+      }
     }
-  }, [selectedWorkflow, models]);
+    
+    if (parsed.length === 0) {
+      const defaultSession: AISession = {
+        id: `session_${Date.now()}`,
+        title: "默认对话",
+        createdAt: Date.now(),
+        assetIds: []
+      };
+      parsed = [defaultSession];
+      localStorage.setItem(key, JSON.stringify(parsed));
+    }
+    
+    setSessions(parsed);
+    
+    const activeKey = `reveria_active_session_${selectedProjectId}`;
+    const storedActiveId = localStorage.getItem(activeKey);
+    if (storedActiveId && parsed.some(s => s.id === storedActiveId)) {
+      setCurrentSessionId(storedActiveId);
+    } else {
+      setCurrentSessionId(parsed[0].id);
+      localStorage.setItem(activeKey, parsed[0].id);
+    }
+  }, [selectedProjectId]);
 
+  const saveSessions = (updatedSessions: AISession[]) => {
+    setSessions(updatedSessions);
+    localStorage.setItem(`reveria_sessions_${selectedProjectId}`, JSON.stringify(updatedSessions));
+  };
+
+  const handleCreateNewSession = () => {
+    const newSession: AISession = {
+      id: `session_${Date.now()}`,
+      title: "新对话",
+      createdAt: Date.now(),
+      assetIds: []
+    };
+    const updated = [newSession, ...sessions];
+    saveSessions(updated);
+    setCurrentSessionId(newSession.id);
+    localStorage.setItem(`reveria_active_session_${selectedProjectId}`, newSession.id);
+    setWorkflowInput("");
+    setRefAsset(null);
+  };
+
+  const handleRemoveSession = (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("确定要删除这个会话吗？")) return;
+    
+    const updated = sessions.filter(s => s.id !== sessionId);
+    if (updated.length === 0) {
+      const defaultSession: AISession = {
+        id: `session_${Date.now()}`,
+        title: "默认对话",
+        createdAt: Date.now(),
+        assetIds: []
+      };
+      saveSessions([defaultSession]);
+      setCurrentSessionId(defaultSession.id);
+      localStorage.setItem(`reveria_active_session_${selectedProjectId}`, defaultSession.id);
+    } else {
+      saveSessions(updated);
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(updated[0].id);
+        localStorage.setItem(`reveria_active_session_${selectedProjectId}`, updated[0].id);
+      }
+    }
+  };
+
+  // 引用弹窗点击外部关闭
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -193,6 +233,18 @@ export function ProjectWorkflowPanel({
       ) {
         setIsModelDropdownOpen(false);
       }
+      if (
+        refMenuTriggerRef.current &&
+        !refMenuTriggerRef.current.contains(event.target as Node)
+      ) {
+        setIsRefMenuOpen(false);
+      }
+      if (
+        sessionDropdownRef.current &&
+        !sessionDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsSessionDropdownOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -205,7 +257,7 @@ export function ProjectWorkflowPanel({
     }
   }, [selectedProjectId, selectedProject.brief]);
 
-  // 提示词输入框根据内容动态计算 rows (最小 4 行, 最大 8 行)
+  // 动态输入框 rows 自适应
   useEffect(() => {
     if (!workflowInput) {
       setInputRows(4);
@@ -214,7 +266,6 @@ export function ProjectWorkflowPanel({
     const lines = workflowInput.split("\n");
     let calculatedRows = 0;
     lines.forEach((line) => {
-      // 侧边栏卡片输入宽度下，每 28 个字符大约折成一行
       calculatedRows += Math.max(1, Math.ceil(line.length / 28));
     });
     
@@ -222,9 +273,120 @@ export function ProjectWorkflowPanel({
     setInputRows(nextRows);
   }, [workflowInput]);
 
+  function getAvailableModels() {
+    const isImageModel = (m: ModelSummary) => {
+      const n = (m.name || "").toLowerCase();
+      const dn = (m.display_name || "").toLowerCase();
+      return n.includes("image") || n.includes("dall") || n.includes("midjourney") || n.includes("flux") || n.includes("sd") || n.includes("diffusion") ||
+             dn.includes("image") || dn.includes("dall") || dn.includes("midjourney") || dn.includes("flux") || dn.includes("sd") || dn.includes("diffusion") || dn.includes("图");
+    };
 
+    const isVideoModel = (m: ModelSummary) => {
+      const n = (m.name || "").toLowerCase();
+      const dn = (m.display_name || "").toLowerCase();
+      return n.includes("video") || n.includes("luma") || n.includes("runway") || n.includes("sora") || n.includes("kling") || n.includes("cogvideo") ||
+             dn.includes("video") || dn.includes("luma") || dn.includes("runway") || dn.includes("sora") || dn.includes("kling") || dn.includes("cogvideo") || dn.includes("视频");
+    };
 
-  // 比例预设与尺寸关联
+    if (selectedWorkflow === "image-generation") {
+      const filtered = models
+        .filter((m) => m.enabled && isImageModel(m))
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
+      if (filtered.length > 0) return filtered;
+      return [
+        { id: "gpt-image-2", name: "gpt-image-2", display_name: "GPT Image 2" },
+        { id: "dall-e-3", name: "dall-e-3", display_name: "DALL-E 3" },
+        { id: "midjourney-v6", name: "midjourney-v6", display_name: "Midjourney v6" },
+      ];
+    } else if (selectedWorkflow === "video-generation") {
+      const filtered = models
+        .filter((m) => m.enabled && isVideoModel(m))
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
+      if (filtered.length > 0) return filtered;
+      return [
+        { id: "luma-video", name: "luma-video", display_name: "Luma Video" },
+        { id: "runway-gen3", name: "runway-gen3", display_name: "Runway Gen-3" },
+      ];
+    } else {
+      const filtered = models
+        .filter((m) => m.enabled && !isImageModel(m) && !isVideoModel(m))
+        .map((m) => ({ id: m.id, name: m.name, display_name: m.display_name || m.name }));
+      if (filtered.length > 0) return filtered;
+      return [
+        { id: "gpt-4o", name: "gpt-4o", display_name: "GPT-4o" },
+        { id: "claude-3.5-sonnet", name: "claude-3.5-sonnet", display_name: "Claude 3.5 Sonnet" },
+        { id: "deepseek-v3", name: "deepseek-v3", display_name: "DeepSeek-V3" },
+      ];
+    }
+  }
+
+  useEffect(() => {
+    const available = getAvailableModels();
+    if (!available.some((m) => m.id === selectedModel)) {
+      setSelectedModel(available[0]?.id || "");
+    }
+  }, [selectedWorkflow, models]);
+
+  // 轮询生成进度 useEffect
+  const currentActiveTask = localTasks.find(
+    (t) => t.status === "pending" || t.status === "running" || t.status === "queue" || t.status === "processing"
+  );
+
+  useEffect(() => {
+    if (!currentActiveTask) {
+      setActiveProgress((prev) => {
+        if (prev > 0 && prev < 100) {
+          setTimeout(() => {
+            setActiveProgress(0);
+          }, 800);
+          return 100;
+        }
+        return 0;
+      });
+      return;
+    }
+
+    if (currentActiveTask.status === "pending" || currentActiveTask.status === "queue") {
+      setActiveProgress(0);
+    }
+
+    const pollTimer = setInterval(async () => {
+      try {
+        const assetsRes = await getJson<AssetSummary[]>(
+          `/api/assets?project_id=${encodeURIComponent(selectedProjectId)}`
+        );
+        if (assetsRes && Array.isArray(assetsRes)) {
+          setAssets(assetsRes);
+        }
+
+        const tasksRes = await getJson<GenerationTaskSummary[]>("/api/tasks");
+        if (tasksRes && Array.isArray(tasksRes)) {
+          const projectTasks = tasksRes.filter((t) => t.project_id === selectedProjectId);
+          setLocalTasks(projectTasks);
+          setTasks(projectTasks);
+        }
+      } catch (err) {
+        console.error("Failed to poll task status:", err);
+      }
+    }, 3000);
+
+    let progressTimer: NodeJS.Timeout | null = null;
+    if (currentActiveTask.status === "running" || currentActiveTask.status === "processing") {
+      progressTimer = setInterval(() => {
+        setActiveProgress((prev) => {
+          if (prev >= 98) return 98;
+          return prev + 1;
+        });
+      }, 250);
+    }
+
+    return () => {
+      clearInterval(pollTimer);
+      if (progressTimer) clearInterval(progressTimer);
+    };
+  }, [currentActiveTask, selectedProjectId, setAssets, setTasks]);
+
+  // 比例参数关联
   function handlePresetRatio(ratio: string) {
     setAspectRatio(ratio);
     switch (ratio) {
@@ -257,168 +419,142 @@ export function ProjectWorkflowPanel({
     }
   }
 
+  // 二进制上传参考图
+  const handleUploadRefImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingRef(true);
+    try {
+      const res = await uploadAsset(file, workspaceIdForAssetUpload(), selectedProjectId);
+      if (res && res.id) {
+        const assetsRes = await getJson<AssetSummary[]>(
+          `/api/assets?project_id=${encodeURIComponent(selectedProjectId)}`
+        );
+        if (assetsRes && Array.isArray(assetsRes)) {
+          setAssets(assetsRes);
+          const uploaded = assetsRes.find((a) => a.id === res.id);
+          if (uploaded) setRefAsset(uploaded);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to upload reference image:", err);
+      alert("上传参考图失败，请检查服务连接");
+    } finally {
+      setIsUploadingRef(false);
+    }
+  };
 
+  const workspaceIdForAssetUpload = () => {
+    return activeWorkspace?.id || selectedProject.workspace_id || "";
+  };
 
-  // Payload Builder for Workflows
-  function buildWorkflowPayload(workflow: WorkflowType, workspaceId: string, projectId?: string) {
+  // 发动任务
+  async function runWorkflow() {
+    if (!selectedWorkflow) return;
+    setIsRunningWorkflow(true);
+
+    const payload = buildWorkflowPayload(selectedWorkflow);
+    try {
+      const res = await postJson<{ success: boolean; data: { task_id: string; asset_id: string } }>(
+        "/api/tasks",
+        payload
+      );
+
+      if (res && res.success && res.data) {
+        setWorkflowInput("");
+        setRefAsset(null); // 发送完毕立即清理控制台垫图
+        
+        const tasksRes = await getJson<GenerationTaskSummary[]>("/api/tasks");
+        if (tasksRes && Array.isArray(tasksRes)) {
+          const projectTasks = tasksRes.filter((t) => t.project_id === selectedProjectId);
+          setLocalTasks(projectTasks);
+          setTasks(projectTasks);
+        }
+
+        // 会话物理隔离数据绑定与智能自动标题
+        const activeSess = sessions.find(s => s.id === currentSessionId);
+        if (activeSess) {
+          const updatedSessions = sessions.map(s => {
+            if (s.id === currentSessionId) {
+              const newTitle = s.title === "新对话" || s.title === "默认对话"
+                ? (payload.prompt.trim().substring(0, 8) || "AI 对话")
+                : s.title;
+              return {
+                ...s,
+                title: newTitle,
+                assetIds: [...s.assetIds, res.data.asset_id]
+              };
+            }
+            return s;
+          });
+          saveSessions(updatedSessions);
+        }
+      } else {
+        alert("提交任务失败，请稍后重试");
+      }
+    } catch (err) {
+      console.error("Failed to run workflow:", err);
+      alert("执行工作流发生异常错误");
+    } finally {
+      setIsRunningWorkflow(false);
+    }
+  }
+
+  function buildWorkflowPayload(workflow: WorkflowType) {
+    const base = {
+      project_id: selectedProjectId,
+      model_id: selectedModel,
+      prompt: workflowInput,
+      negative_prompt: "",
+    };
+
     if (workflow === "image-generation") {
       return {
-        workspace_id: workspaceId,
-        project_id: projectId ?? null,
+        ...base,
         task_type: "image_generation",
-        selected_model: selectedModel || "gpt-image-2",
+        image_params: {
+          width,
+          height,
+          quality,
+          num_images: imageCount,
+        },
         input_payload: {
           prompt: workflowInput,
           size: `${width}x${height}`,
-          quality: quality,
-          image_count: imageCount,
-          ref_image_url: refAsset ? (refAsset.thumbnail_url ?? refAsset.file_url) : null
+          ref_image_url: refAsset ? (refAsset.file_url ?? refAsset.thumbnail_url ?? "") : null
         }
       };
     }
 
     if (workflow === "video-generation") {
       return {
-        workspace_id: workspaceId,
-        project_id: projectId ?? null,
+        ...base,
         task_type: "video_generation",
-        selected_model: selectedModel || "luma-video",
+        video_params: {
+          width,
+          height,
+          duration: 4,
+        },
         input_payload: {
           prompt: workflowInput,
           size: `${width}x${height}`,
-          ref_image_url: refAsset ? (refAsset.thumbnail_url ?? refAsset.file_url) : null
+          ref_image_url: refAsset ? (refAsset.file_url ?? refAsset.thumbnail_url ?? "") : null
         }
       };
     }
 
-    // text-generation 文本大类
     return {
-      workspace_id: workspaceId,
-      project_id: projectId ?? null,
-      task_type: "text",
-      selected_model: selectedModel || "gpt-4o",
+      ...base,
+      task_type: "text_generation",
+      text_params: {
+        max_tokens: 1024,
+        temperature: 0.7,
+      },
       input_payload: {
-        prompt: workflowInput,
+        prompt: workflowInput
       }
     };
   }
-
-  // Execute Workflow Runner
-  async function runWorkflow() {
-    if (!selectedWorkflow) return;
-    const workspaceId = activeWorkspace?.id;
-    if (!workspaceId) {
-      setWorkflowResult({
-        task: {
-          task_type: selectedWorkflow,
-          status: "failed",
-          estimated_credits: 0,
-          actual_credits: 0,
-        },
-        output: {
-          message: "API 未连接或工作区不存在",
-        },
-      });
-      return;
-    }
-    setIsRunningWorkflow(true);
-    setWorkflowResult(null);
-
-    try {
-      const payload = buildWorkflowPayload(selectedWorkflow, workspaceId, selectedProjectId);
-      const res = await postJson<{ success: boolean; message?: string; data: any }>(
-        "/api/tasks",
-        payload
-      );
-      
-      if (!res.success && !res.data) {
-        throw new Error(res.message || "提交生成任务失败");
-      }
-
-      const task = res.data;
-      const data = {
-        success: true,
-        task: task,
-        transactions: [] as any[],
-        output: null,
-      };
-
-      setWorkflowResult(data);
-      
-      if (task) {
-        const taskId = task.id ?? `${task.task_type}-${Date.now()}`;
-        setTasks((current) => [
-          {
-            id: taskId,
-            task_type: task.task_type,
-            status: task.status || "pending",
-            estimated_credits: task.estimated_credits || 0,
-            actual_credits: task.actual_credits || 0,
-          },
-          ...current,
-        ]);
-        setSelectedTaskId(taskId);
-        setTaskDetail({
-          id: taskId,
-          workspace_id: workspaceId,
-          project_id: selectedProjectId,
-          task_type: task.task_type,
-          status: task.status || "pending",
-          estimated_credits: task.estimated_credits || 0,
-          frozen_credits: task.frozen_credits || 0,
-          actual_credits: task.actual_credits || 0,
-          input_payload: payload.input_payload,
-          output_payload: null,
-          error_code: null,
-          error_message: null,
-        });
-        return;
-      }
-      setWorkflowResult({
-        task: {
-          task_type: selectedWorkflow,
-          status: "failed",
-          estimated_credits: 0,
-          actual_credits: 0,
-        },
-        output: {
-          message: "API 未连接或工作流执行失败",
-        },
-      });
-    } catch (err: any) {
-      setWorkflowResult({
-        task: {
-          task_type: selectedWorkflow,
-          status: "failed",
-          estimated_credits: 0,
-          actual_credits: 0,
-        },
-        output: {
-          message: err.message || "提交生成任务遇到错误",
-        },
-      });
-    } finally {
-      setIsRunningWorkflow(false);
-    }
-  }
-
-  // --- 辅助动作处理 ---
-  const handleReedit = (promptText?: string) => {
-    if (promptText) {
-      setWorkflowInput(promptText);
-    }
-  };
-
-  const handleRegenerate = (promptText?: string, type?: string) => {
-    if (!promptText) return;
-    setWorkflowInput(promptText);
-    if (type) {
-      setSelectedWorkflow(type as WorkflowType);
-    }
-    setTimeout(() => {
-      void runWorkflow();
-    }, 100);
-  };
 
   const handleFeedback = (assetId: string, type: "up" | "down") => {
     setFeedbacks((prev) => ({
@@ -432,16 +568,45 @@ export function ProjectWorkflowPanel({
     setWorkflowInput(e.target.value);
   };
 
-  // 过滤出项目现有的图片资产（作为参考图）
-  const imageAssets = assets.filter((a) => a.asset_type === "image" && (a.thumbnail_url || a.file_url));
+  // 历史重新编辑与回填
+  const handleReedit = (prompt: string, asset?: AssetSummary) => {
+    setWorkflowInput(prompt);
+    if (asset && asset.meta_data) {
+      try {
+        const meta = typeof asset.meta_data === "string" ? JSON.parse(asset.meta_data) : asset.meta_data;
+        if (meta && meta.ref_image_url) {
+          const matched = assets.find(a => a.file_url === meta.ref_image_url || a.thumbnail_url === meta.ref_image_url);
+          if (matched) setRefAsset(matched);
+        }
+      } catch (e) {
+        console.error("Failed to parse metadata ref image:", e);
+      }
+    }
+  };
 
-  // 提取历史 AI 会话记录，并进行逆序让最新的显示在最下方
+  const handleRegenerate = (prompt: string, workflow?: string, asset?: AssetSummary) => {
+    if (workflow) {
+      setSelectedWorkflow(workflow as WorkflowType);
+    }
+    setWorkflowInput(prompt);
+    if (asset && asset.meta_data) {
+      try {
+        const meta = typeof asset.meta_data === "string" ? JSON.parse(asset.meta_data) : asset.meta_data;
+        if (meta && meta.ref_image_url) {
+          const matched = assets.find(a => a.file_url === meta.ref_image_url || a.thumbnail_url === meta.ref_image_url);
+          if (matched) setRefAsset(matched);
+        }
+      } catch (e) {
+        console.error("Failed to parse metadata ref image:", e);
+      }
+    }
+  };
+
+  const imageAssets = assets.filter((a) => a.asset_type === "image" && (a.thumbnail_url || a.file_url));
+  const activeSession = sessions.find((s) => s.id === currentSessionId) || null;
+  const currentSessionAssetIds = new Set(activeSession?.assetIds || []);
   const aiAssets = assets
-    .filter(
-      (a) =>
-        a.project_id === selectedProjectId &&
-        (a.source === "ai" || a.source === "generated" || a.asset_type === "workflow_output")
-    )
+    .filter((a) => currentSessionAssetIds.has(a.id))
     .slice()
     .reverse();
 
@@ -454,6 +619,18 @@ export function ProjectWorkflowPanel({
 
   return (
     <div className="gen-chat-container">
+      <SessionHeader
+        activeSession={activeSession}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        setCurrentSessionId={setCurrentSessionId}
+        isSessionDropdownOpen={isSessionDropdownOpen}
+        setIsSessionDropdownOpen={setIsSessionDropdownOpen}
+        sessionDropdownRef={sessionDropdownRef}
+        handleRemoveSession={handleRemoveSession}
+        handleCreateNewSession={handleCreateNewSession}
+        onClose={onClose}
+      />
       
       {/* 1. 会话流滚动区域 */}
       <WorkflowHistoryFeed
@@ -467,303 +644,63 @@ export function ProjectWorkflowPanel({
         addAssetToCanvas={addAssetToCanvas}
         addWorkflowResultToCanvas={addWorkflowResultToCanvas}
         isRunningWorkflow={isRunningWorkflow}
-        workflowResult={workflowResult}
-        setPreviewAsset={setPreviewAsset}
+        activeTask={currentActiveTask}
+        activeProgress={activeProgress}
       />
 
       {/* 2. 底部固定区域（含控制台输入卡片） */}
-      <div className="gen-sticky-bottom">
-        {/* AI 创意控制台 (Prompt Bar Card) */}
-        <div className="gen-prompt-card">
-          
-          {/* 输入区 & 参考图 */}
-          {/* 输入区 & 参考图：改用纵向布局，使参考图呈现在输入框上方 */}
-          <div className="gen-prompt-top-row" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "10px 12px 6px 12px" }}>
-            {/* 图像和视频工作流共享：参考图模块 */}
-            {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && (
-              <div style={{ flexShrink: 0, display: "flex", justifyContent: "flex-start" }}>
-                {refAsset ? (
-                  <div className="gen-ref-image-preview">
-                    <img 
-                      src={assetUrl(refAsset.thumbnail_url ?? refAsset.file_url ?? "")} 
-                      alt="Reference" 
-                    />
-                    <button
-                      type="button"
-                      className="gen-ref-image-remove"
-                      onClick={() => setRefAsset(null)}
-                      title="移除参考图"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="gen-ref-image-btn"
-                    onClick={() => setIsRefSelectorOpen(true)}
-                    title="添加参考图"
-                  >
-                    <Image size={15} />
-                    <span style={{ fontSize: "9px", marginTop: "2px", fontWeight: "600" }}>参考图</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 无边框 Textarea 提示词输入 */}
-            <textarea
-              ref={textareaRef}
-              className="gen-prompt-textarea"
-              rows={inputRows}
-              placeholder={
-                selectedWorkflow === "image-generation"
-                  ? "例如：生成咖啡店推广海报"
-                  : selectedWorkflow === "video-generation"
-                  ? "今天我们要生成什么视频..."
-                  : "输入任务提示词或创意大纲..."
-              }
-              value={workflowInput}
-              onChange={handleTextareaChange}
-              style={{ width: "100%", border: "none", resize: "none", outline: "none", fontSize: "12px", background: "transparent", color: "var(--rv-color-text-main)", padding: "2px 0", lineHeight: "1.4" }}
-            />
-          </div>
-
-          {/* 底栏控制面板 */}
-          <div className="gen-bottom-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div className="gen-actions-left" style={{ display: "flex", alignItems: "center" }}>
-              {/* 工作流模式切换下拉 */}
-              <div style={{ position: "relative" }} ref={modeDropdownRef}>
-                <button
-                  type="button"
-                  className="gen-mode-dropdown-trigger"
-                  onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
-                  style={{ border: "none", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}
-                >
-                  {getWorkflowIcon(selectedWorkflow || "image-generation", 12)}
-                  <span style={{ fontSize: "11px" }}>{selectedWorkflowLabel}</span>
-                  <ChevronDown size={10} />
-                </button>
-
-                {isModeDropdownOpen && (
-                  <div className="gen-mode-dropdown-menu">
-                    {quickTasks.map((t) => (
-                      <button
-                        key={t.type}
-                        className={`gen-mode-dropdown-item ${selectedWorkflow === t.type ? "active" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedWorkflow(t.type);
-                          setIsModeDropdownOpen(false);
-                          setWorkflowResult(null);
-                          setIsParamPopupOpen(false);
-                        }}
-                      >
-                        {getWorkflowIcon(t.type, 12)}
-                        <span>{t.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 生图与视频工作流：参数设置徽章 */}
-              {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && (
-                <button
-                  ref={paramBadgeRef}
-                  type="button"
-                  className="gen-param-badge"
-                  onClick={() => setIsParamPopupOpen(!isParamPopupOpen)}
-                  style={{ border: "none", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", marginLeft: "6px" }}
-                >
-                  <span>
-                    {selectedWorkflow === "image-generation"
-                      ? `${getQualityLabel(quality)} · ${aspectRatio} · ${imageCount}张`
-                      : `比例：${aspectRatio}`}
-                  </span>
-                  <ChevronDown size={10} />
-                </button>
-              )}
-            </div>
-
-            {/* 点数启动按钮与左侧模型选择图标 */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, position: "relative" }}>
-              <button
-                ref={modelTriggerRef}
-                className="gen-model-trigger"
-                type="button"
-                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                title={`当前选择模型: ${getAvailableModels().find((m) => m.id === selectedModel)?.display_name || selectedModel}`}
-              >
-                🤖
-              </button>
-
-              {isModelDropdownOpen && (
-                <div className="gen-model-dropdown-menu" ref={modelDropdownRef} onClick={(e) => e.stopPropagation()}>
-                  <div className="gen-model-dropdown-title">选择模型</div>
-                  {getAvailableModels().map((m) => (
-                    <button
-                      key={m.id}
-                      className={`gen-model-dropdown-item ${selectedModel === m.id ? "active" : ""}`}
-                      type="button"
-                      onClick={() => {
-                        setSelectedModel(m.id);
-                        setIsModelDropdownOpen(false);
-                      }}
-                    >
-                      <span className="gen-model-dot" />
-                      <span>{m.display_name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                className="gen-submit-btn"
-                type="button"
-                disabled={isRunningWorkflow || !isRunnable || !workflowInput.trim()}
-                onClick={runWorkflow}
-                style={{ border: "none", color: "#fff", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}
-              >
-                {isRunningWorkflow ? (
-                  <Loader2 className="spin" size={12} />
-                ) : (
-                  <Zap size={11} fill="currentColor" />
-                )}
-                <span>{isRunningWorkflow ? "生成中" : `${costPoints * imageCount}`}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 参数浮窗面板：图像/视频模式按需渲染对应字段 */}
-          {(selectedWorkflow === "image-generation" || selectedWorkflow === "video-generation") && isParamPopupOpen && (
-            <div className="gen-param-popup" ref={paramPopupRef} onClick={(e) => e.stopPropagation()}>
-              {/* 1. 质量 */}
-              {selectedWorkflow === "image-generation" && (
-                <div className="gen-param-section">
-                  <span className="gen-param-section-title">质量</span>
-                  <div className="gen-btn-group">
-                    {(["auto", "high", "medium", "low"] as const).map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        className={`gen-selector-item ${quality === q ? "active" : ""}`}
-                        onClick={() => setQuality(q)}
-                      >
-                        {getQualityLabel(q)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 2. 尺寸微调 */}
-              <div className="gen-param-section">
-                <span className="gen-param-section-title">尺寸微调 (PX)</span>
-                <div className="gen-custom-dim-row">
-                  <div className="gen-dim-input">
-                    <span>W</span>
-                    <input
-                      type="number"
-                      value={width}
-                      onChange={(e) => {
-                        setWidth(Number(e.target.value));
-                        setAspectRatio("自定义");
-                      }}
-                    />
-                  </div>
-                  <span style={{ color: "rgba(185, 178, 165, 0.4)", fontWeight: "bold" }}>×</span>
-                  <div className="gen-dim-input">
-                    <span>H</span>
-                    <input
-                      type="number"
-                      value={height}
-                      onChange={(e) => {
-                        setHeight(Number(e.target.value));
-                        setAspectRatio("自定义");
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. 比例预设 */}
-              <div className="gen-param-section">
-                <span className="gen-param-section-title">比例预设</span>
-                <div className="gen-preset-grid">
-                  {(["1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "1:1(2k)", "16:9(2k)", "9:16(2k)", "16:9(4k)", "9:16(4k)", "auto"] as const).map((ratio) => (
-                    <button
-                      key={ratio}
-                      type="button"
-                      className={`gen-preset-btn ${aspectRatio === ratio ? "active" : ""}`}
-                      onClick={() => handlePresetRatio(ratio)}
-                    >
-                      <div className="gen-preset-ratio-box" style={getRatioBoxStyle(ratio)} />
-                      <span className="gen-preset-ratio-text">{ratio}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 4. 图片张数 */}
-              {selectedWorkflow === "image-generation" && (
-                <div className="gen-param-section">
-                  <span className="gen-param-section-title">生成数量 (当前消耗: {12 * imageCount} 点)</span>
-                  <div className="gen-btn-group" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "2px" }}>
-                    {([1, 2, 3, 4, 5] as const).map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        className={`gen-selector-item ${imageCount === num ? "active" : ""}`}
-                        onClick={() => setImageCount(num)}
-                      >
-                        {num} 张
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 覆盖层：项目内参考图选择器 */}
-          {isRefSelectorOpen && (
-            <div className="gen-ref-selector-overlay">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "11px", fontWeight: "bold", color: "var(--rv-color-text-main)" }}>选择项目内的参考图</span>
-                <button
-                  type="button"
-                  onClick={() => setIsRefSelectorOpen(false)}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--rv-color-text-muted)", padding: "2px" }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              {imageAssets.length > 0 ? (
-                <div className="gen-ref-selector-grid">
-                  {imageAssets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="gen-ref-selector-item"
-                      onClick={() => {
-                        setRefAsset(asset);
-                        setIsRefSelectorOpen(false);
-                      }}
-                      title={assetTitle(asset)}
-                    >
-                      <img src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} alt={assetTitle(asset)} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "var(--rv-color-text-muted)", textAlign: "center" }}>
-                  项目中无可用图片资产。<br />请先通过左侧“库与历史”或素材管理导入图片。
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      <WorkflowPromptConsole
+        selectedWorkflow={selectedWorkflow}
+        setSelectedWorkflow={setSelectedWorkflow}
+        workflowInput={workflowInput}
+        setWorkflowInput={setWorkflowInput}
+        isRunningWorkflow={isRunningWorkflow}
+        refAsset={refAsset}
+        setRefAsset={setRefAsset}
+        isUploadingRef={isUploadingRef}
+        setIsUploadingRef={setIsUploadingRef}
+        inputRows={inputRows}
+        handleTextareaChange={handleTextareaChange}
+        isModeDropdownOpen={isModeDropdownOpen}
+        setIsModeDropdownOpen={setIsModeDropdownOpen}
+        isParamPopupOpen={isParamPopupOpen}
+        setIsParamPopupOpen={setIsParamPopupOpen}
+        isRefMenuOpen={isRefMenuOpen}
+        setIsRefMenuOpen={setIsRefMenuOpen}
+        isRefSelectorOpen={isRefSelectorOpen}
+        setIsRefSelectorOpen={setIsRefSelectorOpen}
+        quality={quality}
+        setQuality={setQuality}
+        width={width}
+        setWidth={setWidth}
+        height={height}
+        setHeight={setHeight}
+        aspectRatio={aspectRatio}
+        setAspectRatio={setAspectRatio}
+        imageCount={imageCount}
+        setImageCount={setImageCount}
+        handlePresetRatio={handlePresetRatio}
+        getRatioBoxStyle={getRatioBoxStyle}
+        getQualityLabel={getQualityLabel}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        isModelDropdownOpen={isModelDropdownOpen}
+        setIsModelDropdownOpen={setIsModelDropdownOpen}
+        runWorkflow={runWorkflow}
+        costPoints={costPoints}
+        isRunnable={isRunnable}
+        getAvailableModels={getAvailableModels}
+        paramBadgeRef={paramBadgeRef}
+        paramPopupRef={paramPopupRef}
+        modelTriggerRef={modelTriggerRef}
+        modelDropdownRef={modelDropdownRef}
+        refMenuTriggerRef={refMenuTriggerRef}
+        fileRefInputRef={fileRefInputRef}
+        handleUploadRefImage={handleUploadRefImage}
+        imageAssets={imageAssets}
+        quickTasks={quickTasks}
+        textareaRef={textareaRef}
+      />
     </div>
   );
 }

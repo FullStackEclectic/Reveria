@@ -105,44 +105,6 @@ export function RightWorkflowDrawer({
         onMouseDown={handleMouseDown}
         className="drawer-resizer-handle"
       />
-      <div
-        className="panel-header"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "16px 16px 12px 16px",
-          borderBottom: "1px solid var(--rv-color-border-thin)",
-          margin: 0,
-          background: "rgba(185, 178, 165, 0.05)",
-        }}
-      >
-        <h3
-          style={{
-          margin: 0,
-          fontSize: "14px",
-          fontWeight: "bold",
-          color: "var(--rv-color-text-main)",
-        }}
-      >
-        AI 对话
-      </h3>
-        <button
-          type="button"
-          onClick={() => setIsDrawerOpen(false)}
-          style={{
-            background: "transparent",
-            border: "none",
-            fontSize: "16px",
-            cursor: "pointer",
-            color: "var(--rv-color-text-muted)",
-            padding: "2px 6px",
-          }}
-          title="关闭面板"
-        >
-          ×
-        </button>
-      </div>
 
       <div
         className="rv-drawer-content"
@@ -170,6 +132,7 @@ export function RightWorkflowDrawer({
           workflowRefAsset={workflowRefAsset}
           setWorkflowRefAsset={setWorkflowRefAsset}
           setPreviewAsset={setPreviewAsset}
+          onClose={() => setIsDrawerOpen(false)}
         />
       </div>
     </aside>

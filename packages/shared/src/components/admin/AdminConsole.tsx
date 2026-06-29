@@ -60,6 +60,7 @@ export function AdminConsole({
       setWorkspaceMembers(data.memberData);
       setCostReport(data.costReportData);
       setTasks(data.taskData);
+      setBuildInfo(data.buildData);
     } catch (err: any) {
       setAdminMessage("后台配置加载失败：需要超级管理员身份和数据库连接");
       console.error(err);

@@ -767,6 +767,14 @@ export function AppCore() {
               setIsNewProjectModalOpen(true);
               setActiveView("workbench");
             }}
+            onUseTemplateWithProject={(template, projectId) => {
+              setSelectedProjectId(projectId);
+              setActiveView("projects");
+              setProjectsViewMode("detail");
+              void loadProjectAssets(projectId);
+              void loadProjectCanvas(projectId);
+            }}
+            projects={projects}
             onNavigateToView={handleViewChange}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
@@ -967,22 +975,7 @@ export function AppCore() {
         
         {/* 右侧：动作与用户状态 */}
         <div className="header-right">
-          {/* 开始创作 按钮 */}
-          <button 
-            type="button" 
-            className="btn-create-magic"
-            onClick={() => {
-              if (!currentUser) {
-                triggerLogin(() => handleViewChange("workbench"));
-              } else {
-                handleViewChange("workbench");
-              }
-            }}
-          >
-            <Sparkles size={14} />
-            <span>开始创作</span>
-            <ChevronDown size={12} className="chevron-down-icon" />
-          </button>
+
           
           {/* 文档 按钮 */}
           <button 
@@ -1005,8 +998,8 @@ export function AppCore() {
                 <span className="credits-val">{formattedCredits} 点</span>
               </div>
               
-              {/* 系统后台入口（仅管理员） */}
-              {currentUser.is_platform_admin && (
+              {/* 系统后台入口（仅管理员，且不在桌面端显示） */}
+              {currentUser.is_platform_admin && !(typeof window !== "undefined" && (window as any).go) && (
                 <button
                   type="button"
                   className="btn-admin-entrance"

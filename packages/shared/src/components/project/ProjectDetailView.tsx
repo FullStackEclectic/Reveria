@@ -20,6 +20,7 @@ import {
 } from "../../utils";
 import { CanvasViewport } from "./CanvasViewport";
 import { LeftAssetsDrawer } from "./LeftAssetsDrawer";
+import { FloatingAssetLibrary } from "./FloatingAssetLibrary";
 import { RightWorkflowDrawer } from "./RightWorkflowDrawer";
 import { ProjectDetailTopbar } from "./ProjectDetailTopbar";
 import { exportCanvasToSVG } from "./canvasExportUtils";
@@ -88,6 +89,7 @@ export function ProjectDetailView({
   // 左右独立抽屉状态
   const [isLeftDrawerOpen, setIsLeftDrawerOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isAssetLibraryOpen, setIsAssetLibraryOpen] = useState(false);
   const [activeLeftTab, setActiveLeftTab] = useState<"library" | "share" | "settings">("library");
   const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -136,11 +138,19 @@ export function ProjectDetailView({
   }
 
   const handleToggleLeftTab = (tab: "library" | "share" | "settings") => {
-    if (isLeftDrawerOpen && activeLeftTab === tab) {
-      setIsLeftDrawerOpen(false);
+    if (tab === "library") {
+      setIsAssetLibraryOpen((prev) => !prev);
+      if (isLeftDrawerOpen && activeLeftTab === "library") {
+        setIsLeftDrawerOpen(false);
+      }
     } else {
-      setIsLeftDrawerOpen(true);
-      setActiveLeftTab(tab);
+      if (isLeftDrawerOpen && activeLeftTab === tab) {
+        setIsLeftDrawerOpen(false);
+      } else {
+        setIsLeftDrawerOpen(true);
+        setActiveLeftTab(tab);
+      }
+      setIsAssetLibraryOpen(false);
     }
   };
 
@@ -307,6 +317,16 @@ export function ProjectDetailView({
             setProjectsViewMode={setProjectsViewMode}
           />
 
+          {/* 2.5 可拖拽悬浮资产管理器窗口 */}
+          <FloatingAssetLibrary
+            isOpen={isAssetLibraryOpen}
+            onClose={() => setIsAssetLibraryOpen(false)}
+            assets={projectSpecificAssets}
+            setPreviewAsset={setPreviewAsset}
+            addAssetToCanvas={addAssetToCanvas}
+            addWorkflowResultToCanvas={addWorkflowResultToCanvas}
+          />
+
           {/* 3. 右侧悬浮AI工坊抽屉 */}
           <RightWorkflowDrawer
             isDrawerOpen={isRightDrawerOpen}
@@ -421,7 +441,7 @@ export function ProjectDetailView({
           {/* 5. 左下角状态控制栏 */}
           <div className="rv-utility-bar">
             <button
-              className={`rv-utility-btn ${isLeftDrawerOpen && activeLeftTab === "library" ? "active" : ""}`}
+              className={`rv-utility-btn ${isAssetLibraryOpen ? "active" : ""}`}
               type="button"
               onClick={() => handleToggleLeftTab("library")}
               title="库与历史：查看项目素材与 AI 生成历史"

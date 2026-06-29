@@ -126,6 +126,7 @@ export type ProjectSummary = {
   budget_credits?: number | null;
   consumed_credits: number;
   project_type: string;
+  cover_url?: string;
 };
 
 export type CustomerSummary = {
@@ -177,6 +178,7 @@ export type CanvasItem = {
   id: string;
   type: "asset" | "note";
   asset_id?: string;
+  task_id?: string; // 关联的异步生图任务 ID
   title: string;
   text?: string;
   x: number;

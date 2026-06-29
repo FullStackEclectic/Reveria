@@ -59,20 +59,58 @@ export function AIAdvancedParamsPanel({
     });
   };
 
-  // 快捷尺寸比例
-  const ratioPresets = [
-    { id: "portrait", label: "肖像", desc: "2:3", w: 768, h: 1152, iconW: 16, iconH: 24 },
-    { id: "landscape", label: "景观", desc: "3:2", w: 1152, h: 768, iconW: 24, iconH: 16 },
-    { id: "square", label: "正方形", desc: "1:1", w: 1024, h: 1024, iconW: 20, iconH: 20 },
-    { id: "custom", label: "风俗", desc: "自定义", w: 1024, h: 1024, iconW: 20, iconH: 20, isCustom: true }
-  ];
+  // 快捷尺寸比例与 getRatioBoxStyle 图示样式计算
+  const getRatioBoxStyle = (ratio: string): React.CSSProperties => {
+    switch (ratio) {
+      case "1:1":
+      case "1:1(2k)":
+        return { width: "10px", height: "10px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "3:2":
+        return { width: "12px", height: "8px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "2:3":
+        return { width: "8px", height: "12px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "4:3":
+        return { width: "11px", height: "8px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "3:4":
+        return { width: "8px", height: "11px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "9:16":
+      case "9:16(2k)":
+      case "9:16(4k)":
+        return { width: "7px", height: "13px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      case "16:9(2k)":
+      case "16:9(4k)":
+        return { width: "13px", height: "7px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+      default:
+        return { width: "10px", height: "10px", border: "1px solid currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 };
+    }
+  };
 
-  const handleRatioClick = (preset: typeof ratioPresets[number]) => {
+  const handleRatioClick = (ratio: string) => {
+    let w = 1024;
+    let h = 1024;
+    switch (ratio) {
+      case "1:1": w = 1024; h = 1024; break;
+      case "3:2": w = 1200; h = 800; break;
+      case "2:3": w = 800; h = 1200; break;
+      case "4:3": w = 1024; h = 768; break;
+      case "3:4": w = 768; h = 1024; break;
+      case "9:16": w = 576; h = 1024; break;
+      case "1:1(2k)": w = 2048; h = 2048; break;
+      case "16:9(2k)": w = 2048; h = 1152; break;
+      case "9:16(2k)": w = 1152; h = 2048; break;
+      case "16:9(4k)": w = 3840; h = 2160; break;
+      case "9:16(4k)": w = 2160; h = 3840; break;
+      case "custom":
+      default:
+        w = params.width || 1024;
+        h = params.height || 1024;
+        break;
+    }
     onChange({
       ...params,
-      aspect_ratio: preset.id,
-      width: preset.w,
-      height: preset.h
+      aspect_ratio: ratio,
+      width: w,
+      height: h
     });
   };
 
@@ -108,393 +146,369 @@ export function AIAdvancedParamsPanel({
   const [isAdvancedSamplerEnabled, setIsAdvancedSamplerEnabled] = React.useState(true);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "18px", width: "100%" }}>
-      {/* 1. LoRA 配置 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
-            LoRA 权重预设
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const currentLoras = params.loras || [];
-              updateParam("loras", [...currentLoras, { name: "", weight: 0.8 }]);
-            }}
-            style={{
-              background: "rgba(15, 118, 110, 0.08)",
-              border: 0,
-              color: "var(--rv-color-primary)",
-              padding: "4px 10px",
-              borderRadius: "var(--rv-radius-xs)",
-              fontSize: "11px",
-              cursor: "pointer",
-              fontWeight: "700",
-              display: "flex",
-              alignItems: "center",
-              gap: "2px",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
-          >
-            <Plus size={12} />
-            添加 LoRA
-          </button>
-        </div>
-        
-        {(params.loras || []).length === 0 ? (
-          <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "10px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8 }}>
-            未配置 LoRA（可选）
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}>
+      {/* 行 1：LoRA + Embeddings 并排 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        {/* 1. LoRA 配置 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
+              LoRA 权重预设
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const currentLoras = params.loras || [];
+                updateParam("loras", [...currentLoras, { name: "", weight: 0.8 }]);
+              }}
+              style={{
+                background: "rgba(15, 118, 110, 0.08)",
+                border: 0,
+                color: "var(--rv-color-primary)",
+                padding: "3px 8px",
+                borderRadius: "var(--rv-radius-xs)",
+                fontSize: "10px",
+                cursor: "pointer",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                gap: "2px",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
+            >
+              <Plus size={10} />
+              添加 LoRA
+            </button>
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(params.loras || []).map((lora, idx) => (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  <input
-                    type="text"
-                    placeholder="请输入 LoRA 模型标识/名称"
-                    value={lora.name}
-                    onChange={(e) => {
-                      const nextLoras = [...(params.loras || [])];
-                      nextLoras[idx].name = e.target.value;
-                      updateParam("loras", nextLoras);
-                    }}
-                    style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "5px 8px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextLoras = (params.loras || []).filter((_, i) => i !== idx);
-                      updateParam("loras", nextLoras);
-                    }}
-                    style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "32px" }}>权重:</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1.5"
-                    step="0.05"
-                    value={lora.weight}
-                    onChange={(e) => {
-                      const nextLoras = [...(params.loras || [])];
-                      nextLoras[idx].weight = Number(e.target.value);
-                      updateParam("loras", nextLoras);
-                    }}
-                    style={{ flex: 1, accentColor: "var(--rv-color-primary)", height: "4px", cursor: "pointer" }}
-                  />
-                  <span style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "30px", textAlign: "right" }}>{lora.weight.toFixed(2)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 2. 嵌入 (Embeddings) */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
-            Embeddings 嵌入预设
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const currentEmbeddings = params.embeddings || [];
-              updateParam("embeddings", [...currentEmbeddings, { name: "", weight: 1.0 }]);
-            }}
-            style={{
-              background: "rgba(15, 118, 110, 0.08)",
-              border: 0,
-              color: "var(--rv-color-primary)",
-              padding: "4px 10px",
-              borderRadius: "var(--rv-radius-xs)",
-              fontSize: "11px",
-              cursor: "pointer",
-              fontWeight: "700",
-              display: "flex",
-              alignItems: "center",
-              gap: "2px",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
-          >
-            <Plus size={12} />
-            添加嵌入
-          </button>
-        </div>
-
-        {(params.embeddings || []).length === 0 ? (
-          <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "10px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8 }}>
-            未配置 嵌入/Textual Inversion（可选）
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(params.embeddings || []).map((emb, idx) => (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  <input
-                    type="text"
-                    placeholder="嵌入标识 (如: easynegative)"
-                    value={emb.name}
-                    onChange={(e) => {
-                      const next = [...(params.embeddings || [])];
-                      next[idx].name = e.target.value;
-                      updateParam("embeddings", next);
-                    }}
-                    style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "5px 8px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = (params.embeddings || []).filter((_, i) => i !== idx);
-                      updateParam("embeddings", next);
-                    }}
-                    style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "32px" }}>权重:</span>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1.5"
-                    step="0.05"
-                    value={emb.weight}
-                    onChange={(e) => {
-                      const next = [...(params.embeddings || [])];
-                      next[idx].weight = Number(e.target.value);
-                      updateParam("embeddings", next);
-                    }}
-                    style={{ flex: 1, accentColor: "var(--rv-color-primary)", height: "4px", cursor: "pointer" }}
-                  />
-                  <span style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "30px", textAlign: "right" }}>{emb.weight.toFixed(2)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 3. ControlNet 配置 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
-            ControlNet 约束层
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const currentCn = params.controlnets || [];
-              updateParam("controlnets", [...currentCn, { model: "", weight: 1.0, control_mode: "balanced" }]);
-            }}
-            style={{
-              background: "rgba(15, 118, 110, 0.08)",
-              border: 0,
-              color: "var(--rv-color-primary)",
-              padding: "4px 10px",
-              borderRadius: "var(--rv-radius-xs)",
-              fontSize: "11px",
-              cursor: "pointer",
-              fontWeight: "700",
-              display: "flex",
-              alignItems: "center",
-              gap: "2px",
-              transition: "all 0.2s"
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
-          >
-            <Plus size={12} />
-            添加 ControlNet
-          </button>
-        </div>
-
-        {(params.controlnets || []).length === 0 ? (
-          <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "10px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8 }}>
-            未加载 ControlNet 单元（可选）
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(params.controlnets || []).map((cn, idx) => (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  <select
-                    value={cn.model}
-                    onChange={(e) => {
-                      const next = [...(params.controlnets || [])];
-                      next[idx].model = e.target.value;
-                      updateParam("controlnets", next);
-                    }}
-                    style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "5px 8px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none", cursor: "pointer" }}
-                  >
-                    <option value="">-- 选择 ControlNet 控制类型 --</option>
-                    <option value="control_v11p_sd15_canny">Canny 边缘提取 (Canny)</option>
-                    <option value="control_v11f1p_sd15_depth">Depth 深度估计 (Depth)</option>
-                    <option value="control_v11p_sd15_openpose">OpenPose 姿态骨架 (OpenPose)</option>
-                    <option value="control_v11p_sd15_softedge">SoftEdge 软边缘 (SoftEdge)</option>
-                    <option value="control_v11e_sd15_ip2p">Instruct Pix2Pix (IP2P)</option>
-                    <option value="control_v11f1e_sd15_tile">Tile 分块超分 (Tile)</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = (params.controlnets || []).filter((_, i) => i !== idx);
-                      updateParam("controlnets", next);
-                    }}
-                    style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "30px" }}>权重:</span>
+          
+          {(params.loras || []).length === 0 ? (
+            <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "10px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8, background: "#ffffff" }}>
+              未配置 LoRA（可选）
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {(params.loras || []).map((lora, idx) => (
+                <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      placeholder="LoRA 模型名称"
+                      value={lora.name}
+                      onChange={(e) => {
+                        const nextLoras = [...(params.loras || [])];
+                        nextLoras[idx].name = e.target.value;
+                        updateParam("loras", nextLoras);
+                      }}
+                      style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "4px 8px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextLoras = (params.loras || []).filter((_, i) => i !== idx);
+                        updateParam("loras", nextLoras);
+                      }}
+                      style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "32px" }}>权重:</span>
                     <input
                       type="range"
-                      min="0.1"
-                      max="2.0"
+                      min="0"
+                      max="1.5"
                       step="0.05"
-                      value={cn.weight}
+                      value={lora.weight}
                       onChange={(e) => {
-                        const next = [...(params.controlnets || [])];
-                        next[idx].weight = Number(e.target.value);
-                        updateParam("controlnets", next);
+                        const nextLoras = [...(params.loras || [])];
+                        nextLoras[idx].weight = Number(e.target.value);
+                        updateParam("loras", nextLoras);
                       }}
                       style={{ flex: 1, accentColor: "var(--rv-color-primary)", height: "4px", cursor: "pointer" }}
                     />
-                    <span style={{ fontSize: "10px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "24px", textAlign: "right" }}>{cn.weight.toFixed(1)}</span>
+                    <span style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "30px", textAlign: "right" }}>{lora.weight.toFixed(2)}</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)" }}>模式:</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 2. 嵌入 (Embeddings) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
+              Embeddings 嵌入预设
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const currentEmbeddings = params.embeddings || [];
+                updateParam("embeddings", [...currentEmbeddings, { name: "", weight: 1.0 }]);
+              }}
+              style={{
+                background: "rgba(15, 118, 110, 0.08)",
+                border: 0,
+                color: "var(--rv-color-primary)",
+                padding: "3px 8px",
+                borderRadius: "var(--rv-radius-xs)",
+                fontSize: "10px",
+                cursor: "pointer",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                gap: "2px",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
+            >
+              <Plus size={10} />
+              添加嵌入
+            </button>
+          </div>
+
+          {(params.embeddings || []).length === 0 ? (
+            <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "10px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8, background: "#ffffff" }}>
+              未配置嵌入（可选）
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {(params.embeddings || []).map((emb, idx) => (
+                <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      placeholder="嵌入标识 (如: easynegative)"
+                      value={emb.name}
+                      onChange={(e) => {
+                        const next = [...(params.embeddings || [])];
+                        next[idx].name = e.target.value;
+                        updateParam("embeddings", next);
+                      }}
+                      style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "4px 8px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (params.embeddings || []).filter((_, i) => i !== idx);
+                        updateParam("embeddings", next);
+                      }}
+                      style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "32px" }}>权重:</span>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1.5"
+                      step="0.05"
+                      value={emb.weight}
+                      onChange={(e) => {
+                        const next = [...(params.embeddings || [])];
+                        next[idx].weight = Number(e.target.value);
+                        updateParam("embeddings", next);
+                      }}
+                      style={{ flex: 1, accentColor: "var(--rv-color-primary)", height: "4px", cursor: "pointer" }}
+                    />
+                    <span style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "30px", textAlign: "right" }}>{emb.weight.toFixed(2)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 行 2：ControlNet + VAE 并排 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", alignItems: "start" }}>
+        {/* 3. ControlNet 配置 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", display: "flex", alignItems: "center", gap: "4px" }}>
+              ControlNet 约束层
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const currentCn = params.controlnets || [];
+                updateParam("controlnets", [...currentCn, { model: "", weight: 1.0, control_mode: "balanced" }]);
+              }}
+              style={{
+                background: "rgba(15, 118, 110, 0.08)",
+                border: 0,
+                color: "var(--rv-color-primary)",
+                padding: "3px 8px",
+                borderRadius: "var(--rv-radius-xs)",
+                fontSize: "10px",
+                cursor: "pointer",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                gap: "2px",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.08)"}
+            >
+              <Plus size={10} />
+              添加 CN
+            </button>
+          </div>
+
+          {(params.controlnets || []).length === 0 ? (
+            <div style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", textAlign: "center", padding: "8px 0", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", opacity: 0.8, background: "#ffffff" }}>
+              未加载 ControlNet 单元（可选）
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {(params.controlnets || []).map((cn, idx) => (
+                <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--rv-color-bg-sidebar)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     <select
-                      value={cn.control_mode || "balanced"}
+                      value={cn.model}
                       onChange={(e) => {
                         const next = [...(params.controlnets || [])];
-                        next[idx].control_mode = e.target.value;
+                        next[idx].model = e.target.value;
                         updateParam("controlnets", next);
                       }}
-                      style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "2px 4px", fontSize: "10px", background: "#ffffff", outline: "none", cursor: "pointer" }}
+                      style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "4px 6px", fontSize: "11px", background: "#ffffff", color: "var(--rv-color-text-main)", outline: "none", cursor: "pointer" }}
                     >
-                      <option value="balanced">均衡模式</option>
-                      <option value="prompt_important">提示词更重要</option>
-                      <option value="controlnet_important">ControlNet更重要</option>
+                      <option value="">-- 选择控制模型 --</option>
+                      <option value="control_v11p_sd15_canny">Canny 边缘提取</option>
+                      <option value="control_v11f1p_sd15_depth">Depth 深度估计</option>
+                      <option value="control_v11p_sd15_openpose">OpenPose 姿态骨架</option>
+                      <option value="control_v11p_sd15_softedge">SoftEdge 软边缘</option>
+                      <option value="control_v11e_sd15_ip2p">Instruct Pix2Pix</option>
+                      <option value="control_v11f1e_sd15_tile">Tile 分块超分</option>
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (params.controlnets || []).filter((_, i) => i !== idx);
+                        updateParam("controlnets", next);
+                      }}
+                      style={{ background: "transparent", border: 0, color: "#ef4444", cursor: "pointer", padding: "4px" }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", width: "30px" }}>权重:</span>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="2.0"
+                        step="0.05"
+                        value={cn.weight}
+                        onChange={(e) => {
+                          const next = [...(params.controlnets || [])];
+                          next[idx].weight = Number(e.target.value);
+                          updateParam("controlnets", next);
+                        }}
+                        style={{ flex: 1, accentColor: "var(--rv-color-primary)", height: "4px", cursor: "pointer" }}
+                      />
+                      <span style={{ fontSize: "10px", color: "var(--rv-color-primary)", fontWeight: "bold", width: "24px", textAlign: "right" }}>{cn.weight.toFixed(1)}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)" }}>模式:</span>
+                      <select
+                        value={cn.control_mode || "balanced"}
+                        onChange={(e) => {
+                          const next = [...(params.controlnets || [])];
+                          next[idx].control_mode = e.target.value;
+                          updateParam("controlnets", next);
+                        }}
+                        style={{ flex: 1, border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "2px 4px", fontSize: "10px", background: "#ffffff", outline: "none", cursor: "pointer" }}
+                      >
+                        <option value="balanced">均衡模式</option>
+                        <option value="prompt_important">提示词更重要</option>
+                        <option value="controlnet_important">ControlNet更重要</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4. VAE 选择 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>VAE 配件</span>
+            <span title="选择变分自编码器模型来优化图像色彩与瑕疵" style={{ display: "inline-flex", alignItems: "center" }}>
+              <HelpCircle size={12} style={{ color: "var(--rv-color-text-muted)", cursor: "help" }} />
+            </span>
+          </div>
+          <select
+            value={params.vae}
+            onChange={(e) => updateParam("vae", e.target.value)}
+            style={{ background: "#ffffff", border: "1px solid var(--rv-color-border-thin)", color: "var(--rv-color-text-main)", borderRadius: "var(--rv-radius-xs)", padding: "7px 10px", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%", transition: "all 0.2s" }}
+          >
+            {vaeOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* 行 3：去噪强度 + 宽高比例 并排 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px", alignItems: "start" }}>
+        {/* 5. 去噪强度 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>去噪强度 (Denoising)</span>
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={params.denoising_strength}
+              onChange={(e) => updateParam("denoising_strength", Math.max(0, Math.min(1, Number(e.target.value))))}
+              style={{ width: "50px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "1px 4px", fontSize: "11px", textAlign: "center", color: "var(--rv-color-primary)", fontWeight: "700", background: "transparent" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={params.denoising_strength}
+              onChange={(e) => updateParam("denoising_strength", Number(e.target.value))}
+              style={{ flex: 1, accentColor: "var(--rv-color-primary)", cursor: "pointer", height: "4px" }}
+            />
+          </div>
+        </div>
+
+        {/* 6. 尺寸比例快速卡片选择器 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>宽高比例</span>
+          <div className="gen-preset-grid">
+            {(["1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "1:1(2k)", "16:9(2k)", "9:16(2k)", "16:9(4k)", "9:16(4k)", "custom"] as const).map((ratio) => (
+              <button
+                key={ratio}
+                type="button"
+                className={`gen-preset-btn ${params.aspect_ratio === ratio ? "active" : ""}`}
+                onClick={() => handleRatioClick(ratio)}
+              >
+                {ratio === "custom" ? (
+                  <div style={{ width: "10px", height: "10px", border: "1.5px dashed currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 }} />
+                ) : (
+                  <div className="gen-preset-ratio-box" style={getRatioBoxStyle(ratio)} />
+                )}
+                <span className="gen-preset-ratio-text" style={{ fontSize: "10px" }}>{ratio === "custom" ? "自定义" : ratio}</span>
+              </button>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* 4. VAE 选择 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>VAE 配件</span>
-          <span title="选择变分自编码器模型来优化图像色彩与瑕疵" style={{ display: "inline-flex", alignItems: "center" }}>
-            <HelpCircle size={12} style={{ color: "var(--rv-color-text-muted)", cursor: "help" }} />
-          </span>
-        </div>
-        <select
-          value={params.vae}
-          onChange={(e) => updateParam("vae", e.target.value)}
-          style={{ background: "#ffffff", border: "1px solid var(--rv-color-border-thin)", color: "var(--rv-color-text-main)", borderRadius: "var(--rv-radius-xs)", padding: "8px 12px", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%", transition: "all 0.2s" }}
-        >
-          {vaeOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* 5. 去噪强度 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>去噪强度 (Denoising Strength)</span>
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            value={params.denoising_strength}
-            onChange={(e) => updateParam("denoising_strength", Math.max(0, Math.min(1, Number(e.target.value))))}
-            style={{ width: "60px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "2px 6px", fontSize: "11px", textAlign: "center", color: "var(--rv-color-primary)", fontWeight: "700", background: "transparent" }}
-          />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={params.denoising_strength}
-            onChange={(e) => updateParam("denoising_strength", Number(e.target.value))}
-            style={{ flex: 1, accentColor: "var(--rv-color-primary)", cursor: "pointer", height: "4px" }}
-          />
-        </div>
-      </div>
-
-      {/* 6. 尺寸比例快速卡片选择器 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>宽高比例</span>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
-          {ratioPresets.map((preset) => {
-            const isSelected = params.aspect_ratio === preset.id;
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleRatioClick(preset)}
-                style={{
-                  border: isSelected ? "1px solid var(--rv-color-primary)" : "1px solid var(--rv-color-border-thin)",
-                  background: isSelected ? "var(--rv-color-primary-light)" : "#ffffff",
-                  color: isSelected ? "var(--rv-color-primary)" : "var(--rv-color-text-main)",
-                  borderRadius: "var(--rv-radius-xs)",
-                  padding: "10px 4px",
-                  cursor: "pointer",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  transition: "all 0.25s",
-                  boxShadow: isSelected ? "var(--rv-shadow-sm)" : "none"
-                }}
-              >
-                {/* 比例图示框 */}
-                <div
-                  style={{
-                    border: isSelected ? "1.5px solid var(--rv-color-primary)" : "1.5px solid var(--rv-color-text-muted)",
-                    borderRadius: "2px",
-                    width: `${preset.iconW}px`,
-                    height: `${preset.iconH}px`,
-                    opacity: isSelected ? 1 : 0.6,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "8px",
-                    fontWeight: "bold",
-                    color: isSelected ? "var(--rv-color-primary)" : "var(--rv-color-text-muted)"
-                  }}
-                >
-                  {preset.desc}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <span style={{ fontSize: "11px", fontWeight: "700" }}>{preset.label}</span>
-                  <span style={{ fontSize: "9px", opacity: 0.6 }}>{preset.w}x{preset.h}</span>
-                </div>
-              </button>
-            );
-          })}
         </div>
       </div>
 

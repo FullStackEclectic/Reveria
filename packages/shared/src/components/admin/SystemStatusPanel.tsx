@@ -105,7 +105,11 @@ export function SystemStatusPanel({
     "remove_bg": "自动主体抠图 (Matting)",
     "style_transfer": "画风与滤镜转换 (Style)",
     "txt2img": "大模型文生图 (Text2Img)",
-    "img2img": "图生图局部重绘 (Img2Img)"
+    "img2img": "图生图局部重绘 (Img2Img)",
+    "image_generation": "AI 绘图生成 (Image Gen)",
+    "text_to_image": "文生图任务 (Text2Img)",
+    "video_generation": "AI 视频生成 (Video Gen)",
+    "text_generation": "AI 文本生成 (Text Gen)",
   };
 
   const defaultUsage = [

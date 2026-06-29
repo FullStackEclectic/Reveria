@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Sparkles, Search, FolderKanban, ArrowRight, CircleDot } from "lucide-react";
 import "./DashboardView.css";
+import { ProjectCard } from "../project/ProjectCard";
 
 import {
   WorkspaceSummary,
@@ -52,42 +53,6 @@ export function DashboardView({
     );
   }, [projects, searchQuery]);
 
-  // 磨砂炫彩渐变色预览分类映射
-  const getThumbnailClass = (projectId: string) => {
-    let sum = 0;
-    for (let i = 0; i < projectId.length; i++) {
-      sum += projectId.charCodeAt(i);
-    }
-    const type = sum % 3;
-    if (type === 0) return "thumb-gradient-purple";
-    if (type === 1) return "thumb-gradient-sunset";
-    return "thumb-gradient-ocean";
-  };
-
-  const getIconBgColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "delivered":
-        return "#10b981"; // green
-      case "running":
-      case "active":
-        return "#0ea5e9"; // blue
-      default:
-        return "#f59e0b"; // amber
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "delivered":
-        return "已交付";
-      case "running":
-      case "active":
-        return "进行中";
-      default:
-        return "草稿";
-    }
-  };
-
   return (
     <section className="workspace">
       {/* 新版双栏主布局 */}
@@ -130,9 +95,10 @@ export function DashboardView({
               {filteredProjects.map((project) => {
                 const customer = customers.find((c) => c.id === project.customer_id);
                 return (
-                  <div
-                    className="project-card-figma"
+                  <ProjectCard
                     key={project.id}
+                    project={project}
+                    customerName={customer ? customer.name : "个人项目"}
                     onClick={() => {
                       setSelectedProjectId(project.id);
                       void loadProjectAssets(project.id);
@@ -140,32 +106,7 @@ export function DashboardView({
                       setProjectsViewMode?.("detail");
                       setActiveView("projects");
                     }}
-                  >
-                    {/* 上部：项目缩略图预览（磨砂炫彩渐变色） */}
-                    <div className="thumbnail-area">
-                      <div className={`project-thumbnail-gradient ${getThumbnailClass(project.id)}`}>
-                        <div className="glass-noise-overlay"></div>
-                        <div className="project-thumbnail-center-badge">
-                          <FolderKanban size={24} className="folder-icon" />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 下部：项目基础信息及类型图标 */}
-                    <div className="info-area">
-                      <div className="text-wrapper">
-                        <span className="project-title" title={project.name}>{project.name}</span>
-                        <div className="project-meta-row">
-                          <span className="meta-item">{customer ? customer.name : "个人项目"}</span>
-                          <span className="meta-divider">·</span>
-                          <span className="meta-item">已消耗 {project.consumed_credits} 点</span>
-                        </div>
-                      </div>
-                      <span className={`status-badge status-${project.status.toLowerCase()}`}>
-                        {getStatusText(project.status)}
-                      </span>
-                    </div>
-                  </div>
+                  />
                 );
               })}
             </div>

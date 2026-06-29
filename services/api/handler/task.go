@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -387,9 +388,10 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		return
 	}
 
+	contentType := "application/json"
+
 	// 图像生成与视频生成在 OpenAI 网关上接口不一样
 	if task.TaskType == "image_generation" || task.TaskType == "text_to_image" {
-		upstreamURL = fmt.Sprintf("%s/v1/images/generations", settings.UpstreamAPIURL)
 		// 解析 InputPayload 参数
 		var payload map[string]any
 		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
@@ -399,13 +401,89 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		if sizeStr == "" {
 			sizeStr = "1024x1024"
 		}
-		gatewayReq := map[string]any{
-			"model":  gatewayModelName,
-			"prompt": prompt,
-			"n":      1,
-			"size":   sizeStr,
+
+		refImg, _ := payload["ref_image_url"].(string)
+		if refImg != "" {
+			// 【图生图分支】调用 /v1/images/edits，使用 multipart/form-data 格式
+			upstreamURL = fmt.Sprintf("%s/v1/images/edits", settings.UpstreamAPIURL)
+			log.Printf("[callUpstreamGateway] ImageToImage (edits): Downloading reference image %s", refImg)
+
+			// 读取参考图片数据
+			var imgBytes []byte
+			var err error
+
+			// 1. 尝试直接从本地磁盘读取（消除内部 HTTP 环回请求可能导致的 404/卡死等网络风险）
+			lastSlash := strings.LastIndex(refImg, "/")
+			if lastSlash != -1 {
+				fileName := refImg[lastSlash+1:]
+				localPath := filepath.Join(getStorageDir(), fileName)
+				imgBytes, err = os.ReadFile(localPath)
+				if err == nil {
+					log.Printf("[callUpstreamGateway] ImageToImage (edits): Successfully read local file directly: %s", localPath)
+				} else {
+					log.Printf("[callUpstreamGateway] ImageToImage (edits): Local file not found or failed to read (%s): %v. Falling back to HTTP download.", localPath, err)
+				}
+			}
+
+			// 2. 如果本地读取失败，降级通过 HTTP 网络下载
+			if len(imgBytes) == 0 {
+				respImg, err := http.Get(refImg)
+				if err != nil {
+					handleTaskFailure(task.ID, "DOWNLOAD_REF_IMAGE_FAILED", "下载参考图片失败: "+err.Error())
+					return
+				}
+				defer respImg.Body.Close()
+				imgBytes, err = io.ReadAll(respImg.Body)
+				if err != nil {
+					handleTaskFailure(task.ID, "READ_REF_IMAGE_FAILED", "读取参考图片数据失败: "+err.Error())
+					return
+				}
+				log.Printf("[callUpstreamGateway] ImageToImage (edits): Successfully downloaded image via HTTP: %s", refImg)
+			}
+
+			// 拼装 multipart body
+			bodyBuf := &bytes.Buffer{}
+			bodyWriter := multipart.NewWriter(bodyBuf)
+
+			fileName := "reference.png"
+			if strings.Contains(refImg, ".jpg") || strings.Contains(refImg, ".jpeg") {
+				fileName = "reference.jpg"
+			} else if strings.Contains(refImg, ".webp") {
+				fileName = "reference.webp"
+			}
+
+			fileWriter, err := bodyWriter.CreateFormFile("image", fileName)
+			if err != nil {
+				handleTaskFailure(task.ID, "MULTIPART_ERROR", "创建图片表单字段失败: "+err.Error())
+				return
+			}
+			_, err = io.Copy(fileWriter, bytes.NewReader(imgBytes))
+			if err != nil {
+				handleTaskFailure(task.ID, "MULTIPART_ERROR", "写入图片表单数据失败: "+err.Error())
+				return
+			}
+
+			_ = bodyWriter.WriteField("prompt", prompt)
+			_ = bodyWriter.WriteField("model", gatewayModelName)
+			_ = bodyWriter.WriteField("n", "1")
+			if sizeStr != "" {
+				_ = bodyWriter.WriteField("size", sizeStr)
+			}
+
+			contentType = bodyWriter.FormDataContentType()
+			_ = bodyWriter.Close()
+			reqBody = bodyBuf.Bytes()
+		} else {
+			// 【文生图分支】调用 /v1/images/generations，使用 application/json 格式
+			upstreamURL = fmt.Sprintf("%s/v1/images/generations", settings.UpstreamAPIURL)
+			gatewayReq := map[string]any{
+				"model":  gatewayModelName,
+				"prompt": prompt,
+				"n":      1,
+				"size":   sizeStr,
+			}
+			reqBody, _ = json.Marshal(gatewayReq)
 		}
-		reqBody, _ = json.Marshal(gatewayReq)
 	} else if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
 		// 视频生成
 		upstreamURL = fmt.Sprintf("%s/v1/video/generations", settings.UpstreamAPIURL)
@@ -415,6 +493,10 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		gatewayReq := map[string]any{
 			"model":  gatewayModelName,
 			"prompt": prompt,
+		}
+		if refImg, ok := payload["ref_image_url"].(string); ok && refImg != "" {
+			gatewayReq["ref_image_url"] = refImg
+			gatewayReq["ref_img"] = refImg
 		}
 		reqBody, _ = json.Marshal(gatewayReq)
 	} else {
@@ -428,7 +510,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		return
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
 
 	client := &http.Client{
@@ -635,17 +717,20 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 				mimeType = "video/mp4"
 			}
 
+			refImgURL, _ := inputPayload["ref_image_url"].(string)
+
 			metaMap := map[string]any{
-				"file_name":  storedName,
-				"url":        localURL,
-				"title":      "AI 创意生成结果",
-				"size":       len(fileBytes),
-				"mime_type":  mimeType,
-				"prompt":     prompt,
-				"size_str":   paramSize,
-				"dimensions": paramSize,
-				"quality":    quality,
-				"model":      modelName,
+				"file_name":     storedName,
+				"url":           localURL,
+				"title":         "AI 创意生成结果",
+				"size":          len(fileBytes),
+				"mime_type":     mimeType,
+				"prompt":        prompt,
+				"size_str":      paramSize,
+				"dimensions":    paramSize,
+				"quality":       quality,
+				"model":         modelName,
+				"ref_image_url": refImgURL,
 			}
 			metaBytes, _ := json.Marshal(metaMap)
 			metaStr = string(metaBytes)

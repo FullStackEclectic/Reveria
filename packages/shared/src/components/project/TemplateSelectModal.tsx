@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { X, Sparkles, Folder, ArrowLeft, LayoutTemplate, Upload, Image as ImageIcon } from "lucide-react";
-import { TemplateCategory, PromptTemplate } from "../../types";
+import { TemplateCategory, PromptTemplate, AssetSummary } from "../../types";
 import { getJson, uploadAsset, assetUrl } from "../../utils";
 import { AIAdvancedParamsPanel, AIAdvancedParams } from "../admin/AIAdvancedParamsPanel";
+import { TemplateConfigView } from "./TemplateConfigView";
+import { TemplateCard, CategorySidebar } from "./TemplateSubComponents";
 
 interface TemplateSelectModalProps {
   onClose: () => void;
@@ -43,7 +45,54 @@ export function TemplateSelectModal({
   // 前台高阶生成参数微调状态
   const [advParams, setAdvParams] = useState<AIAdvancedParams>({});
 
+  // 项目图片素材资产列表（用于参考图的素材库选择）
+  const [projectAssets, setProjectAssets] = useState<AssetSummary[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 智能加载当前项目下的所有资产（素材库）以供微调面板选择参考图
+  useEffect(() => {
+    if (projectId) {
+      getJson<AssetSummary[] | { success: boolean; data: AssetSummary[] }>(
+        `/api/assets?project_id=${encodeURIComponent(projectId)}`
+      )
+        .then((res) => {
+          if (Array.isArray(res)) {
+            setProjectAssets(res);
+          } else if (res && typeof res === "object" && Array.isArray((res as any).data)) {
+            setProjectAssets((res as any).data);
+          } else {
+            setProjectAssets([]);
+          }
+        })
+        .catch(() => setProjectAssets([]));
+    }
+  }, [projectId]);
+
+  // 监听选中模板，自动初始化正反向提示词和高级参数，以修复文本框及画布生成空白的 Bug
+  useEffect(() => {
+    if (activeTemplate) {
+      setPromptInput(activeTemplate.content || "");
+      setNegativePromptInput(activeTemplate.negative_prompt || "");
+      setUploadedImages([]);
+      
+      if (activeTemplate.advanced_params) {
+        try {
+          const parsed = JSON.parse(activeTemplate.advanced_params);
+          setAdvParams(parsed || {});
+        } catch (e) {
+          setAdvParams({});
+        }
+      } else {
+        setAdvParams({});
+      }
+    } else {
+      setPromptInput("");
+      setNegativePromptInput("");
+      setUploadedImages([]);
+      setAdvParams({});
+    }
+  }, [activeTemplate]);
 
   useEffect(() => {
     async function loadTemplates() {
@@ -366,389 +415,34 @@ export function TemplateSelectModal({
 
         {/* 主体交互区域 */}
         {activeTemplate ? (
-          /* 模板配置与直接生成页：左右双栏 Remix 布局 */
-          <div
-            style={{
-              padding: "24px",
-              display: "grid",
-              gridTemplateColumns: "580px 1fr",
-              gap: "24px",
-              height: "100%",
-              overflow: "hidden",
-              background: "#ffffff"
-            }}
-          >
-            {/* 左栏：效果图高保真预览 */}
-            <div 
-              style={{ 
-                display: "flex", 
-                flexDirection: "column", 
-                height: "100%", 
-                borderRadius: "var(--rv-radius-md)",
-                border: "1px solid var(--rv-color-border-thin)",
-                overflow: "hidden",
-                background: "var(--rv-color-bg-sidebar)",
-                position: "relative",
-                boxShadow: "inset 0 0 20px rgba(0,0,0,0.02)"
-              }}
-            >
-              {activeTemplate.preview_url ? (
-                <img
-                  src={assetUrl(activeTemplate.preview_url)}
-                  alt={activeTemplate.title}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", background: "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)", color: "var(--rv-color-text-muted)" }}>
-                  <LayoutTemplate size={48} style={{ strokeWidth: 1.2, opacity: 0.4 }} />
-                  <span style={{ fontSize: "12px", opacity: 0.6 }}>极简提示词模板 · 暂无效果图</span>
-                </div>
-              )}
-
-              {/* 推荐模型气泡 */}
-              <div 
-                style={{ 
-                  position: "absolute", 
-                  top: "12px", 
-                  left: "12px", 
-                  background: "rgba(255, 255, 255, 0.85)", 
-                  backdropFilter: "blur(4px)", 
-                  border: "1px solid rgba(15, 118, 110, 0.15)", 
-                  borderRadius: "100px", 
-                  padding: "4px 12px", 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px", 
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.05)" 
-                }}
-              >
-                <Sparkles size={12} style={{ color: "var(--rv-color-primary)" }} />
-                <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-primary)" }}>
-                  {activeTemplate.model_id ? `模型：${activeTemplate.model_id}` : "模型：默认自动路由"}
-                </span>
-              </div>
-            </div>
-
-            {/* 右栏：参数配置与立即生成 */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px", height: "100%", overflowY: "auto", paddingRight: "8px" }}>
-              
-              {/* 正向提示词 */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>提示词参数微调</span>
-                <textarea
-                  value={promptInput}
-                  onChange={(e) => setPromptInput(e.target.value)}
-                  placeholder="在此微调正向提示词..."
-                  style={{
-                    width: "100%",
-                    height: "80px",
-                    background: "var(--rv-color-bg-sidebar)",
-                    border: "1px solid var(--rv-color-border-thin)",
-                    color: "var(--rv-color-text-main)",
-                    borderRadius: "var(--rv-radius-xs)",
-                    padding: "10px 12px",
-                    fontSize: "12px",
-                    lineHeight: "1.5",
-                    fontFamily: "JetBrains Mono, monospace",
-                    outline: "none",
-                    resize: "none",
-                    transition: "all 0.2s"
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = "var(--rv-color-primary)"}
-                  onBlur={(e) => e.currentTarget.style.borderColor = "var(--rv-color-border-thin)"}
-                />
-              </div>
-
-              {/* 生图模式展示反向提示词 */}
-              {(activeTemplate.workflow_type === "image-generation" || activeTemplate.workflow_type === "video-generation") && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>反向提示词 (Negative Prompt)</span>
-                  <textarea
-                    value={negativePromptInput}
-                    onChange={(e) => setNegativePromptInput(e.target.value)}
-                    placeholder="例如：watermark, blurry, bad quality..."
-                    style={{
-                      width: "100%",
-                      height: "50px",
-                      background: "rgba(239, 68, 68, 0.02)",
-                      border: "1px solid rgba(239, 68, 68, 0.15)",
-                      color: "var(--rv-color-text-main)",
-                      borderRadius: "var(--rv-radius-xs)",
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      lineHeight: "1.5",
-                      fontFamily: "JetBrains Mono, monospace",
-                      outline: "none",
-                      resize: "none",
-                      transition: "all 0.2s"
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* 参考图上传区 */}
-              {activeTemplate.need_image && activeTemplate.need_image > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>
-                    参考照片 (需要 {activeTemplate.need_image} 张)
-                  </span>
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{
-                      height: "90px",
-                      borderRadius: "var(--rv-radius-xs)",
-                      border: "2px dashed var(--rv-color-border-thin)",
-                      background: "var(--rv-color-bg-sidebar)",
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "4px",
-                      transition: "all 0.2s",
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--rv-color-primary)";
-                      e.currentTarget.style.background = "var(--rv-color-primary-light)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--rv-color-border-thin)";
-                      e.currentTarget.style.background = "var(--rv-color-bg-sidebar)";
-                    }}
-                  >
-                    {isUploading ? (
-                      <div style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold" }}>上传中...</div>
-                    ) : uploadedImages.length > 0 ? (
-                      <>
-                        <img
-                          src={uploadedImages[0]}
-                          alt="参考图"
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                        <div style={{ position: "absolute", bottom: "4px", right: "4px", background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: "2px", fontSize: "9px" }}>
-                          更换图片
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={16} style={{ color: "var(--rv-color-text-muted)" }} />
-                        <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>点击上传参考照片</span>
-                      </>
-                    )}
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleUploadImage}
-                      accept="image/*"
-                      style={{ display: "none" }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", gap: "10px", padding: "10px", background: "rgba(15,118,110,0.05)", border: "1px solid rgba(15,118,110,0.1)", borderRadius: "var(--rv-radius-xs)" }}>
-                  <ImageIcon size={14} style={{ color: "var(--rv-color-primary)", marginTop: "2px", flexShrink: 0 }} />
-                  <div style={{ fontSize: "11px", color: "var(--rv-color-primary)", lineHeight: "1.4" }}>
-                    本模板不需要参考图，可直接在下方微调参数并生成。
-                  </div>
-                </div>
-              )}
-
-              {/* 嵌入 Civitai 风格的高级参数微调面板 */}
-              {activeTemplate.show_ratio !== false && (
-                <div style={{ borderTop: "1px solid var(--rv-color-border-thin)", paddingTop: "12px", marginTop: "4px" }}>
-                  <AIAdvancedParamsPanel
-                    value={advParams}
-                    onChange={setAdvParams}
-                    showAdvancedToggle={true}
-                  />
-                </div>
-              )}
-
-              {/* 立即生成触发按钮 */}
-              <div style={{ marginTop: "14px", paddingTop: "8px", borderTop: "1px solid var(--rv-color-border-thin)", flexShrink: 0 }}>
-                <button
-                  type="button"
-                  onClick={handleStartGeneration}
-                  disabled={isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)}
-                  style={{
-                    width: "100%",
-                    minHeight: "42px",
-                    background: "var(--rv-color-primary)",
-                    border: 0,
-                    borderRadius: "var(--rv-radius-xs)",
-                    color: "#ffffff",
-                    fontSize: "13px",
-                    fontWeight: "700",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    cursor: (isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) ? "not-allowed" : "pointer",
-                    opacity: (isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) ? 0.6 : 1,
-                    transition: "all 0.2s",
-                    boxShadow: "var(--rv-shadow-md)"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isUploading && !((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) {
-                      e.currentTarget.style.background = "hsl(170, 80%, 20%)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isUploading && !((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) {
-                      e.currentTarget.style.background = "var(--rv-color-primary)";
-                    }
-                  }}
-                >
-                  <Sparkles size={16} />
-                  立即在画布生成
-                </button>
-                {((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0) && (
-                  <p style={{ margin: "6px 0 0", fontSize: "10px", color: "#ef4444", textAlign: "center" }}>
-                    请先上传参考照片以激活生成
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+          <TemplateConfigView
+            activeTemplate={activeTemplate}
+            promptInput={promptInput}
+            setPromptInput={setPromptInput}
+            negativePromptInput={negativePromptInput}
+            setNegativePromptInput={setNegativePromptInput}
+            uploadedImages={uploadedImages}
+            setUploadedImages={setUploadedImages}
+            isUploading={isUploading}
+            fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
+            handleUploadImage={handleUploadImage}
+            advParams={advParams}
+            setAdvParams={setAdvParams}
+            handleStartGeneration={handleStartGeneration}
+            projectAssets={projectAssets}
+          />
         ) : (
           /* 模板分类与列表选择页 */
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", overflow: "hidden", height: "100%" }}>
             {/* 左侧栏：分类选择 */}
-            <aside
-              style={{
-                background: "rgba(0, 0, 0, 0.02)",
-                borderRight: "1px solid var(--rv-color-border-thin)",
-                padding: "16px 12px",
-                overflowY: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-                height: "100%"
-              }}
-            >
-              {isLoading && currentCats.length === 0 ? (
-                <div style={{ padding: "20px", color: "var(--rv-color-text-muted)", fontSize: "12px", textAlign: "center" }}>加载中...</div>
-              ) : currentCats.length === 0 ? (
-                <div style={{ padding: "20px", color: "var(--rv-color-text-muted)", fontSize: "12px", textAlign: "center" }}>暂无分类</div>
-              ) : (
-                (() => {
-                  const rootCats = currentCats.filter((c) => !c.parent_id);
-                  const getSubCats = (parentId: string) => currentCats.filter((c) => c.parent_id === parentId);
-                  
-                  const toggleExpand = (catId: string) => {
-                    setExpandedCategoryIds(prev => 
-                      prev.includes(catId) ? prev.filter(id => id !== catId) : [...prev, catId]
-                    );
-                  };
-
-                  return rootCats.map((root) => {
-                    const isSelected = selectedCategoryId === root.id;
-                    const subs = getSubCats(root.id);
-                    const hasSubs = subs.length > 0;
-                    const isExpanded = expandedCategoryIds.includes(root.id);
-
-                    return (
-                      <div key={root.id} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCategoryId(root.id);
-                            if (hasSubs) {
-                              toggleExpand(root.id);
-                            }
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            width: "100%",
-                            padding: "8px 12px",
-                            borderRadius: "var(--rv-radius-xs)",
-                            border: 0,
-                            background: isSelected ? "var(--rv-color-primary-light)" : "transparent",
-                            color: isSelected ? "var(--rv-color-primary)" : "var(--rv-color-text-main)",
-                            fontWeight: isSelected ? "700" : "600",
-                            fontSize: "13px",
-                            cursor: "pointer",
-                            textAlign: "left",
-                            transition: "all 0.2s"
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isSelected) {
-                              e.currentTarget.style.color = "var(--rv-color-text-main)";
-                              e.currentTarget.style.background = "rgba(0, 0, 0, 0.02)";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isSelected) {
-                              e.currentTarget.style.color = "var(--rv-color-text-muted)";
-                              e.currentTarget.style.background = "transparent";
-                            }
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
-                            <Folder size={14} style={{ opacity: isSelected ? 1 : 0.6, flexShrink: 0 }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{root.name}</span>
-                          </div>
-                          {hasSubs && (
-                            <span style={{ fontSize: "9px", opacity: 0.6, flexShrink: 0 }}>
-                              {isExpanded ? "▲" : "▼"}
-                            </span>
-                          )}
-                        </button>
-
-                        {/* 子分类展开渲染 */}
-                        {hasSubs && isExpanded && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "12px", marginTop: "2px", borderLeft: "1px dashed var(--rv-color-border-thin)", marginLeft: "18px" }}>
-                            {subs.map((sub) => {
-                              const isSubSelected = selectedCategoryId === sub.id;
-                              return (
-                                <button
-                                  key={sub.id}
-                                  type="button"
-                                  onClick={() => setSelectedCategoryId(sub.id)}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                    width: "100%",
-                                    padding: "6px 8px",
-                                    borderRadius: "var(--rv-radius-xs)",
-                                    border: 0,
-                                    background: isSubSelected ? "rgba(15, 118, 110, 0.06)" : "transparent",
-                                    color: isSubSelected ? "var(--rv-color-primary)" : "var(--rv-color-text-muted)",
-                                    fontWeight: isSubSelected ? "700" : "500",
-                                    fontSize: "12px",
-                                    cursor: "pointer",
-                                    textAlign: "left",
-                                    transition: "all 0.2s"
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isSubSelected) {
-                                      e.currentTarget.style.color = "var(--rv-color-text-main)";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isSubSelected) {
-                                      e.currentTarget.style.color = "var(--rv-color-text-muted)";
-                                    }
-                                  }}
-                                >
-                                  <span style={{ opacity: 0.5 }}>└─</span>
-                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()
-              )}
-            </aside>
+            <CategorySidebar
+              isLoading={isLoading}
+              currentCats={currentCats}
+              selectedCategoryId={selectedCategoryId}
+              setSelectedCategoryId={setSelectedCategoryId}
+              expandedCategoryIds={expandedCategoryIds}
+              setExpandedCategoryIds={setExpandedCategoryIds}
+            />
 
             {/* 右侧栏：模板卡片列表 */}
             <main style={{ padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px", background: "#ffffff", height: "100%" }}>
@@ -774,13 +468,14 @@ export function TemplateSelectModal({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(4, 1fr)",
-                    gap: "12px"
+                    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                    gap: "16px"
                   }}
                 >
                   {filteredTemplates.map((tpl) => (
-                    <div
+                    <TemplateCard
                       key={tpl.id}
+                      tpl={tpl}
                       onClick={() => {
                         setActiveTemplate(tpl);
                         setPromptInput(tpl.content);
@@ -797,66 +492,7 @@ export function TemplateSelectModal({
                         }
                         setAdvParams(parsed);
                       }}
-                      style={{
-                        background: "var(--rv-color-bg-sidebar)",
-                        border: "1px solid var(--rv-color-border-thin)",
-                        borderRadius: "var(--rv-radius-xs)",
-                        padding: "10px",
-                        cursor: "pointer",
-                        display: "flex",
-                        gap: "12px",
-                        transition: "all 0.2s",
-                        height: "115px",
-                        overflow: "hidden"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = "var(--rv-color-primary)";
-                        e.currentTarget.style.background = "var(--rv-color-primary-light)";
-                        e.currentTarget.style.boxShadow = "var(--rv-shadow-md)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = "var(--rv-color-border-thin)";
-                        e.currentTarget.style.background = "var(--rv-color-bg-sidebar)";
-                        e.currentTarget.style.boxShadow = "none";
-                      }}
-                    >
-                      {/* 左侧：精美封面缩略图 */}
-                      <div style={{ width: "70px", height: "100%", borderRadius: "4px", overflow: "hidden", background: "var(--rv-color-bg-sidebar)", border: "1px solid var(--rv-color-border-thin)", flexShrink: 0 }}>
-                        {tpl.preview_url ? (
-                          <img src={assetUrl(tpl.preview_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        ) : (
-                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f1f5f9", color: "var(--rv-color-text-muted)" }}>
-                            <LayoutTemplate size={20} style={{ opacity: 0.3 }} />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 右侧：标题与缩略信息 */}
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%", overflow: "hidden" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "4px" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-                            <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tpl.title}</span>
-                            <div style={{ display: "flex", gap: "4px" }}>
-                              <span style={{ fontSize: "8px", background: "rgba(15, 118, 110, 0.08)", color: "var(--rv-color-primary)", padding: "1px 4px", borderRadius: "2px", fontWeight: "bold" }}>
-                                {tpl.workflow_type === "video-generation" ? "视频生成" : tpl.workflow_type === "text-generation" ? "文本生成" : "图像生成"}
-                              </span>
-                              {tpl.need_image && tpl.need_image > 0 ? (
-                                <span style={{ fontSize: "8px", background: "rgba(245, 158, 11, 0.08)", color: "hsl(35, 90%, 40%)", padding: "1px 4px", borderRadius: "2px", fontWeight: "bold" }}>
-                                  需图
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "2px", color: "var(--rv-color-primary)", fontSize: "10px", fontWeight: "700", flexShrink: 0 }}>
-                            配置
-                            <Sparkles size={8} />
-                          </div>
-                        </div>
-                        <p style={{ margin: 0, fontSize: "10px", color: "var(--rv-color-text-muted)", lineHeight: "1.4", overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, textOverflow: "ellipsis", background: "#ffffff", padding: "4px 6px", borderRadius: "2px", border: "1px solid var(--rv-color-border-thin)", fontFamily: "monospace" }}>
-                          {tpl.content}
-                        </p>
-                      </div>
-                    </div>
+                    />
                   ))}
                 </div>
               )}
@@ -874,7 +510,21 @@ export function TemplateSelectModal({
           from { transform: scale(0.95); opacity: 0; }
           to { transform: scale(1); opacity: 1; }
         }
+        .tpl-card-container:hover .tpl-card-img {
+          transform: scale(1.08);
+        }
+        .tpl-card-container:hover .tpl-card-hover-overlay {
+          opacity: 1 !important;
+        }
+        .tpl-card-container:hover .tpl-card-hover-badge {
+          transform: translateY(0) !important;
+        }
+        .tpl-card-container:hover .tpl-card-hover-title {
+          transform: translateY(0) !important;
+        }
       `}</style>
     </div>
   );
 }
+
+

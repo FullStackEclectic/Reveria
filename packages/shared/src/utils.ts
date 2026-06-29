@@ -102,6 +102,7 @@ export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): Projec
         id: typeof item.id === "string" && item.id ? item.id : createCanvasItemId(),
         type: itemType,
         asset_id: typeof item.asset_id === "string" ? item.asset_id : undefined,
+        task_id: typeof item.task_id === "string" ? item.task_id : undefined,
         title: typeof item.title === "string" && item.title ? item.title : "画布元素",
         text: typeof item.text === "string" ? item.text : "",
         x: clamp(Number(item.x ?? 0), -1000000, 1000000),
@@ -381,10 +382,23 @@ export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
 }
 
 export function assetUrl(url: string) {
+  if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
     return url;
   }
-  return `${API_BASE}${url}`;
+  
+  let formattedUrl = url;
+  // 如果 url 只是一个纯文件名（如 fdda4a...jpg）或不含 /api/files/ 的路径，智能重整为标准的相对静态路由
+  if (!formattedUrl.includes("/api/files/")) {
+    if (formattedUrl.startsWith("/")) {
+      formattedUrl = `/api/files${formattedUrl}`;
+    } else {
+      formattedUrl = `/api/files/${formattedUrl}`;
+    }
+  }
+
+  const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
+  return `${base}${formattedUrl}`;
 }
 
 export function formatCredits(amount?: number) {
@@ -462,7 +476,7 @@ export async function fetchDashboardData(workspaceIdOverride?: string) {
 }
 
 export async function fetchAdminData(workspaceId?: string) {
-  const [userData, providerData, modelData, pricingRuleData, templateData, taskData, workspaceData] =
+  const [userData, providerData, modelData, pricingRuleData, templateData, taskData, workspaceData, buildData] =
     await Promise.all([
       getJson<UserSummary[]>("/api/admin/users"),
       getJson<ProviderSummary[]>("/api/admin/providers"),
@@ -471,6 +485,7 @@ export async function fetchAdminData(workspaceId?: string) {
       getJson<WorkflowTemplateSummary[]>("/api/admin/workflow-templates"),
       getJson<GenerationTaskSummary[]>("/api/tasks"),
       getJson<WorkspaceSummary[]>("/api/workspaces"),
+      getJson<any>("/api/version").catch(() => null),
     ]);
   const activeWId = workspaceId ?? workspaceData[0]?.id;
   const memberData = activeWId
@@ -489,6 +504,7 @@ export async function fetchAdminData(workspaceId?: string) {
     taskData,
     memberData,
     costReportData,
+    buildData,
   };
 }
 
