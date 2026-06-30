@@ -1,8 +1,8 @@
 import React from "react";
 import { Sparkles, LayoutTemplate, Upload, Image as ImageIcon, X } from "lucide-react";
-import { PromptTemplate, AIAdvancedParams, AssetSummary } from "../../types";
-import { assetUrl } from "../../utils";
-import { AIAdvancedParamsPanel } from "../admin/AIAdvancedParamsPanel";
+import { PromptTemplate, AssetSummary } from "../../types";
+import { assetUrl, assetTitle } from "../../utils";
+import { AIAdvancedParamsPanel, AIAdvancedParams } from "../admin/AIAdvancedParamsPanel";
 
 interface TemplateConfigViewProps {
   activeTemplate: PromptTemplate;
@@ -401,7 +401,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
                       setUploadedImages([asset.thumbnail_url || asset.file_url || ""]);
                       setIsRefSelectorOpen(false);
                     }}
-                    title={asset.name || "素材"}
+                    title={assetTitle(asset) || "素材"}
                     style={{ 
                       cursor: "pointer",
                       height: "100%",
@@ -412,7 +412,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
                       position: "relative"
                     }}
                   >
-                    <img src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} alt={asset.name || "资产"} />
+                    <img src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} alt={assetTitle(asset) || "资产"} />
                   </div>
                 ))}
               </div>

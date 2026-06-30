@@ -59,6 +59,7 @@ export interface CanvasItemCardProps {
   setProjectCanvas?: React.Dispatch<React.SetStateAction<ProjectCanvasDocument>>;
   onMouseDownCard: (e: React.MouseEvent, itemId: string) => void;
   handleResizeStart: (e: React.MouseEvent, itemId: string, handle: "top-left" | "top-right" | "bottom-left" | "bottom-right") => void;
+  assets?: AssetSummary[];
 }
 
 export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
@@ -83,7 +84,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
     if (!isAiGen || !item.task_id || readOnly || !setProjectCanvas || !projectId) return;
 
     let isMounted = true;
-    let pollInterval: NodeJS.Timeout;
+    let pollInterval: any;
 
     const saveCanvasData = async (updatedItems: any[]) => {
       try {
@@ -117,11 +118,11 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
               const latestAsset = assetsRes.data[0];
               
               setProjectCanvas((current) => {
-                const nextItems = current.items.map((i) =>
+                const nextItems = current.items.map((i: CanvasItem) =>
                   i.id === item.id
                     ? {
                         id: item.id,
-                        type: "asset",
+                        type: "asset" as const,
                         asset_id: latestAsset.id,
                         title: assetTitle(latestAsset) || item.title,
                         x: i.x,
@@ -183,13 +184,15 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
     const prompt = (meta?.prompt || "").trim();
     if (!prompt) return [];
 
+    if (!asset.created_at) return [];
     const createdTime = new Date(asset.created_at).getTime();
 
-    return assets.filter(a => {
+    return assets.filter((a: AssetSummary) => {
       if (a.asset_type !== "image" || a.source !== "generated") return false;
       const m = getAssetMetadata(a);
       const p = (m?.prompt || "").trim();
       if (p !== prompt) return false;
+      if (!a.created_at) return false;
       const t = new Date(a.created_at).getTime();
       return Math.abs(t - createdTime) <= 10000; // 10秒内
     });
@@ -197,7 +200,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
 
   const siblings = getSiblingImages();
   const activeSiblingId = selectedId || (asset ? asset.id : "");
-  const activeSibling = (siblings.length >= 2 && siblings.find(s => s.id === activeSiblingId)) || asset;
+  const activeSibling = (siblings.length >= 2 && siblings.find((s: AssetSummary) => s.id === activeSiblingId)) || asset;
 
   return (
     <article
@@ -296,7 +299,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
               }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              {siblings.map((s, idx) => {
+              {siblings.map((s: AssetSummary, idx: number) => {
                 const isSel = s.id === activeSibling.id;
                 return (
                   <div

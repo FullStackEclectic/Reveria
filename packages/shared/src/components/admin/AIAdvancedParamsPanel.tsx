@@ -18,6 +18,7 @@ export interface AIAdvancedParams {
   clip_skip?: number;
   ensd?: number;
   detail_enhancement?: boolean;
+  negative_prompt?: string;
 }
 
 interface AIAdvancedParamsPanelProps {

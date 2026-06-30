@@ -1,4 +1,4 @@
-import { PromptTemplate, AssetSummary, ProjectCanvasDocument } from "../../types";
+import { PromptTemplate, AssetSummary, ProjectCanvasDocument, CanvasItem } from "../../types";
 import { postJson, putJson, getJson, assetTitle } from "../../utils";
 
 interface GenerateParams {
@@ -104,11 +104,11 @@ export async function runTemplateGeneration({
   
   pushToHistory(projectCanvas);
   
-  const initialItems = [
+  const initialItems: CanvasItem[] = [
     ...projectCanvas.items,
     {
       id: placeholderId,
-      type: "note",
+      type: "note" as const,
       title: `✨ 正在生成 ${template.title}...`,
       text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
       x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
@@ -246,11 +246,11 @@ export async function runTemplateGeneration({
           setAssets((curr) => [asset, ...curr]);
         }
         
-        const syncItems = projectCanvas.items.map((item) =>
+        const syncItems: CanvasItem[] = projectCanvas.items.map((item) =>
           item.id === placeholderId
             ? {
                 id: placeholderId,
-                type: "asset",
+                type: "asset" as const,
                 asset_id: asset.id,
                 title: assetTitle(asset) || template.title,
                 x: item.x,
@@ -320,11 +320,11 @@ export async function runTemplateGeneration({
                     setAssets(assetsRes.data);
                   }
                   
-                  const successItems = projectCanvas.items.map((item) =>
+                  const successItems: CanvasItem[] = projectCanvas.items.map((item) =>
                     item.id === placeholderId
                       ? {
                           id: placeholderId,
-                          type: "asset",
+                          type: "asset" as const,
                           asset_id: latestAsset.id,
                           title: assetTitle(latestAsset) || template.title,
                           x: item.x,

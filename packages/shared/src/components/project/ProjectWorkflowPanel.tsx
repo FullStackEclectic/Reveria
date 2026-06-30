@@ -18,6 +18,7 @@ import {
   GenerationTaskDetail,
   AssetSummary,
   ModelSummary,
+  AISession,
 } from "../../types";
 import { getJson, postJson, assetUrl, assetTitle, uploadAsset } from "../../utils";
 import { WorkflowHistoryFeed } from "./WorkflowHistoryFeed";
@@ -32,12 +33,7 @@ import { WorkflowParamPopup } from "./WorkflowParamPopup";
 import { SessionHeader } from "./SessionHeader";
 import { WorkflowPromptConsole } from "./WorkflowPromptConsole";
 
-interface AISession {
-  id: string;
-  title: string;
-  createdAt: number;
-  assetIds: string[];
-}
+
 
 interface ProjectWorkflowPanelProps {
   selectedProject: ProjectSummary;
@@ -370,7 +366,7 @@ export function ProjectWorkflowPanel({
       }
     }, 3000);
 
-    let progressTimer: NodeJS.Timeout | null = null;
+    let progressTimer: any = null;
     if (currentActiveTask.status === "running" || currentActiveTask.status === "processing") {
       progressTimer = setInterval(() => {
         setActiveProgress((prev) => {
@@ -425,7 +421,12 @@ export function ProjectWorkflowPanel({
     if (!file) return;
     setIsUploadingRef(true);
     try {
-      const res = await uploadAsset(file, workspaceIdForAssetUpload(), selectedProjectId);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("workspace_id", workspaceIdForAssetUpload());
+      formData.append("project_id", selectedProjectId);
+      formData.append("asset_type", "image");
+      const res = await uploadAsset(formData);
       if (res && res.id) {
         const assetsRes = await getJson<AssetSummary[]>(
           `/api/assets?project_id=${encodeURIComponent(selectedProjectId)}`
@@ -569,36 +570,26 @@ export function ProjectWorkflowPanel({
   };
 
   // 历史重新编辑与回填
-  const handleReedit = (prompt: string, asset?: AssetSummary) => {
-    setWorkflowInput(prompt);
-    if (asset && asset.meta_data) {
-      try {
-        const meta = typeof asset.meta_data === "string" ? JSON.parse(asset.meta_data) : asset.meta_data;
-        if (meta && meta.ref_image_url) {
-          const matched = assets.find(a => a.file_url === meta.ref_image_url || a.thumbnail_url === meta.ref_image_url);
-          if (matched) setRefAsset(matched);
-        }
-      } catch (e) {
-        console.error("Failed to parse metadata ref image:", e);
-      }
+  const handleReedit = (promptText?: string, refImageUrl?: string) => {
+    if (promptText) {
+      setWorkflowInput(promptText);
+    }
+    if (refImageUrl) {
+      const matched = assets.find(a => a.file_url === refImageUrl || a.thumbnail_url === refImageUrl);
+      if (matched) setRefAsset(matched);
     }
   };
 
-  const handleRegenerate = (prompt: string, workflow?: string, asset?: AssetSummary) => {
-    if (workflow) {
-      setSelectedWorkflow(workflow as WorkflowType);
+  const handleRegenerate = (promptText?: string, type?: string, refImageUrl?: string) => {
+    if (type) {
+      setSelectedWorkflow(type as WorkflowType);
     }
-    setWorkflowInput(prompt);
-    if (asset && asset.meta_data) {
-      try {
-        const meta = typeof asset.meta_data === "string" ? JSON.parse(asset.meta_data) : asset.meta_data;
-        if (meta && meta.ref_image_url) {
-          const matched = assets.find(a => a.file_url === meta.ref_image_url || a.thumbnail_url === meta.ref_image_url);
-          if (matched) setRefAsset(matched);
-        }
-      } catch (e) {
-        console.error("Failed to parse metadata ref image:", e);
-      }
+    if (promptText) {
+      setWorkflowInput(promptText);
+    }
+    if (refImageUrl) {
+      const matched = assets.find(a => a.file_url === refImageUrl || a.thumbnail_url === refImageUrl);
+      if (matched) setRefAsset(matched);
     }
   };
 
@@ -646,6 +637,8 @@ export function ProjectWorkflowPanel({
         isRunningWorkflow={isRunningWorkflow}
         activeTask={currentActiveTask}
         activeProgress={activeProgress}
+        workflowResult={workflowResult}
+        setPreviewAsset={setPreviewAsset}
       />
 
       {/* 2. 底部固定区域（含控制台输入卡片） */}

@@ -53,7 +53,7 @@ interface WorkflowPromptConsoleProps {
   fileRefInputRef: React.RefObject<HTMLInputElement>;
   handleUploadRefImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
   imageAssets: AssetSummary[];
-  quickTasks: { type: WorkflowType; label: string }[];
+  quickTasks: readonly { type: WorkflowType; label: string }[];
   textareaRef: React.RefObject<HTMLTextAreaElement>;
 }
 

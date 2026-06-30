@@ -133,8 +133,8 @@ export function WorkflowHistoryFeed({
         const prevPrompt = (prevMeta?.prompt || "").trim();
         const currPrompt = (currMeta?.prompt || "").trim();
 
-        const prevTime = new Date(prevAsset.created_at).getTime();
-        const currTime = new Date(asset.created_at).getTime();
+        const prevTime = prevAsset.created_at ? new Date(prevAsset.created_at).getTime() : 0;
+        const currTime = asset.created_at ? new Date(asset.created_at).getTime() : 0;
 
         const isSamePrompt = prevPrompt === currPrompt && prevPrompt !== "";
         const isCloseTime = Math.abs(currTime - prevTime) <= 10000; // 10秒内判定为同批次

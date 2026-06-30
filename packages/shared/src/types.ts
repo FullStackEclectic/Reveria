@@ -158,6 +158,7 @@ export type AssetSummary = {
   local_path?: string | null;
   selection_status?: string;
   thumbnail_url?: string | null;
+  created_at?: string;
   metadata: {
     title?: string;
     task_type?: string;
@@ -197,6 +198,13 @@ export type CanvasConnection = {
   toItemId: string;
   color?: string;
   label?: string;
+};
+
+export type AISession = {
+  id: string;
+  title: string;
+  createdAt: number;
+  assetIds: string[];
 };
 
 export type ProjectCanvasDocument = {
@@ -299,6 +307,10 @@ export type GenerationTaskSummary = {
   status: string;
   estimated_credits: number;
   actual_credits: number;
+  user_id?: string;
+  project_id?: string | null;
+  workspace_id?: string;
+  created_at?: string;
 };
 
 export type GenerationTaskDetail = GenerationTaskSummary & {
