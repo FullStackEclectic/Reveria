@@ -18,6 +18,8 @@ interface WorkflowHistoryFeedProps {
   setPreviewAsset: (asset: AssetSummary | null) => void;
   activeTask?: any;
   activeProgress?: number;
+  pendingTaskIds?: string[];
+  localTasks?: any[];
 }
 
 interface GroupedChatItem {
@@ -42,7 +44,13 @@ export function WorkflowHistoryFeed({
   setPreviewAsset,
   activeTask,
   activeProgress = 0,
+  pendingTaskIds = [],
+  localTasks = [],
 }: WorkflowHistoryFeedProps) {
+  const failedTasks = localTasks.filter(
+    (t) => pendingTaskIds.includes(t.id) && t.status === "failed"
+  );
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   // 每一组 Gallery 的当前选中项，键为 gallery.id，值为选中的 asset.id
@@ -51,7 +59,7 @@ export function WorkflowHistoryFeed({
   // 自动滚动到最新消息
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [aiAssets.length, isRunningWorkflow, workflowResult, activeTask?.status, activeProgress]);
+  }, [aiAssets.length, isRunningWorkflow, workflowResult, activeTask?.status, activeProgress, failedTasks.length]);
 
   function getQualityLabel(q: string) {
     switch (q) {
@@ -186,7 +194,7 @@ export function WorkflowHistoryFeed({
             const isImage = asset.asset_type === "image";
             const meta = getAssetMetadata(asset);
             const promptText = meta?.prompt || meta?.brief || (isImage ? "创意绘图" : "文字工作流");
-            const rawModelName = meta?.model || "GPT Image 2";
+            const rawModelName = meta?.model || (isImage ? "GPT Image 2" : "GPT-4o");
             const modelName = typeof rawModelName === "string" ? rawModelName.replace(/\s*\(.*?\)\s*/g, "") : String(rawModelName);
             const sizeStr = meta?.size_str || meta?.dimensions || (typeof meta?.size === "string" ? meta.size : "16:9(2k)");
             const qualityStr = meta?.quality || "medium";
@@ -258,7 +266,37 @@ export function WorkflowHistoryFeed({
                           </div>
                         </div>
                       ) : (
-                        renderWorkflowTextOutput(asset.metadata?.output)
+                        <>
+                          {renderWorkflowTextOutput(meta?.output)}
+                          {meta && (typeof meta.total_tokens === "number" || typeof meta.actual_credits === "number") && (
+                            <div className="gen-msg-usage-info" style={{ 
+                              fontSize: "11px", 
+                              color: "var(--rv-color-text-muted)", 
+                              marginTop: "8px", 
+                              display: "flex", 
+                              alignItems: "center", 
+                              gap: "10px",
+                              borderTop: "1px dashed var(--rv-color-border-thin)",
+                              paddingTop: "6px"
+                            }}>
+                              <span>📊 消耗明细:</span>
+                              {typeof meta.total_tokens === "number" && (
+                                <span title={`输入 Token: ${meta.prompt_tokens ?? 0} | 输出 Token: ${meta.completion_tokens ?? 0}`} style={{ cursor: "help" }}>
+                                  Tokens: <strong style={{ color: "var(--rv-color-text-main)" }}>{meta.total_tokens}</strong>
+                                </span>
+                              )}
+                              {typeof meta.actual_credits === "number" && (
+                                <span>
+                                  扣减: <strong style={{ color: "var(--rv-color-primary)" }}>
+                                    {meta.actual_credits % 1 === 0
+                                      ? meta.actual_credits.toString()
+                                      : meta.actual_credits.toFixed(6).replace(/\.?0+$/, "")}
+                                  </strong> 积分
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </>
                       )}
 
                       <div className="gen-msg-actions">
@@ -275,7 +313,7 @@ export function WorkflowHistoryFeed({
                             type="button"
                             className="gen-action-icon-btn"
                             title="重新生成"
-                            onClick={() => handleRegenerate(promptText, asset.metadata?.task_type, meta?.ref_image_url)}
+                            onClick={() => handleRegenerate(promptText, meta?.task_type, meta?.ref_image_url)}
                           >
                             <span style={{ fontSize: "12px" }}>🔄</span>
                           </button>
@@ -297,22 +335,11 @@ export function WorkflowHistoryFeed({
                           </button>
                         </div>
 
-                        {isImage ? (
-                          addAssetToCanvas && (
-                            <button
-                              type="button"
-                              className="gen-canvas-insert-btn"
-                              onClick={() => addAssetToCanvas(asset)}
-                            >
-                              <Sparkles size={11} />
-                              <span>添加至画布</span>
-                            </button>
-                          )
-                        ) : (
+                        {isImage && addAssetToCanvas && (
                           <button
                             type="button"
                             className="gen-canvas-insert-btn"
-                            onClick={() => addWorkflowResultToCanvas(asset.metadata?.title || "AI生成结果", asset.metadata?.output)}
+                            onClick={() => addAssetToCanvas(asset)}
                           >
                             <Sparkles size={11} />
                             <span>添加至画布</span>
@@ -484,7 +511,7 @@ export function WorkflowHistoryFeed({
                             type="button"
                             className="gen-action-icon-btn"
                             title="重新生成"
-                            onClick={() => handleRegenerate(promptText, activeAsset.metadata?.task_type, meta?.ref_image_url)}
+                            onClick={() => handleRegenerate(promptText, meta?.task_type, meta?.ref_image_url)}
                           >
                             <span style={{ fontSize: "12px" }}>🔄</span>
                           </button>
@@ -570,7 +597,7 @@ export function WorkflowHistoryFeed({
                     />
                   </div>
                 )}
-                <div className="gen-msg-text">{activePrompt || "创意绘图"}</div>
+                <div className="gen-msg-text">{activePrompt || (activeTask.task_type === "text" ? "文本对话" : "创意绘图")}</div>
               </div>
             </div>
 
@@ -579,48 +606,73 @@ export function WorkflowHistoryFeed({
               <div className="gen-avatar-ai">AI</div>
               <div className="gen-msg-body">
                 <div className="gen-msg-ai-meta">
-                  <span>✨ 图像生成</span>
+                  <span>
+                    {activeTask.task_type === "image_generation" || activeTask.task_type === "text_to_image"
+                      ? "✨ 图像生成"
+                      : activeTask.task_type === "video_generation"
+                      ? "✨ 视频生成"
+                      : "✨ 文本生成"}
+                  </span>
                   <span>·</span>
-                  <span style={{ fontWeight: 600 }}>{activeTask.selected_model ? String(activeTask.selected_model).replace(/\s*\(.*?\)\s*/g, "") : "gpt-image-2"}</span>
+                  <span style={{ fontWeight: 600 }}>{activeTask.selected_model ? String(activeTask.selected_model).replace(/\s*\(.*?\)\s*/g, "") : (activeTask.task_type === "text" ? "GPT-4o" : "gpt-image-2")}</span>
                 </div>
 
                 <div className="gen-msg-ai-content">
-                  <div 
-                    style={{
-                      width: "100%",
-                      height: "220px",
-                      borderRadius: "10px",
-                      border: "1px dashed var(--rv-color-border-thin)",
-                      background: "rgba(185, 178, 165, 0.03)",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "12px",
-                      padding: "20px",
-                      boxSizing: "border-box",
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
-                  >
-                    <Loader2 size={24} style={{ color: "var(--rv-color-primary)", animation: "spin 2s linear infinite" }} />
-                    <span style={{ fontSize: "12px", color: "var(--rv-color-text-main)", fontWeight: "bold" }}>
-                      {activeProgress > 0 ? `⚡ 正在生成 ${activeProgress}%` : "⌛ 思考排队中..."}
-                    </span>
-                    
-                    {/* 进度条 */}
-                    <div style={{ width: "80%", height: "4px", background: "rgba(185, 178, 165, 0.15)", borderRadius: "2px", overflow: "hidden", marginTop: "4px" }}>
-                      <div 
-                        style={{
-                          width: `${activeProgress}%`,
-                          height: "100%",
-                          background: "linear-gradient(90deg, var(--rv-color-primary-light, #c084fc), var(--rv-color-primary))",
-                          borderRadius: "2px",
-                          transition: "width 0.4s ease-out"
-                        }}
-                      />
+                  {activeTask.task_type === "text" ? (
+                    <div 
+                      style={{
+                        padding: "16px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        color: "var(--rv-color-text-muted)",
+                        fontSize: "12px",
+                        background: "var(--rv-color-bg-sidebar)",
+                        border: "1px solid var(--rv-color-border-thin)",
+                        borderRadius: "12px"
+                      }}
+                    >
+                      <Loader2 size={14} style={{ color: "var(--rv-color-primary)", animation: "spin 2s linear infinite" }} />
+                      <span>AI 正在思考并撰写中...</span>
                     </div>
-                  </div>
+                  ) : (
+                    <div 
+                      style={{
+                        width: "100%",
+                        height: "220px",
+                        borderRadius: "10px",
+                        border: "1px dashed var(--rv-color-border-thin)",
+                        background: "rgba(185, 178, 165, 0.03)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "12px",
+                        padding: "20px",
+                        boxSizing: "border-box",
+                        position: "relative",
+                        overflow: "hidden"
+                      }}
+                    >
+                      <Loader2 size={24} style={{ color: "var(--rv-color-primary)", animation: "spin 2s linear infinite" }} />
+                      <span style={{ fontSize: "12px", color: "var(--rv-color-text-main)", fontWeight: "bold" }}>
+                        {activeProgress > 0 ? `⚡ 正在生成 ${activeProgress}%` : "⌛ 思考排队中..."}
+                      </span>
+                      
+                      {/* 进度条 */}
+                      <div style={{ width: "80%", height: "4px", background: "rgba(185, 178, 165, 0.15)", borderRadius: "2px", overflow: "hidden", marginTop: "4px" }}>
+                        <div 
+                          style={{
+                            width: `${activeProgress}%`,
+                            height: "100%",
+                            background: "linear-gradient(90deg, var(--rv-color-primary-light, #c084fc), var(--rv-color-primary))",
+                            borderRadius: "2px",
+                            transition: "width 0.4s ease-out"
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -640,6 +692,19 @@ export function WorkflowHistoryFeed({
           </div>
         </div>
       )}
+
+      {/* 异步轮询中失败的任务气泡展示 */}
+      {failedTasks.map((task) => (
+        <div key={task.id} className="gen-msg-bubble gen-msg-ai">
+          <div className="gen-avatar-ai">AI</div>
+          <div className="gen-msg-body">
+            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>❌ 生成失败</div>
+            <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
+              {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
+            </div>
+          </div>
+        </div>
+      ))}
 
       <div ref={chatEndRef} />
     </div>

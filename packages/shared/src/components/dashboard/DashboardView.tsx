@@ -140,7 +140,10 @@ export function DashboardView({
             {tasks.length > 0 ? (
               <div className="side-list">
                 {tasks.slice(0, 4).map((task) => {
-                  const displayName = task.task_type === "image-generation" ? "AI 生图" : task.task_type === "video-generation" ? "AI 视频" : task.task_type === "text-generation" ? "AI 写作" : "AI 任务";
+                  const displayName = 
+                    (task.task_type === "image-generation" || task.task_type === "image_generation") ? "AI 生图" : 
+                    (task.task_type === "video-generation" || task.task_type === "video_generation") ? "AI 视频" : 
+                    (task.task_type === "text-generation" || task.task_type === "text") ? "AI 写作" : "AI 任务";
                   const isWorking = task.status === "running" || task.status === "pending";
                   return (
                     <div className="side-list-item" key={task.id}>

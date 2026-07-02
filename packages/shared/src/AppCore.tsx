@@ -396,7 +396,39 @@ export function AppCore() {
     }
   }, [selectedProjectId, isRestored]);
 
-  const formattedCredits = formatCredits(activeWorkspace?.credit_balance);
+  const [realtimeCredits, setRealtimeCredits] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!activeWorkspace?.id) {
+      setRealtimeCredits(null);
+      return;
+    }
+    
+    const fetchBalance = async () => {
+      try {
+        const res = await getJson<any>(`/api/credits/${activeWorkspace.id}/balance`);
+        if (res && typeof res.total_credits === "number") {
+          setRealtimeCredits(res.total_credits);
+        }
+      } catch (err) {
+        console.error("Failed to fetch real-time balance in header:", err);
+      }
+    };
+    
+    void fetchBalance();
+    const timer = setInterval(() => {
+      void fetchBalance();
+    }, 20000); // 20秒周期极速拉取同步
+    
+    return () => clearInterval(timer);
+  }, [activeWorkspace?.id]);
+
+  const creditBalance = realtimeCredits !== null 
+    ? realtimeCredits 
+    : activeWorkspace 
+      ? ((activeWorkspace.recharge_balance ?? 0) + (activeWorkspace.gift_balance ?? 0) + (activeWorkspace.refund_balance ?? 0)) 
+      : 0;
+  const formattedCredits = formatCredits(creditBalance);
   const formattedRecharge = formatCredits(activeWorkspace?.recharge_balance);
   const formattedGift = formatCredits(activeWorkspace?.gift_balance);
   const formattedRefund = formatCredits(activeWorkspace?.refund_balance);
@@ -923,7 +955,7 @@ export function AppCore() {
     }
   }
 
-  const isNoSidebar = (activeView === "projects" && projectsViewMode === "detail") || activeView === "admin";
+  const isNoSidebar = ((activeView === "projects" && projectsViewMode === "detail") || activeView === "admin") && currentUser !== null;
 
   const renderHeader = () => {
     return (
@@ -992,12 +1024,6 @@ export function AppCore() {
 
           {currentUser ? (
             <>
-              {/* PRO 算力额度 */}
-              <div className="pro-credits-badge">
-                <span className="pro-label">PRO</span>
-                <span className="credits-val">{formattedCredits} 点</span>
-              </div>
-              
               {/* 系统后台入口（仅管理员，且不在桌面端显示） */}
               {currentUser.is_platform_admin && !(typeof window !== "undefined" && (window as any).go) && (
                 <button
@@ -1020,8 +1046,17 @@ export function AppCore() {
                 </button>
               </div>
               
-              {/* 用户头像与菜单 */}
-              <div className="user-profile-menu-container">
+              {/* 用户头像与菜单（物理合并 PRO 算力余额胶囊） */}
+              <div className="user-profile-menu-container" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div 
+                  className="pro-credits-badge" 
+                  style={{ margin: 0, cursor: "pointer" }}
+                  onClick={() => handleViewChange("credits")}
+                  title="点击快捷进入点数与套餐充值中心"
+                >
+                  <span className="pro-label">PRO</span>
+                  <span className="credits-val">{formattedCredits} 积分</span>
+                </div>
                 <button
                   type="button"
                   className="user-profile-menu-trigger"
@@ -1102,7 +1137,7 @@ export function AppCore() {
     );
   };
 
-  const isNoHeader = activeView === "admin" || (activeView === "projects" && projectsViewMode === "detail");
+  const isNoHeader = (activeView === "admin" || (activeView === "projects" && projectsViewMode === "detail")) && currentUser !== null;
 
   return (
     <div className="rv-app-wrapper" style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>

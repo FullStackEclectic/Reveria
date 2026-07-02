@@ -346,7 +346,9 @@ export const WorkflowPromptConsole: React.FC<WorkflowPromptConsoleProps> = ({
               <span>
                 {isRunningWorkflow 
                   ? "发送中..." 
-                  : `${costPoints * imageCount}`
+                  : selectedWorkflow === "text-generation"
+                    ? `${costPoints} 积分/M tokens`
+                    : `${costPoints * imageCount}`
                 }
               </span>
             </button>

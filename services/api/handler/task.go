@@ -147,9 +147,21 @@ func CreateTask(c *gin.Context) {
 	}
 
 	// 2. 估算与扣除/冻结积分
-	var estCredits int64 = 10 // 默认生图估算 10 点
+	var estCredits int64 = 12 // 默认生图估算 12 点
 	if req.TaskType == "video_generation" || req.TaskType == "image_to_video" {
-		estCredits = 50
+		estCredits = 30
+	} else if req.TaskType == "text" {
+		estCredits = 2
+	}
+
+	// 动态关联管理后台设置的模型定价 (CreditsCost)
+	if req.SelectedModel != "" {
+		var m model.Model
+		if err := database.DB.Where("id = ?", req.SelectedModel).First(&m).Error; err == nil {
+			if m.CreditsCost > 0 {
+				estCredits = int64(m.CreditsCost + 0.5)
+			}
+		}
 	}
 
 	var settings model.ClientSettings
@@ -346,43 +358,129 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
 		prompt, _ := payload["prompt"].(string)
 
-		responseMsg := callUpstreamLLM(prompt, settings)
+		responseMsg, promptTokens, completionTokens := callUpstreamLLM(prompt, gatewayModelName, settings)
+		totalTokens := promptTokens + completionTokens
+
+		// 根据模型指定的计费方式进行计费 (per_token 按 Token 百万折算，per_use 按次固定扣除)
+		actualCost := int64(0)
+		actualCostFloat := 0.0
+		
+		if task.SelectedModel != nil && *task.SelectedModel != "" {
+			var m model.Model
+			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&m).Error; err == nil {
+				if m.CreditsCost > 0 {
+					if m.BillingMethod == "per_use" {
+						actualCost = int64(m.CreditsCost + 0.5)
+						actualCostFloat = m.CreditsCost
+					} else {
+						actualCost = int64((float64(totalTokens) * m.CreditsCost) / 1000000.0 + 0.5)
+						actualCostFloat = float64(totalTokens) * m.CreditsCost / 1000000.0
+					}
+				}
+			}
+		} else {
+			// 兜底文本按次 2 积分
+			actualCost = 2
+			actualCostFloat = 2.0
+		}
 
 		outMap := map[string]any{
-			"summary": responseMsg,
+			"summary":           responseMsg,
+			"output":            responseMsg,
+			"task_id":           task.ID.String(),
+			"task_type":         "text",
+			"prompt":            prompt,
+			"title":             "AI 文本生成结果",
+			"model":             gatewayModelName,
+			"prompt_tokens":     promptTokens,
+			"completion_tokens": completionTokens,
+			"total_tokens":      totalTokens,
+			"actual_credits":    actualCostFloat,
 		}
 		outBytes, _ := json.Marshal(outMap)
 		outStr := string(outBytes)
 
+		// 1. 全额释放当初的预冻结额度
+		billingSvc := service.GetBillingService()
+		_ = billingSvc.RefundCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, fmt.Sprintf("任务 %s 成功结算释放原冻结", task.ID.String()), &task)
+
+		// 2. 从用户钱包中，物理扣除实际消耗积分 actualCost
 		tx := database.DB.Begin()
+		var ws model.Workspace
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", task.WorkspaceID).First(&ws).Error; err == nil {
+			remaining := actualCost
+			
+			// 依次扣减 Recharge -> Gift -> Refund
+			if ws.RechargeBalance >= remaining {
+				ws.RechargeBalance -= remaining
+				remaining = 0
+			} else {
+				remaining -= ws.RechargeBalance
+				ws.RechargeBalance = 0
+			}
+			
+			if remaining > 0 {
+				if ws.GiftBalance >= remaining {
+					ws.GiftBalance -= remaining
+					remaining = 0
+				} else {
+					remaining -= ws.GiftBalance
+					ws.GiftBalance = 0
+				}
+			}
+			
+			if remaining > 0 {
+				if ws.RefundBalance >= remaining {
+					ws.RefundBalance -= remaining
+					remaining = 0
+				} else {
+					remaining -= ws.RefundBalance
+					ws.RefundBalance = 0
+				}
+			}
+			
+			tx.Save(&ws)
+			
+			// 3. 记录消费流水记录
+			consumeReason := fmt.Sprintf("AI 文本生成任务完成结算扣费 (Total Tokens: %d, 实际消耗: %f 积分)", totalTokens, actualCostFloat)
+			transaction := model.CreditTransaction{
+				ID:              uuid.New(),
+				WorkspaceID:     task.WorkspaceID,
+				UserID:          task.UserID,
+				ProjectID:       &task.ProjectID,
+				TaskID:          &task.ID,
+				TransactionType: "consume",
+				Amount:          actualCost,
+				BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
+				Reason:          &consumeReason,
+				CreatedAt:       time.Now(),
+			}
+			tx.Create(&transaction)
+		}
+
+		// 4. 更新 Task 任务本身的状态并写入 Asset 资产
 		var dbTask model.GenerationTask
 		if tx.Where("id = ?", task.ID).First(&dbTask).Error == nil {
 			dbTask.Status = "succeeded"
 			dbTask.OutputPayload = &outStr
-			dbTask.ActualCredits = dbTask.EstimatedCredits
+			dbTask.ActualCredits = actualCost
 			dbTask.FrozenCredits = 0
 			dbTask.FrozenGiftCredits = 0
 			dbTask.FrozenRefundCredits = 0
 			dbTask.FrozenRechargeCredits = 0
 			tx.Save(&dbTask)
 
-			// 记录正式消费流水
-			consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", dbTask.TaskType)
-			var ws model.Workspace
-			tx.Where("id = ?", dbTask.WorkspaceID).First(&ws)
-			transaction := model.CreditTransaction{
-				ID:              uuid.New(),
-				WorkspaceID:     dbTask.WorkspaceID,
-				UserID:          dbTask.UserID,
-				ProjectID:       &dbTask.ProjectID,
-				TaskID:          &dbTask.ID,
-				TransactionType: "consume",
-				Amount:          dbTask.ActualCredits,
-				BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-				Reason:          &consumeReason,
-				CreatedAt:       time.Now(),
+			asset := model.Asset{
+				ID:          uuid.New(),
+				WorkspaceID: dbTask.WorkspaceID,
+				ProjectID:   dbTask.ProjectID,
+				AssetType:   "document",
+				Source:      "generated",
+				FileURL:     "",
+				Metadata:    &outStr,
+				CreatedAt:   time.Now(),
 			}
-			tx.Create(&transaction)
+			tx.Create(&asset)
 		}
 		tx.Commit()
 		return
@@ -720,6 +818,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
 			refImgURL, _ := inputPayload["ref_image_url"].(string)
 
 			metaMap := map[string]any{
+				"task_id":       task.ID.String(),
 				"file_name":     storedName,
 				"url":           localURL,
 				"title":         "AI 创意生成结果",

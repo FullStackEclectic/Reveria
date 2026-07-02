@@ -81,7 +81,7 @@ func (b *BridgeBilling) sendPostRequest(url, secret string, body interface{}) ([
 }
 
 // GetBalance 从主站查询余额并换算
-func (b *BridgeBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (int64, error) {
+func (b *BridgeBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (float64, error) {
 	baseURL, secret, email, err := b.getBridgeConfig(userID)
 	if err != nil {
 		return 0, err
@@ -122,8 +122,8 @@ func (b *BridgeBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (int
 		return 0, fmt.Errorf("主站返回错误: %s", result.Message)
 	}
 
-	// 换算 quota -> credits (点数)
-	credits := result.Quota / QuotaExchangeRate
+	// 换算 quota -> credits (点数) 支持高精度浮点
+	credits := float64(result.Quota) / float64(QuotaExchangeRate)
 	return credits, nil
 }
 

@@ -193,3 +193,174 @@
   font-size: 12px;
   color: #44403c;
 }
+
+/* 新的 SaaS 大双栏布局 */
+.credits-layout-container {
+  display: grid;
+  grid-template-columns: 3.2fr 2fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .credits-layout-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 钱包卡片 */
+.credits-wallet-card {
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%);
+  border-radius: 16px;
+  padding: 24px;
+  color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.credits-wallet-card::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, rgba(99, 102, 241, 0) 70%);
+  pointer-events: none;
+}
+
+/* 钱包点数细分 */
+.wallet-details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 14px;
+  border-radius: 12px;
+  margin-top: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.wallet-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wallet-detail-label {
+  font-size: 11px;
+  color: #c7d2fe;
+}
+
+.wallet-detail-val {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* 快捷充点网格 */
+.quick-recharge-panel {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.quick-package-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.quick-package-capsule {
+  border: 1.5px solid #e7e5e4;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.quick-package-capsule.selected {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.03);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+.quick-package-capsule:hover {
+  border-color: #a5b4fc;
+}
+
+/* 侧边资源限制进度条 */
+.side-resource-card {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.resource-progress-item {
+  margin-top: 14px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #78716c;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.progress-track {
+  height: 6px;
+  background: #f5f5f4;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* 紧凑垂直套餐列表 */
+.compact-plans-panel {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.compact-plan-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid #f5f5f4;
+}
+
+.compact-plan-row:last-child {
+  border-bottom: none;
+}
+
+.compact-plan-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

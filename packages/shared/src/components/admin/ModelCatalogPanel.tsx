@@ -10,6 +10,10 @@ interface ModelCatalogPanelProps {
   pricingRules: PricingRuleSummary[];
   setPricingRules: React.Dispatch<React.SetStateAction<PricingRuleSummary[]>>;
   setAdminMessage: (msg: string) => void;
+  onlyShowTest?: boolean;
+  hideTest?: boolean;
+  onlyShowPricing?: boolean;
+  hidePricing?: boolean;
 }
 
 export function ModelCatalogPanel({
@@ -19,8 +23,14 @@ export function ModelCatalogPanel({
   pricingRules,
   setPricingRules,
   setAdminMessage,
+  onlyShowTest,
+  hideTest,
+  onlyShowPricing,
+  hidePricing,
 }: ModelCatalogPanelProps) {
-  const [subTab, setSubTab] = useState<"catalog" | "pricing" | "test">("catalog");
+  const [subTab, setSubTab] = useState<"catalog" | "pricing" | "test">(
+    onlyShowTest ? "test" : (onlyShowPricing ? "pricing" : "catalog")
+  );
 
   // 新增模型表单字段
   const [providerId, setProviderId] = useState("");
@@ -221,7 +231,8 @@ export function ModelCatalogPanel({
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", minHeight: "560px" }}>
       {/* 子导航页签 */}
-      <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--rv-color-border-thin)", paddingBottom: "10px", marginBottom: "20px", justifyContent: "space-between" }}>
+      {!onlyShowTest && !onlyShowPricing && (
+        <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--rv-color-border-thin)", paddingBottom: "10px", marginBottom: "20px", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: "8px" }}>
           <button
             onClick={() => setSubTab("catalog")}
@@ -232,24 +243,28 @@ export function ModelCatalogPanel({
             <Server size={13} />
             模型目录与定价
           </button>
-          <button
-            onClick={() => setSubTab("pricing")}
-            className={`assets-filter-btn ${subTab === "pricing" ? "active" : ""}`}
-            style={{ borderRadius: "6px" }}
-            type="button"
-          >
-            <Settings2 size={13} />
-            调度计费公式
-          </button>
-          <button
-            onClick={() => setSubTab("test")}
-            className={`assets-filter-btn ${subTab === "test" ? "active" : ""}`}
-            style={{ borderRadius: "6px" }}
-            type="button"
-          >
-            <TestTube2 size={13} />
-            连通性测试探针
-          </button>
+          {!hidePricing && (
+            <button
+              onClick={() => setSubTab("pricing")}
+              className={`assets-filter-btn ${subTab === "pricing" ? "active" : ""}`}
+              style={{ borderRadius: "6px" }}
+              type="button"
+            >
+              <Settings2 size={13} />
+              调度计费公式
+            </button>
+          )}
+          {!hideTest && (
+            <button
+              onClick={() => setSubTab("test")}
+              className={`assets-filter-btn ${subTab === "test" ? "active" : ""}`}
+              style={{ borderRadius: "6px" }}
+              type="button"
+            >
+              <TestTube2 size={13} />
+              连通性测试探针
+            </button>
+          )}
         </div>
         <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>
           {subTab === "catalog" && "系统内运行大模型的列表清单及计费设定"}
@@ -257,6 +272,7 @@ export function ModelCatalogPanel({
           {subTab === "test" && "直接呼叫上游大模型通道接口以测试配置是否可用"}
         </span>
       </div>
+      )}
 
       {/* 1. 模型目录 */}
       {subTab === "catalog" && (

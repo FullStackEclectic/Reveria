@@ -65,7 +65,7 @@ func InitDatabase() {
 
 // AutoMigrate 自动迁移数据库结构
 func AutoMigrate() {
-	err := DB.AutoMigrate(
+	modelsToMigrate := []any{
 		&model.User{},
 		&model.Workspace{},
 		&model.WorkspaceMember{},
@@ -92,9 +92,11 @@ func AutoMigrate() {
 		&model.Model{},
 		&model.TemplateCategory{},
 		&model.PromptTemplate{},
-	)
-	if err != nil {
-		log.Fatalf("数据库自动迁移失败: %v", err)
+	}
+	for _, m := range modelsToMigrate {
+		if err := DB.AutoMigrate(m); err != nil {
+			log.Printf("自动迁移表模型遇到警告（跳过并继续）: %v", err)
+		}
 	}
 	log.Println("数据库自动表迁移完成。")
 	SeedTemplates()

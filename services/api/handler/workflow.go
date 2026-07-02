@@ -69,7 +69,7 @@ func RunBriefAnalysis(c *gin.Context) {
 	// 2. 调用 12ZX-AI 大语言模型进行 Brief 提取
 	prompt := fmt.Sprintf("请作为专业的广告策划大师，分析以下创意大纲，并提炼成简明扼要的摘要、受众定位、三个核心方向、以及一个风险分析提示。内容: %s", req.Brief)
 
-	responseMsg := callUpstreamLLM(prompt, settings)
+	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
 
 	// 构建返回数据结构 (BriefAnalysisOutput)
 	c.JSON(http.StatusOK, gin.H{
@@ -112,7 +112,7 @@ func RunBrandStyleExtract(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("提取品牌 %s 的设计调性、配色规范、核心口号、风格关键词。描述为: %s", req.BrandName, req.Description)
-	responseMsg := callUpstreamLLM(prompt, settings)
+	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -148,7 +148,7 @@ func RunCreativeDirections(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("请根据以下信息，生成 3 个小红书广告的创意标题和标签方向: %s", req.Brief)
-	responseMsg := callUpstreamLLM(prompt, settings)
+	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -191,7 +191,7 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("为以下主题编写 3 个分镜脚本的短视频脚本分镜大纲: %s", req.Brief)
-	responseMsg := callUpstreamLLM(prompt, settings)
+	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -222,8 +222,8 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 	})
 }
 
-// callUpstreamLLM 发包调用 12ZX-AI 大语言模型
-func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
+// callUpstreamLLM 发包调用 12ZX-AI 大语言模型，返回生成文本及 token 消耗状况 (content, promptTokens, completionTokens)
+func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSettings) (string, int, int) {
 	var apiURL string
 	modelName := "deepseek-chat"
 
@@ -231,13 +231,18 @@ func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
 		baseURL := strings.TrimSuffix(settings.BridgeMainStationURL, "/")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
 		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
-		if settings.BridgeTextModel != "" {
+		if targetModel != "" {
+			modelName = targetModel
+		} else if settings.BridgeTextModel != "" {
 			modelName = settings.BridgeTextModel
 		}
 	} else {
 		baseURL := strings.TrimSuffix(settings.UpstreamAPIURL, "/")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
 		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
+		if targetModel != "" {
+			modelName = targetModel
+		}
 	}
 
 	reqBody := map[string]any{
@@ -254,7 +259,7 @@ func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
 	bodyBytes, _ := json.Marshal(reqBody)
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
-		return "本地客户端网络初始化失败"
+		return "本地客户端网络初始化失败", 0, 0
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -266,14 +271,14 @@ func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "调用主网关超时，大模型生成失败: " + err.Error()
+		return "调用主网关超时，大模型生成失败: " + err.Error(), 0, 0
 	}
 	defer resp.Body.Close()
 
 	respBytes, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Sprintf("主网关生成大模型文本错误，HTTP 状态码: %d", resp.StatusCode)
+		return fmt.Sprintf("主网关生成大模型文本错误，HTTP 状态码: %d", resp.StatusCode), 0, 0
 	}
 
 	type Choice struct {
@@ -281,16 +286,22 @@ func callUpstreamLLM(prompt string, settings model.ClientSettings) string {
 			Content string `json:"content"`
 		} `json:"message"`
 	}
+	type Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	}
 	type ChatResp struct {
 		Choices []Choice `json:"choices"`
+		Usage   Usage    `json:"usage"`
 	}
 
 	var chatResp ChatResp
 	if err := json.Unmarshal(respBytes, &chatResp); err == nil && len(chatResp.Choices) > 0 {
-		return chatResp.Choices[0].Message.Content
+		return chatResp.Choices[0].Message.Content, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens
 	}
 
-	return "主网关返回数据解析错误"
+	return "主网关返回数据解析错误", 0, 0
 }
 
 // XiaohongshuCoverBatchRequest 小红书封面请求结构
@@ -347,7 +358,7 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 	}
 
 	prompt := fmt.Sprintf("请根据以下项目需求，批量构思并设计 %d 个不同的小红书爆款封面视觉大纲。风格倾向: %s。内容大纲: %s", count, styleStr, req.Brief)
-	responseMsg := callUpstreamLLM(prompt, settings)
+	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
 
 	// 拼装对齐前端的数据结构
 	c.JSON(http.StatusOK, gin.H{

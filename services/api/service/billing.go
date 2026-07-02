@@ -9,7 +9,7 @@ import (
 // BillingService 统一账务计费服务接口
 type BillingService interface {
 	// GetBalance 查询用户的积分余额 (返回总额度)
-	GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (int64, error)
+	GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (float64, error)
 
 	// DeductCredits 预扣减/冻结用户额度。返回 true 表示扣减成功
 	DeductCredits(userID uuid.UUID, workspaceID uuid.UUID, amount int64, reason string, task *model.GenerationTask) (bool, error)

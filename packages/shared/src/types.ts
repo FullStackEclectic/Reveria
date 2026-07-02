@@ -64,6 +64,7 @@ export type PlanSummary = {
   storage_quota_bytes: number;
   features: Record<string, boolean>;
   enabled: boolean;
+  is_points_package?: boolean;
 };
 
 export type OrderSummary = {
@@ -230,6 +231,10 @@ export type CreditTransactionSummary = {
   amount: number;
   balance_after: number;
   reason?: string;
+  created_at?: string;
+  task_id?: string;
+  project_id?: string;
+  user_id?: string;
 };
 
 export type ProviderSummary = {
@@ -247,6 +252,7 @@ export type ModelSummary = {
   name: string;
   display_name?: string;
   model_type?: string;
+  billing_method?: string;
   credits_cost?: number;
   enabled: boolean;
 };

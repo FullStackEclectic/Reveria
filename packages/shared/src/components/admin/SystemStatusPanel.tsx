@@ -110,6 +110,7 @@ export function SystemStatusPanel({
     "text_to_image": "文生图任务 (Text2Img)",
     "video_generation": "AI 视频生成 (Video Gen)",
     "text_generation": "AI 文本生成 (Text Gen)",
+    "text": "AI 文本生成 (Text Gen)",
   };
 
   const defaultUsage = [

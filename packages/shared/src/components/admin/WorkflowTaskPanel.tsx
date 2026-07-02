@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { Settings, BarChart3, Play } from "lucide-react";
-import { WorkflowTemplateSummary, WorkspaceCostReportResponse, GenerationTaskSummary, UserSummary } from "../../types";
+import { Settings, BarChart3, Play, Settings2 } from "lucide-react";
+import { WorkflowTemplateSummary, WorkspaceCostReportResponse, GenerationTaskSummary, UserSummary, ModelSummary, ProviderSummary, PricingRuleSummary } from "../../types";
+import { ModelCatalogPanel } from "./ModelCatalogPanel";
 import { WorkflowTemplatesTab } from "./WorkflowTemplatesTab";
 import { WorkflowCostsTab } from "./WorkflowCostsTab";
 import { WorkflowTasksTab } from "./WorkflowTasksTab";
@@ -14,6 +15,11 @@ interface WorkflowTaskPanelProps {
   currentUser: UserSummary | null;
   setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
   setAdminMessage: (msg: string) => void;
+  models: ModelSummary[];
+  setModels: React.Dispatch<React.SetStateAction<ModelSummary[]>>;
+  providers: ProviderSummary[];
+  pricingRules: PricingRuleSummary[];
+  setPricingRules: React.Dispatch<React.SetStateAction<PricingRuleSummary[]>>;
 }
 
 export function WorkflowTaskPanel({
@@ -25,8 +31,13 @@ export function WorkflowTaskPanel({
   currentUser,
   setTransactions,
   setAdminMessage,
+  models,
+  setModels,
+  providers,
+  pricingRules,
+  setPricingRules,
 }: WorkflowTaskPanelProps) {
-  const [subTab, setSubTab] = useState<"templates" | "costs" | "tasks">("templates");
+  const [subTab, setSubTab] = useState<"templates" | "costs" | "tasks" | "rules">("templates");
 
   return (
     <div className="workflow-panel-container">
@@ -295,6 +306,14 @@ export function WorkflowTaskPanel({
           工作流引擎模板
         </button>
         <button
+          onClick={() => setSubTab("rules")}
+          className={`workflow-tab-btn ${subTab === "rules" ? "active" : ""}`}
+          type="button"
+        >
+          <Settings2 size={14} />
+          调度计费规则
+        </button>
+        <button
           onClick={() => setSubTab("costs")}
           className={`workflow-tab-btn ${subTab === "costs" ? "active" : ""}`}
           type="button"
@@ -318,6 +337,20 @@ export function WorkflowTaskPanel({
           setWorkflowTemplates={setWorkflowTemplates}
           setAdminMessage={setAdminMessage}
         />
+      )}
+
+      {subTab === "rules" && (
+        <div className="workflow-content-card" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <ModelCatalogPanel
+            models={models}
+            setModels={setModels}
+            providers={providers}
+            pricingRules={pricingRules}
+            setPricingRules={setPricingRules}
+            setAdminMessage={setAdminMessage}
+            onlyShowPricing={true}
+          />
+        </div>
       )}
 
       {subTab === "costs" && (

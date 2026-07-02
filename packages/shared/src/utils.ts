@@ -402,7 +402,14 @@ export function assetUrl(url: string) {
 }
 
 export function formatCredits(amount?: number) {
-  return new Intl.NumberFormat("zh-CN").format(amount ?? 0);
+  if (amount === undefined || amount === null) return "0";
+  if (amount % 1 === 0) {
+    return new Intl.NumberFormat("zh-CN").format(amount);
+  }
+  const formatted = amount.toFixed(6).replace(/\.?0+$/, "");
+  const parts = formatted.split(".");
+  const integerPart = new Intl.NumberFormat("zh-CN").format(parseInt(parts[0]));
+  return parts.length > 1 ? `${integerPart}.${parts[1]}` : integerPart;
 }
 
 export function handleExportProject(

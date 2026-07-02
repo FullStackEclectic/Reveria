@@ -180,6 +180,8 @@ type AuditLog struct {
 // ClientSettings 业务分站配置表
 type ClientSettings struct {
 	ID                    uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	SiteTitle             string    `gorm:"type:varchar(160);default:'Reveria AI 算力中心';not null" json:"site_title"`
+	SiteAnnouncement      string    `gorm:"type:text;default:'';not null" json:"site_announcement"`
 	UpstreamAPIURL        string    `gorm:"type:varchar(255);not null" json:"upstream_api_url"`
 	UpstreamAPIKey        string    `gorm:"type:text;not null" json:"upstream_api_key"`
 	AllowUserRegister     bool      `gorm:"default:true;not null" json:"allow_user_register"`
@@ -208,6 +210,7 @@ type Plan struct {
 	StorageQuotaBytes int64     `gorm:"default:0;not null" json:"storage_quota_bytes"`
 	Features          string    `gorm:"type:jsonb;default:'{}';not null" json:"features"`
 	Enabled           bool      `gorm:"default:true;not null;index" json:"enabled"`
+	IsPointsPackage   bool      `gorm:"default:false;not null" json:"is_points_package"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -315,9 +318,10 @@ type Model struct {
 	ProviderID  string    `gorm:"type:varchar(80);index" json:"provider_id"`
 	Name        string    `gorm:"type:varchar(160);not null" json:"name"`
 	DisplayName string    `gorm:"type:varchar(160);not null" json:"display_name"`
-	ModelType   string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"` // 模型类型：chat (对话), image (图像), video (视频)
-	Enabled     bool      `gorm:"default:true;not null" json:"enabled"`
-	CreditsCost int64     `gorm:"default:0" json:"credits_cost"` // 调用定价扣点
+	ModelType     string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"` // 模型类型：chat (对话), image (图像), video (视频)
+	BillingMethod string    `gorm:"type:varchar(32);default:'per_token';not null" json:"billing_method"` // 计费方式：per_token (按Token), per_use (按次)
+	Enabled       bool      `gorm:"default:true;not null" json:"enabled"`
+	CreditsCost   float64     `gorm:"type:decimal(10,4);default:0.0" json:"credits_cost"` // 调用定价扣点
 	Tags        string    `gorm:"-" json:"tags,omitempty"`       // 虚拟字段：主站标签资源池
 	CreatedAt   time.Time `json:"created_at"`
 }

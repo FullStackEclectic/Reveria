@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	"reveria/services/api/database"
@@ -40,14 +42,14 @@ func GetCreditBalance(c *gin.Context) {
 	var ws model.Workspace
 	database.DB.Where("id = ?", workspaceID).First(&ws)
 
-	var recharge, gift, refund int64
+	var recharge, gift, refund float64
 	var settings model.ClientSettings
 	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
 		gift = total // 桥接模式下将总额度当做赠送积分返回，保证前端大盘完美展示
 	} else {
-		recharge = ws.RechargeBalance
-		gift = ws.GiftBalance
-		refund = ws.RefundBalance
+		recharge = float64(ws.RechargeBalance)
+		gift = float64(ws.GiftBalance)
+		refund = float64(ws.RefundBalance)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -81,7 +83,47 @@ func ListCreditTransactions(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, transactions)
+	var respList []map[string]any
+	re := regexp.MustCompile(`实际消耗:\s*([0-9.]+)\s*积分`)
+
+	for _, t := range transactions {
+		m := map[string]any{
+			"id":               t.ID.String(),
+			"workspace_id":     t.WorkspaceID.String(),
+			"transaction_type": t.TransactionType,
+			"amount":           float64(t.Amount),
+			"gift_amount":      float64(t.GiftAmount),
+			"recharge_amount":  float64(t.RechargeAmount),
+			"refund_amount":    float64(t.RefundAmount),
+			"balance_after":    float64(t.BalanceAfter),
+			"reason":           t.Reason,
+			"created_at":       t.CreatedAt,
+		}
+		if t.UserID != nil {
+			m["user_id"] = t.UserID.String()
+		}
+		if t.ProjectID != nil {
+			m["project_id"] = t.ProjectID.String()
+		}
+		if t.TaskID != nil {
+			m["task_id"] = t.TaskID.String()
+		}
+		if t.OperatorID != nil {
+			m["operator_id"] = t.OperatorID.String()
+		}
+
+		if t.Reason != nil {
+			matches := re.FindStringSubmatch(*t.Reason)
+			if len(matches) > 1 {
+				if val, err := strconv.ParseFloat(matches[1], 64); err == nil {
+					m["amount"] = val
+				}
+			}
+		}
+		respList = append(respList, m)
+	}
+
+	c.JSON(http.StatusOK, respList)
 }
 
 // ListRechargeRecords 查询充值记录 (GET /credits/:workspace_id/recharges)
@@ -117,21 +159,92 @@ func ListPlans(c *gin.Context) {
 		return
 	}
 
-	// 如果数据库中没有任何 plan，则默认返回一个测试套餐（保证演示和本地测试高可用）
-	if len(plans) == 0 {
-		defaultPlan := model.Plan{
-			ID:                uuid.New(),
-			Name:              "体验版套餐 (自动生成)",
-			PriceCents:        0,
-			MonthlyCredits:    1000,
-			MaxMembers:        3,
-			StorageQuotaBytes: 10 * 1024 * 1024 * 1024,
-			Enabled:           true,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+	// 如果数据库中套餐过少，我们自动清空重写，Seed 完整的包月方案和纯点数包
+	if len(plans) <= 2 {
+		database.DB.Exec("DELETE FROM plans")
+		plans = nil
+
+		seedPlans := []model.Plan{
+			// 1. 订阅型套餐 (IsPointsPackage = false)
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+				Name:              "体验版订阅 (包月)",
+				PriceCents:        0,
+				MonthlyCredits:    1000,
+				MaxMembers:        3,
+				StorageQuotaBytes: 2 * 1024 * 1024 * 1024, // 2GB
+				Enabled:           true,
+				IsPointsPackage:   false,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+				Name:              "专业版订阅 (包月)",
+				PriceCents:        9900, // ￥99
+				MonthlyCredits:    5000,
+				MaxMembers:        10,
+				StorageQuotaBytes: 50 * 1024 * 1024 * 1024, // 50GB
+				Enabled:           true,
+				IsPointsPackage:   false,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000003"),
+				Name:              "企业版订阅 (包月)",
+				PriceCents:        29900, // ￥299
+				MonthlyCredits:    20000,
+				MaxMembers:        30,
+				StorageQuotaBytes: 200 * 1024 * 1024 * 1024, // 200GB
+				Enabled:           true,
+				IsPointsPackage:   false,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
+			// 2. 纯点数直充包 (IsPointsPackage = true)
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000010"),
+				Name:              "100点 基础点数直充",
+				PriceCents:        1000, // ￥10
+				MonthlyCredits:    100,  // 点数直充也是借用这个字段记录购买点数
+				MaxMembers:        1,
+				StorageQuotaBytes: 0,
+				Enabled:           true,
+				IsPointsPackage:   true,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000011"),
+				Name:              "550点 特惠点数直充 (送50)",
+				PriceCents:        5000, // ￥50
+				MonthlyCredits:    550,
+				MaxMembers:        1,
+				StorageQuotaBytes: 0,
+				Enabled:           true,
+				IsPointsPackage:   true,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
+			{
+				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000012"),
+				Name:              "1200点 豪华点数直充 (送200)",
+				PriceCents:        10000, // ￥100
+				MonthlyCredits:    1200,
+				MaxMembers:        1,
+				StorageQuotaBytes: 0,
+				Enabled:           true,
+				IsPointsPackage:   true,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			},
 		}
-		_ = database.DB.Create(&defaultPlan)
-		plans = append(plans, defaultPlan)
+
+		for _, p := range seedPlans {
+			_ = database.DB.Create(&p)
+			plans = append(plans, p)
+		}
 	}
 
 	c.JSON(http.StatusOK, plans)
@@ -256,19 +369,45 @@ func MockPayOrder(c *gin.Context) {
 		isBridge = true
 	}
 
-	ws.PlanID = order.PlanID
-	ws.StorageQuota = plan.StorageQuotaBytes
-	if isBridge {
-		// 桥接模式下本地不累加 GiftBalance，而是直接同步充值到主站
-		billingSvc := service.GetBillingService()
-		err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, plan.MonthlyCredits, "订阅套餐支付成功，同步加额到主站", nil)
-		if err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步充值额度至主站失败: " + err.Error()})
-			return
+	var rechargeType = "plan_monthly"
+	var reason = "订单模拟支付：订阅套餐增加额度"
+	var txType = "plan_monthly"
+	var txGift int64 = plan.MonthlyCredits
+	var txRecharge int64 = 0
+
+	if plan.IsPointsPackage {
+		rechargeType = "recharge"
+		reason = "订单模拟支付：在线充值增加点数"
+		txType = "recharge"
+		txGift = 0
+		txRecharge = plan.MonthlyCredits
+
+		if isBridge {
+			billingSvc := service.GetBillingService()
+			err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, plan.MonthlyCredits, "充值点数支付成功，同步加额到主站", nil)
+			if err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步充值额度至主站失败: " + err.Error()})
+				return
+			}
+		} else {
+			ws.RechargeBalance += plan.MonthlyCredits
 		}
 	} else {
-		ws.GiftBalance += plan.MonthlyCredits
+		ws.PlanID = order.PlanID
+		ws.StorageQuota = plan.StorageQuotaBytes
+		if isBridge {
+			// 桥接模式下本地不累加 GiftBalance，而是直接同步充值到主站
+			billingSvc := service.GetBillingService()
+			err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, plan.MonthlyCredits, "订阅套餐支付成功，同步加额到主站", nil)
+			if err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步充值额度至主站失败: " + err.Error()})
+				return
+			}
+		} else {
+			ws.GiftBalance += plan.MonthlyCredits
+		}
 	}
 	ws.UpdatedAt = time.Now()
 	if err := tx.Save(&ws).Error; err != nil {
@@ -277,8 +416,8 @@ func MockPayOrder(c *gin.Context) {
 		return
 	}
 
-	// 3. 写入 Gift 余额批次表
-	if plan.MonthlyCredits > 0 {
+	// 3. 写入 Gift 余额批次表 (仅当是非纯点数包订阅、且点数大于 0 时写入)
+	if !plan.IsPointsPackage && plan.MonthlyCredits > 0 {
 		batch := model.GiftCreditBatch{
 			ID:              uuid.New(),
 			WorkspaceID:     order.WorkspaceID,
@@ -300,7 +439,7 @@ func MockPayOrder(c *gin.Context) {
 		WorkspaceID:  order.WorkspaceID,
 		OrderID:      &order.ID,
 		CreditsAdded: plan.MonthlyCredits,
-		RechargeType: "plan_monthly",
+		RechargeType: rechargeType,
 		OperatorID:   &actorID,
 		CreatedAt:    time.Now(),
 	}
@@ -311,15 +450,14 @@ func MockPayOrder(c *gin.Context) {
 	}
 
 	// 5. 写入额度流水表
-	reason := "订单模拟支付：订阅套餐增加额度"
 	transaction := model.CreditTransaction{
 		ID:              uuid.New(),
 		WorkspaceID:     order.WorkspaceID,
 		UserID:          &actorID,
-		TransactionType: "plan_monthly",
+		TransactionType: txType,
 		Amount:          plan.MonthlyCredits,
-		GiftAmount:      plan.MonthlyCredits,
-		RechargeAmount:  0,
+		GiftAmount:      txGift,
+		RechargeAmount:  txRecharge,
 		RefundAmount:    0,
 		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
 		Reason:          &reason,

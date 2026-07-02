@@ -11,6 +11,21 @@ interface WorkflowTasksTabProps {
   currentUser: UserSummary | null;
 }
 
+function formatFloatCredits(val?: number): string {
+  if (val === undefined || val === null) return "0";
+  return val % 1 === 0 ? val.toString() : val.toFixed(6).replace(/\.?0+$/, "");
+}
+
+function getActualCredits(task: any): string {
+  if (task.output_payload) {
+    const { parsedObj } = tryParseAndFormat(task.output_payload);
+    if (parsedObj && typeof parsedObj.actual_credits === "number") {
+      return formatFloatCredits(parsedObj.actual_credits);
+    }
+  }
+  return formatFloatCredits(task.actual_credits);
+}
+
 // 辅助函数：安全尝试反序列化并优雅排版 JSON 字符串，解决双重转义问题
 function tryParseAndFormat(payload: any): { isJson: boolean; formatted: string; parsedObj: any } {
   if (payload === null || payload === undefined) {
@@ -105,6 +120,7 @@ export function WorkflowTasksTab({
     "text_to_image": "文生图任务 (Text2Img)",
     "video_generation": "AI 视频生成 (Video Gen)",
     "text_generation": "AI 文本生成 (Text Gen)",
+    "text": "AI 文本生成 (Text Gen)",
   };
 
   // 动态分析任务队列中包含的所有任务类型，以供下拉框过滤
@@ -350,7 +366,9 @@ export function WorkflowTasksTab({
                         {displayName}
                       </strong>
                       <strong style={{ fontSize: "12px", color: "var(--rv-color-text-main)", flexShrink: 0 }}>
-                        {task.actual_credits || task.estimated_credits} 点
+                        {task.status === "succeeded" 
+                          ? getActualCredits(task) 
+                          : formatFloatCredits(task.actual_credits || task.estimated_credits)} 点
                       </strong>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "6px" }}>
@@ -411,15 +429,15 @@ export function WorkflowTasksTab({
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", flexShrink: 0 }}>
                 <div style={{ background: "#f8fafc", border: "1px solid rgba(15, 23, 42, 0.03)", borderRadius: "8px", padding: "8px 12px" }}>
                   <span style={{ display: "block", fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>预估算力点数</span>
-                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{taskDetail.estimated_credits} 点</strong>
+                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{formatFloatCredits(taskDetail.estimated_credits)} 点</strong>
                 </div>
                 <div style={{ background: "#f8fafc", border: "1px solid rgba(15, 23, 42, 0.03)", borderRadius: "8px", padding: "8px 12px" }}>
                   <span style={{ display: "block", fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>实际核算扣除</span>
-                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{taskDetail.actual_credits} 点</strong>
+                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{getActualCredits(taskDetail)} 点</strong>
                 </div>
                 <div style={{ background: "#f8fafc", border: "1px solid rgba(15, 23, 42, 0.03)", borderRadius: "8px", padding: "8px 12px" }}>
                   <span style={{ display: "block", fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>安全冻结锁定</span>
-                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{taskDetail.frozen_credits} 点</strong>
+                  <strong style={{ fontSize: "13px", color: "var(--rv-color-text-main)", display: "block", marginTop: "4px", fontWeight: "750" }}>{formatFloatCredits(taskDetail.frozen_credits)} 点</strong>
                 </div>
                 <div style={{ background: "#f8fafc", border: "1px solid rgba(15, 23, 42, 0.03)", borderRadius: "8px", padding: "8px 12px" }}>
                   <span style={{ display: "block", fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>关联发起用户</span>

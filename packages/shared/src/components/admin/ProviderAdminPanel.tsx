@@ -33,7 +33,7 @@ export function ProviderAdminPanel({
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   
   // 勾选及定价的状态管理
-  const [modelConfigs, setModelConfigs] = useState<Record<string, { selected: boolean; type: string; cost: number }>>({});
+  const [modelConfigs, setModelConfigs] = useState<Record<string, { selected: boolean; type: string; billing_method?: string; cost: number }>>({});
 
   // 创建服务商
   async function handleCreateProvider(event: FormEvent<HTMLFormElement>) {
@@ -147,6 +147,7 @@ export function ProviderAdminPanel({
         name: id,
         display_name: `${id} (${activeProvider.name})`,
         model_type: modelConfigs[id].type,
+        billing_method: modelConfigs[id].billing_method || (modelConfigs[id].type === "chat" ? "per_token" : "per_use"),
         credits_cost: modelConfigs[id].cost
       }));
 
@@ -346,7 +347,7 @@ export function ProviderAdminPanel({
           <div 
             className="panel"
             style={{
-              width: "680px",
+              width: "850px",
               maxHeight: "80vh",
               padding: "28px",
               background: "#ffffff",
@@ -399,10 +400,10 @@ export function ProviderAdminPanel({
                   background: "rgba(0,0,0,0.005)"
                 }}
               >
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
                   <thead>
                     <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--rv-color-border-thin)", fontWeight: "bold", color: "var(--rv-color-text-muted)" }}>
-                      <th style={{ padding: "10px 14px", width: "40px" }}>
+                      <th style={{ padding: "10px 14px", width: "50px" }}>
                         <input
                           type="checkbox"
                           checked={
@@ -414,9 +415,9 @@ export function ProviderAdminPanel({
                             setModelConfigs((prev) => {
                               const updated = { ...prev };
                               upstreamModels.forEach((id) => {
-                                if (updated[id]) {
-                                  updated[id] = { ...updated[id], selected: isChecked };
-                                }
+                                  if (updated[id]) {
+                                    updated[id] = { ...updated[id], selected: isChecked };
+                                  }
                               });
                               return updated;
                             });
@@ -424,15 +425,16 @@ export function ProviderAdminPanel({
                           style={{ cursor: "pointer", width: "auto" }}
                         />
                       </th>
-                      <th style={{ padding: "10px 14px" }}>模型名称 (Model ID)</th>
-                      <th style={{ padding: "10px 14px", width: "140px" }}>模型类型</th>
-                      <th style={{ padding: "10px 14px", width: "120px" }}>计费点数/次</th>
+                       <th style={{ padding: "10px 14px", width: "330px" }}>模型名称 (Model ID)</th>
+                       <th style={{ padding: "10px 14px", width: "130px" }}>模型类型</th>
+                       <th style={{ padding: "10px 14px", width: "170px" }}>计费方式</th>
+                       <th style={{ padding: "10px 14px", width: "110px" }}>扣点定价 (积分)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {upstreamModels.length > 0 ? (
                       upstreamModels.map((id) => {
-                        const config = modelConfigs[id] || { selected: false, type: "chat", cost: 10 };
+                        const config = modelConfigs[id] || { selected: false, type: "chat", billing_method: "per_token", cost: 10 };
                         return (
                           <tr key={id} style={{ borderBottom: "1px solid var(--rv-color-border-thin)" }}>
                             {/* 选择框 */}
@@ -457,18 +459,35 @@ export function ProviderAdminPanel({
                             <td style={{ padding: "8px 14px" }}>
                               <select
                                 value={config.type}
-                                disabled={!config.selected}
                                 onChange={(e) => {
+                                  const newType = e.target.value;
+                                  const newMethod = newType === "chat" ? "per_token" : "per_use";
                                   setModelConfigs((prev) => ({
                                     ...prev,
-                                    [id]: { ...prev[id], type: e.target.value }
+                                    [id]: { ...prev[id], type: newType, billing_method: newMethod, selected: true }
                                   }));
                                 }}
-                                style={{ minHeight: "28px", fontSize: "11px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "4px", background: "#ffffff", width: "100%" }}
+                                style={{ minHeight: "32px", fontSize: "11px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "6px", background: "#ffffff", width: "100%", padding: "0 6px", outline: "none", cursor: "pointer" }}
                               >
                                 <option value="chat">💬 对话 (Chat)</option>
                                 <option value="image">🎨 图像 (Image)</option>
                                 <option value="video">🎬 视频 (Video)</option>
+                              </select>
+                            </td>
+                            {/* 计费方式 */}
+                            <td style={{ padding: "8px 14px" }}>
+                              <select
+                                value={config.billing_method || (config.type === "chat" ? "per_token" : "per_use")}
+                                onChange={(e) => {
+                                  setModelConfigs((prev) => ({
+                                    ...prev,
+                                    [id]: { ...prev[id], billing_method: e.target.value, selected: true }
+                                  }));
+                                }}
+                                style={{ minHeight: "32px", fontSize: "11px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "6px", background: "#ffffff", width: "100%", padding: "0 6px", outline: "none", cursor: "pointer" }}
+                              >
+                                <option value="per_token">⚡ 按百万 Token 计费</option>
+                                <option value="per_use">🪙 按次计费</option>
                               </select>
                             </td>
                             {/* 计费点数 */}
@@ -476,21 +495,22 @@ export function ProviderAdminPanel({
                               <input
                                 type="number"
                                 min={0}
-                                disabled={!config.selected}
+                                step="any"
                                 value={config.cost}
                                 onChange={(e) => {
                                   setModelConfigs((prev) => ({
                                     ...prev,
-                                    [id]: { ...prev[id], cost: Number(e.target.value) }
+                                    [id]: { ...prev[id], cost: Number(e.target.value), selected: true }
                                   }));
                                 }}
                                 style={{
-                                  height: "28px",
+                                  height: "32px",
                                   fontSize: "11px",
-                                  borderRadius: "4px",
+                                  borderRadius: "6px",
                                   border: "1px solid var(--rv-color-border-thin)",
                                   padding: "0 8px",
-                                  width: "90px"
+                                  width: "100%",
+                                  outline: "none"
                                 }}
                               />
                             </td>

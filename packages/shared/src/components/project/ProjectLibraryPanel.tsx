@@ -14,7 +14,9 @@ export function ProjectLibraryPanel({
   addWorkflowResultToCanvas,
 }: ProjectLibraryPanelProps) {
   const imageAssets = assets.filter((asset) => asset.asset_type === "image");
-  const workflowAssets = assets.filter((asset) => asset.asset_type === "workflow_output");
+  
+  // 过滤生成历史：只要是工作流产物或者是生成文档/视频，都算作生成历史
+  const workflowAssets = assets.filter((asset) => asset.source === "workflow" || asset.asset_type === "document" || asset.asset_type === "video");
 
   return (
     <div className="rv-right-drawer-scrollable" style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "16px" }}>
@@ -62,27 +64,69 @@ export function ProjectLibraryPanel({
             </div>
           ) : (
             <div className="history-list">
-              {workflowAssets.map((asset) => (
-                <div className="history-row" key={asset.id}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <strong>{asset.metadata.title ?? asset.asset_type}</strong>
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                      <button
-                        type="button"
-                        className="mini-action-button"
-                        onClick={() => addWorkflowResultToCanvas(asset.metadata.title ?? "生成历史", asset.metadata.output)}
-                        style={{ minHeight: "26px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px", padding: "0 8px" }}
-                      >
-                        <Sparkles size={12} /> Add to Canvas
-                      </button>
-                      <span>
-                        {asset.metadata.task_type ?? asset.source} · {asset.asset_type}
-                      </span>
+              {workflowAssets.map((asset) => {
+                // 安全解析 metadata JSON 字符串
+                const meta = typeof asset.metadata === "string"
+                  ? (() => {
+                      try {
+                        return JSON.parse(asset.metadata);
+                      } catch {
+                        return {};
+                      }
+                    })()
+                  : asset.metadata || {};
+
+                const taskType = meta.task_type || asset.asset_type || "";
+                const title = meta.title ?? (taskType === "text" ? "AI 文本生成结果" : "AI 生成结果");
+                const outputVal = meta.output ?? meta.summary ?? asset.file_url ?? "";
+
+                return (
+                  <div className="history-row" key={asset.id} style={{ marginBottom: "12px", borderBottom: "1px solid #f5f5f4", paddingBottom: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <strong style={{ fontSize: "13px", color: "#1c1917" }}>{title}</strong>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          className="mini-action-button"
+                          onClick={() => addWorkflowResultToCanvas(title, outputVal)}
+                          style={{ minHeight: "24px", fontSize: "10px", display: "inline-flex", alignItems: "center", gap: "4px", padding: "0 6px" }}
+                        >
+                          <Sparkles size={10} /> Add to Canvas
+                        </button>
+                        <span style={{ fontSize: "10px", color: "#78716c" }}>
+                          {taskType} · {asset.asset_type}
+                        </span>
+                      </div>
                     </div>
+                    {taskType === "text" || asset.asset_type === "document" ? (
+                      <div style={{
+                        background: "#f5f5f4",
+                        padding: "8px",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                        color: "#292524",
+                        maxHeight: "120px",
+                        overflowY: "auto",
+                        whiteSpace: "pre-wrap",
+                        lineHeight: "1.4"
+                      }}>
+                        {typeof outputVal === "string" ? outputVal : JSON.stringify(outputVal)}
+                      </div>
+                    ) : (
+                      <pre style={{
+                        margin: 0,
+                        padding: "6px",
+                        background: "#f5f5f4",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        overflowX: "auto"
+                      }}>
+                        {typeof outputVal === "string" ? outputVal : JSON.stringify(outputVal, null, 2)}
+                      </pre>
+                    )}
                   </div>
-                  <pre>{JSON.stringify(asset.metadata.output, null, 2)}</pre>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

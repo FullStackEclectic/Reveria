@@ -235,6 +235,8 @@ func initDefaultSettings() {
 	if count == 0 {
 		settings := model.ClientSettings{
 			ID:                    uuid.New(),
+			SiteTitle:             "Reveria AI 算力中心",
+			SiteAnnouncement:      "欢迎来到分站！本站已支持百万 Token 精细计费和全浮点大本位钱包系统。",
 			UpstreamAPIURL:        "https://api.12zx.com", // 默认 12ZX-AI 上游网关
 			UpstreamAPIKey:        "sk-default-placeholder-key",
 			AllowUserRegister:     true,
@@ -286,6 +288,8 @@ func updateClientSettings(c *gin.Context) {
 	}
 
 	// 更新字段
+	settings.SiteTitle = req.SiteTitle
+	settings.SiteAnnouncement = req.SiteAnnouncement
 	settings.UpstreamAPIURL = req.UpstreamAPIURL
 	settings.UpstreamAPIKey = req.UpstreamAPIKey
 	settings.AllowUserRegister = req.AllowUserRegister

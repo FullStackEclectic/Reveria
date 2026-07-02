@@ -18,12 +18,12 @@ func NewStandaloneBilling() *StandaloneBilling {
 }
 
 // GetBalance 查询本地工作区余额
-func (s *StandaloneBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (int64, error) {
+func (s *StandaloneBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) (float64, error) {
 	var ws model.Workspace
 	if err := database.DB.Where("id = ?", workspaceID).First(&ws).Error; err != nil {
 		return 0, err
 	}
-	return ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance, nil
+	return float64(ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance), nil
 }
 
 // DeductCredits 本地工作区余额预扣减/冻结

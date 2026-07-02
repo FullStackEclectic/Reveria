@@ -20,7 +20,7 @@ import {
   ModelSummary,
   AISession,
 } from "../../types";
-import { getJson, postJson, assetUrl, assetTitle, uploadAsset } from "../../utils";
+import { getJson, postJson, assetUrl, assetTitle, uploadAsset, getAssetMetadata } from "../../utils";
 import { WorkflowHistoryFeed } from "./WorkflowHistoryFeed";
 import {
   quickTasks,
@@ -126,6 +126,7 @@ export function ProjectWorkflowPanel({
 
   // 任务管理状态
   const [localTasks, setLocalTasks] = useState<GenerationTaskSummary[]>([]);
+  const [sessionPendingTasks, setSessionPendingTasks] = useState<Record<string, string[]>>({});
 
   // 1. 根据项目物理隔离加载/同步 sessions
   useEffect(() => {
@@ -353,6 +354,51 @@ export function ProjectWorkflowPanel({
         );
         if (assetsRes && Array.isArray(assetsRes)) {
           setAssets(assetsRes);
+
+          // 自动将新生成的资产关联到发起它的会话中
+          setSessionPendingTasks(prevPending => {
+            const pendingIds = prevPending[currentSessionId] || [];
+            if (pendingIds.length === 0) return prevPending;
+
+            const matchedAssetIds: string[] = [];
+            const matchedTaskIds = new Set<string>();
+
+            assetsRes.forEach(asset => {
+              const meta = getAssetMetadata(asset);
+              if (meta && meta.task_id && pendingIds.includes(meta.task_id)) {
+                matchedAssetIds.push(asset.id);
+                matchedTaskIds.add(meta.task_id);
+              }
+            });
+
+            if (matchedAssetIds.length > 0) {
+              setSessions(prevSessions => {
+                const updated = prevSessions.map(s => {
+                  if (s.id === currentSessionId) {
+                    const alreadyHas = new Set(s.assetIds);
+                    const toAdd = matchedAssetIds.filter(id => !alreadyHas.has(id));
+                    if (toAdd.length > 0) {
+                      return {
+                        ...s,
+                        assetIds: [...s.assetIds, ...toAdd]
+                      };
+                    }
+                  }
+                  return s;
+                });
+                // 同步保存到 LocalStorage
+                localStorage.setItem(`reveria_sessions_${selectedProjectId}`, JSON.stringify(updated));
+                return updated;
+              });
+
+              return {
+                ...prevPending,
+                [currentSessionId]: pendingIds.filter(tid => !matchedTaskIds.has(tid))
+              };
+            }
+
+            return prevPending;
+          });
         }
 
         const tasksRes = await getJson<GenerationTaskSummary[]>("/api/tasks");
@@ -380,7 +426,7 @@ export function ProjectWorkflowPanel({
       clearInterval(pollTimer);
       if (progressTimer) clearInterval(progressTimer);
     };
-  }, [currentActiveTask, selectedProjectId, setAssets, setTasks]);
+  }, [currentActiveTask, selectedProjectId, setAssets, setTasks, currentSessionId]);
 
   // 比例参数关联
   function handlePresetRatio(ratio: string) {
@@ -456,7 +502,7 @@ export function ProjectWorkflowPanel({
 
     const payload = buildWorkflowPayload(selectedWorkflow);
     try {
-      const res = await postJson<{ success: boolean; data: { task_id: string; asset_id: string } }>(
+      const res = await postJson<{ success: boolean; data: any }>(
         "/api/tasks",
         payload
       );
@@ -464,6 +510,14 @@ export function ProjectWorkflowPanel({
       if (res && res.success && res.data) {
         setWorkflowInput("");
         setRefAsset(null); // 发送完毕立即清理控制台垫图
+
+        const newTaskId = res.data.id;
+        if (newTaskId) {
+          setSessionPendingTasks(prev => ({
+            ...prev,
+            [currentSessionId]: [...(prev[currentSessionId] || []), newTaskId]
+          }));
+        }
         
         const tasksRes = await getJson<GenerationTaskSummary[]>("/api/tasks");
         if (tasksRes && Array.isArray(tasksRes)) {
@@ -480,10 +534,16 @@ export function ProjectWorkflowPanel({
               const newTitle = s.title === "新对话" || s.title === "默认对话"
                 ? (payload.prompt.trim().substring(0, 8) || "AI 对话")
                 : s.title;
+              
+              const nextAssetIds = [...s.assetIds];
+              if (res.data.asset_id && !nextAssetIds.includes(res.data.asset_id)) {
+                nextAssetIds.push(res.data.asset_id);
+              }
+
               return {
                 ...s,
                 title: newTitle,
-                assetIds: [...s.assetIds, res.data.asset_id]
+                assetIds: nextAssetIds
               };
             }
             return s;
@@ -503,8 +563,9 @@ export function ProjectWorkflowPanel({
 
   function buildWorkflowPayload(workflow: WorkflowType) {
     const base = {
+      workspace_id: activeWorkspace?.id || selectedProject.workspace_id || "",
       project_id: selectedProjectId,
-      model_id: selectedModel,
+      selected_model: selectedModel,
       prompt: workflowInput,
       negative_prompt: "",
     };
@@ -546,7 +607,7 @@ export function ProjectWorkflowPanel({
 
     return {
       ...base,
-      task_type: "text_generation",
+      task_type: "text",
       text_params: {
         max_tokens: 1024,
         temperature: 0.7,
@@ -602,11 +663,19 @@ export function ProjectWorkflowPanel({
     .reverse();
 
   const isRunnable = selectedWorkflow ? isWorkflowRunnable(selectedWorkflow) : false;
-  const costPoints = selectedWorkflow === "image-generation"
-    ? 12
-    : selectedWorkflow === "video-generation"
-    ? 30
-    : 2;
+  const costPoints = (() => {
+    if (selectedModel) {
+      const found = models.find(m => m.id === selectedModel);
+      if (found && typeof found.credits_cost === "number" && found.credits_cost > 0) {
+        return found.credits_cost;
+      }
+    }
+    return selectedWorkflow === "image-generation"
+      ? 12
+      : selectedWorkflow === "video-generation"
+      ? 30
+      : 2;
+  })();
 
   return (
     <div className="gen-chat-container">
@@ -639,6 +708,8 @@ export function ProjectWorkflowPanel({
         activeProgress={activeProgress}
         workflowResult={workflowResult}
         setPreviewAsset={setPreviewAsset}
+        pendingTaskIds={sessionPendingTasks[currentSessionId] || []}
+        localTasks={localTasks}
       />
 
       {/* 2. 底部固定区域（含控制台输入卡片） */}

@@ -86,3 +86,15 @@
 .history-row pre::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* 紧凑会话卡 hover 效果 */
+.task-stream-card:hover {
+  border-color: #6366f1 !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.06);
+  background-color: rgba(99, 102, 241, 0.01) !important;
+}
+
+/* 微缩媒体网格 hover 效果 */
+.compact-media-item-card:hover .media-hover-overlay {
+  opacity: 1 !important;
+}

@@ -648,7 +648,8 @@ func ListModels(c *gin.Context) {
 func CreateModel(c *gin.Context) {
 	var req model.Model
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数格式错误"})
+		log.Printf("[CreateModel Bind Error]: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "参数格式错误: " + err.Error()})
 		return
 	}
 
@@ -667,6 +668,7 @@ func CreateModel(c *gin.Context) {
 	} else {
 		existing.DisplayName = req.DisplayName
 		existing.ModelType = req.ModelType
+		existing.BillingMethod = req.BillingMethod
 		existing.CreditsCost = req.CreditsCost
 		existing.Enabled = req.Enabled
 		if err := database.DB.Save(&existing).Error; err != nil {
@@ -770,12 +772,13 @@ func FetchUpstreamModels(c *gin.Context) {
 }
 
 type BatchImportItem struct {
-	ID          string `json:"id"`
-	ProviderID  string `json:"provider_id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	ModelType   string `json:"model_type"`
-	CreditsCost int64  `json:"credits_cost"`
+	ID            string  `json:"id"`
+	ProviderID    string  `json:"provider_id"`
+	Name          string  `json:"name"`
+	DisplayName   string  `json:"display_name"`
+	ModelType     string  `json:"model_type"`
+	BillingMethod string  `json:"billing_method"`
+	CreditsCost   float64 `json:"credits_cost"`
 }
 
 // BatchImportModels 批量导入并设定模型定价 (POST /api/admin/models/batch-import)
@@ -793,14 +796,15 @@ func BatchImportModels(c *gin.Context) {
 		if err != nil {
 			// 新增
 			modelItem = model.Model{
-				ID:          item.ID,
-				ProviderID:  item.ProviderID,
-				Name:        item.Name,
-				DisplayName: item.DisplayName,
-				ModelType:   item.ModelType,
-				Enabled:     true,
-				CreditsCost: item.CreditsCost,
-				CreatedAt:   time.Now(),
+				ID:            item.ID,
+				ProviderID:    item.ProviderID,
+				Name:          item.Name,
+				DisplayName:   item.DisplayName,
+				ModelType:     item.ModelType,
+				BillingMethod: item.BillingMethod,
+				Enabled:       true,
+				CreditsCost:   item.CreditsCost,
+				CreatedAt:     time.Now(),
 			}
 			if err := tx.Create(&modelItem).Error; err != nil {
 				tx.Rollback()
@@ -810,6 +814,7 @@ func BatchImportModels(c *gin.Context) {
 		} else {
 			// 覆盖更新类型与价格
 			modelItem.ModelType = item.ModelType
+			modelItem.BillingMethod = item.BillingMethod
 			modelItem.CreditsCost = item.CreditsCost
 			if err := tx.Save(&modelItem).Error; err != nil {
 				tx.Rollback()
