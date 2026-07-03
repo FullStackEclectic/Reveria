@@ -343,6 +343,166 @@ select {
   font-size: 12px;
 }
 
+.asset-dialog.asset-preview-dialog {
+  width: fit-content;
+  min-width: min(420px, calc(100vw - 32px));
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18), 0 8px 22px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.asset-preview-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.asset-preview-dialog-header h3 {
+  max-width: min(680px, calc(100vw - 160px));
+  margin: 0;
+  color: #1c1917;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-preview-dialog-header span {
+  display: block;
+  margin-top: 4px;
+  color: #78716c;
+  font-size: 12px;
+}
+
+.asset-preview-dialog .asset-dialog-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  border: none;
+  border-radius: 10px;
+  background: #f7f7f5;
+}
+
+.asset-preview-dialog .asset-dialog-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(1180px, calc(100vw - 84px));
+  max-height: calc(100vh - 220px);
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.asset-preview-dialog .asset-dialog-meta {
+  margin: 0;
+  color: #78716c;
+  font-size: 12px;
+}
+
+.asset-preview-dialog .asset-dialog-meta span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.04);
+}
+
+.asset-preview-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.asset-preview-dialog-actions .primary-button,
+.asset-preview-dialog-actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.asset-preview-dialog-actions .primary-button {
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.asset-preview-dialog-actions .secondary-button {
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  background: #ffffff;
+  color: #44403c;
+  text-decoration: none;
+}
+
+.asset-preview-dialog-actions .secondary-button:hover {
+  border-color: rgba(15, 118, 110, 0.24);
+  background: rgba(15, 118, 110, 0.06);
+  color: #0f766e;
+}
+
+.asset-preview-icon-button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #78716c;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.asset-preview-icon-button:hover {
+  border-color: rgba(28, 25, 23, 0.14);
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+@media (max-width: 640px) {
+  .asset-preview-dialog {
+    width: calc(100vw - 24px);
+    min-width: 0;
+    padding: 14px;
+  }
+
+  .asset-preview-dialog .asset-dialog-preview img {
+    max-width: calc(100vw - 52px);
+    max-height: calc(100vh - 240px);
+  }
+
+  .asset-preview-dialog-actions {
+    flex-wrap: wrap;
+  }
+
+  .asset-preview-dialog-actions .primary-button,
+  .asset-preview-dialog-actions .secondary-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 /* ========================================== */
 /* 8. 顶部高还原 TusiArt 风格 Header           */
 /* ========================================== */
@@ -559,10 +719,14 @@ select {
 .pro-credits-badge .pro-label {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #ffffff;
-  padding: 0 8px;
+  padding: 0 9px;
+  max-width: 96px;
   height: 100%;
   display: flex;
   align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pro-credits-badge .credits-val {
@@ -700,57 +864,93 @@ select {
 
 .header-user-dropdown {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px);
   border: 1px solid rgba(28, 25, 23, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
-  padding: 6px;
-  min-width: 150px;
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(28, 25, 23, 0.12), 0 4px 12px rgba(28, 25, 23, 0.06);
+  padding: 8px;
+  min-width: 190px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  animation: dropdownFadeIn 0.16s ease-out;
 }
 
 .header-user-dropdown .dropdown-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(28, 25, 23, 0.04);
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 4px;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
 .header-user-dropdown .dropdown-header strong {
-  font-size: 13px;
+  font-size: 13.5px;
   color: #1c1917;
+  letter-spacing: 0;
 }
 
 .header-user-dropdown .dropdown-header span {
   font-size: 11px;
-  color: #a8a29e;
+  color: #78716c;
 }
 
 .header-user-dropdown .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 9px 10px;
   border: none;
-  background: none;
+  background: transparent;
   width: 100%;
   text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 9px;
   font-size: 13px;
   color: #44403c;
-  transition: all 0.15s;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .header-user-dropdown .dropdown-item:hover {
-  background: rgba(28, 25, 23, 0.03);
+  background: rgba(15, 118, 110, 0.08);
+  color: #0f766e;
+  transform: translateX(1px);
+}
+
+.header-user-dropdown .dropdown-item svg {
+  width: 26px;
+  height: 26px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(28, 25, 23, 0.04);
+  color: #78716c;
+  box-sizing: border-box;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.header-user-dropdown .dropdown-item:hover svg {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.header-user-dropdown .dropdown-item.admin {
+  color: #b45309;
+}
+
+.header-user-dropdown .dropdown-item.admin svg {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.header-user-dropdown .dropdown-item.admin:hover {
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
 }
 
 .header-user-dropdown .dropdown-item.logout {
@@ -759,12 +959,29 @@ select {
 
 .header-user-dropdown .dropdown-item.logout:hover {
   background: #fef2f2;
+  color: #dc2626;
+}
+
+.header-user-dropdown .dropdown-item.logout svg {
+  background: #fef2f2;
+  color: #ef4444;
 }
 
 .header-user-dropdown .dropdown-divider {
   height: 1px;
-  background: rgba(28, 25, 23, 0.04);
-  margin: 4px 0;
+  background: rgba(28, 25, 23, 0.06);
+  margin: 6px 4px;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* AI 创意生图卡片扫光动画 */
@@ -783,4 +1000,3 @@ select {
 .shimmer-slide-bar {
   animation: shimmerSlide 2s infinite ease-in-out;
 }
-

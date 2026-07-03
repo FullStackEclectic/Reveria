@@ -446,7 +446,7 @@ export function ModelSquare({
                           <div className="cover-overlay-glow"></div>
                           <div className="cover-title-bottom" style={{ display: "flex", justifyContent: "flex-end", width: "calc(100% - 24px)", left: "12px", right: "12px", bottom: "12px", position: "absolute", zIndex: 4 }}>
                             <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.85)", display: "flex", alignItems: "center", gap: "3px", fontWeight: "700" }}>
-                              ⚡ {Math.floor((idx + 1) * 314)} 活跃
+                              {Math.floor((idx + 1) * 314)} 活跃
                             </span>
                           </div>
                         </div>
@@ -532,7 +532,7 @@ export function ModelSquare({
                                   {temp.title}
                                 </h4>
                                 <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.85)", display: "flex", alignItems: "center", gap: "3px", fontWeight: "700" }}>
-                                  ⚡ {temp.default_width}×{temp.default_height}
+                                  {temp.default_width}×{temp.default_height}
                                 </span>
                               </div>
                               <button 
@@ -971,7 +971,7 @@ function TemplateDetailModal({
                 <option value="new">🆕 + 新建客户项目</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    📁 {p.name}
+                    {p.name}
                   </option>
                 ))}
               </select>

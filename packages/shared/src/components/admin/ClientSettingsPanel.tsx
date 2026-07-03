@@ -188,7 +188,7 @@ function DualModelSelector({
 
         {selectedPools.length === 0 ? (
           <div style={{ padding: "16px", textAlign: "center", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "8px", fontSize: "12px", color: "var(--rv-color-text-muted)", background: "#f8fafc" }}>
-            💡 请先在上方勾选接入的资源池，之后才会在此展现对应资源池下的具体模型供您精细挑选。
+            请先在上方勾选接入的资源池，之后才会在此展现对应资源池下的具体模型供您精细挑选。
           </div>
         ) : filteredModels.length === 0 ? (
           <div style={{ padding: "16px", textAlign: "center", border: "1px dashed var(--rv-color-border-thin)", borderRadius: "8px", fontSize: "12px", color: "var(--rv-color-text-muted)", background: "#f8fafc" }}>
@@ -494,7 +494,7 @@ export function ClientSettingsPanel({ mode, onSettingsSaved }: ClientSettingsPan
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #e2e8f0", paddingTop: "12px", marginTop: "4px" }}>
                   <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", flex: 1, paddingRight: "16px", lineHeight: 1.5 }}>
-                    💡 先在第一层勾选接入的主站资源池（Tags 标签），然后在第二层勾选分站对用户开放的具体模型。
+                    先在第一层勾选接入的主站资源池（Tags 标签），然后在第二层勾选分站对用户开放的具体模型。
                   </span>
                   <button
                     type="button"

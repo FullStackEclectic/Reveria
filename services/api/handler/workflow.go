@@ -237,6 +237,15 @@ func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSet
 			modelName = settings.BridgeTextModel
 		}
 	} else {
+		// 自营模式下强制锁定使用 12ZX 官方网关地址
+		settings.UpstreamAPIURL = "https://ai.12zx.net"
+
+		// 智能从已启用的 Provider 列表中自动抽取一个可用通道的 Key
+		var p model.Provider
+		if err := database.DB.Where("enabled = ? AND api_key != ''", true).First(&p).Error; err == nil {
+			settings.UpstreamAPIKey = p.ApiKey
+		}
+
 		baseURL := strings.TrimSuffix(settings.UpstreamAPIURL, "/")
 		baseURL = strings.TrimSuffix(baseURL, "/v1")
 		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
@@ -267,7 +276,7 @@ func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSet
 
 	client := &http.Client{
 		Transport: insecureTransport,
-		Timeout:   30 * time.Second,
+		Timeout:   120 * time.Second,
 	}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -478,7 +478,7 @@ export function WorkflowTasksTab({
               {outputImages.length > 0 && (
                 <div style={{ background: "#f8fafc", border: "1px dashed rgba(15, 118, 110, 0.2)", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
                   <span style={{ fontSize: "11px", fontWeight: "800", color: "var(--rv-color-primary)", display: "block" }}>
-                    📸 渲染产物可视化预览 ({outputImages.length} 个资源)
+                    渲染产物可视化预览 ({outputImages.length} 个资源)
                   </span>
                   <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "4px" }}>
                     {outputImages.map((imgUrl, idx) => {

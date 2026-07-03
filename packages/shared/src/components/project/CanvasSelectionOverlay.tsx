@@ -66,15 +66,23 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
     return item.title || "未命名图片";
   })();
 
-  const displayRes =
-    realResolutions[asset.id] ||
-    (asset.metadata && typeof asset.metadata.size === "string" ? asset.metadata.size : null) ||
-    (asset.metadata &&
-    typeof asset.metadata.width === "number" &&
-    typeof asset.metadata.height === "number"
-      ? `${asset.metadata.width}x${asset.metadata.height}`
-      : null) ||
-    `${item.w} x ${item.h}`;
+  const displayRes = (() => {
+    const meta = asset.metadata;
+    if (meta && typeof meta.width === "number" && typeof meta.height === "number") {
+      return `${meta.width} x ${meta.height}`;
+    }
+
+    const dimensionFields = [meta?.dimensions, meta?.size_str, meta?.resolution, meta?.image_size, meta?.size];
+    for (const value of dimensionFields) {
+      if (typeof value !== "string") continue;
+      const match = value.match(/(\d{2,5})\s*[xX×]\s*(\d{2,5})/);
+      if (match) {
+        return `${match[1]} x ${match[2]}`;
+      }
+    }
+
+    return realResolutions[asset.id] || "读取原图尺寸中";
+  })();
 
   const isConnectingSource = connectionSourceId === item.id;
 
@@ -138,7 +146,7 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
         }}
         title={displayPrompt}
       >
-        🖼️ {displayPrompt.length > 25 ? `${displayPrompt.slice(0, 25)}...` : displayPrompt}
+        {displayPrompt.length > 25 ? `${displayPrompt.slice(0, 25)}...` : displayPrompt}
       </div>
 
       {/* 右上角分辨率标签 */}
@@ -206,7 +214,7 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
             }}
             title="创建与此卡片的连线"
           >
-            🔗 {isConnectingSource ? "请选择终点卡片..." : "连接"}
+            {isConnectingSource ? "请选择终点卡片..." : "连接"}
           </button>
 
           <div className="canvas-toolbar-divider" />

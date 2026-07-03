@@ -151,13 +151,9 @@ func ListRechargeRecords(c *gin.Context) {
 	c.JSON(http.StatusOK, records)
 }
 
-// ListPlans 获取套餐列表 (GET /billing/plans)
-func ListPlans(c *gin.Context) {
+func ensureDefaultPlans() []model.Plan {
 	var plans []model.Plan
-	if err := database.DB.Where("enabled = ?", true).Find(&plans).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法获取套餐列表: " + err.Error()})
-		return
-	}
+	database.DB.Find(&plans)
 
 	// 如果数据库中套餐过少，我们自动清空重写，Seed 完整的包月方案和纯点数包
 	if len(plans) <= 2 {
@@ -169,6 +165,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 				Name:              "体验版订阅 (包月)",
+				BadgeLabel:        "FREE",
 				PriceCents:        0,
 				MonthlyCredits:    1000,
 				MaxMembers:        3,
@@ -181,6 +178,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000002"),
 				Name:              "专业版订阅 (包月)",
+				BadgeLabel:        "PRO",
 				PriceCents:        9900, // ￥99
 				MonthlyCredits:    5000,
 				MaxMembers:        10,
@@ -193,6 +191,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000003"),
 				Name:              "企业版订阅 (包月)",
+				BadgeLabel:        "ENT",
 				PriceCents:        29900, // ￥299
 				MonthlyCredits:    20000,
 				MaxMembers:        30,
@@ -206,6 +205,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000010"),
 				Name:              "100点 基础点数直充",
+				BadgeLabel:        "100",
 				PriceCents:        1000, // ￥10
 				MonthlyCredits:    100,  // 点数直充也是借用这个字段记录购买点数
 				MaxMembers:        1,
@@ -218,6 +218,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000011"),
 				Name:              "550点 特惠点数直充 (送50)",
+				BadgeLabel:        "550",
 				PriceCents:        5000, // ￥50
 				MonthlyCredits:    550,
 				MaxMembers:        1,
@@ -230,6 +231,7 @@ func ListPlans(c *gin.Context) {
 			{
 				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000012"),
 				Name:              "1200点 豪华点数直充 (送200)",
+				BadgeLabel:        "1200",
 				PriceCents:        10000, // ￥100
 				MonthlyCredits:    1200,
 				MaxMembers:        1,
@@ -247,7 +249,95 @@ func ListPlans(c *gin.Context) {
 		}
 	}
 
+	return plans
+}
+
+// ListPlans 获取套餐列表 (GET /billing/plans)
+func ListPlans(c *gin.Context) {
+	ensureDefaultPlans()
+
+	var plans []model.Plan
+	if err := database.DB.Where("enabled = ?", true).Find(&plans).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法获取套餐列表: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, plans)
+}
+
+// ListAdminPlans 获取全部套餐配置 (GET /admin/plans)
+func ListAdminPlans(c *gin.Context) {
+	if !checkPlatformAdmin(c) {
+		return
+	}
+
+	ensureDefaultPlans()
+
+	var plans []model.Plan
+	if err := database.DB.Order("is_points_package asc, price_cents asc, created_at asc").Find(&plans).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法获取套餐配置: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, plans)
+}
+
+type UpdatePlanRequest struct {
+	Name              string `json:"name" binding:"required"`
+	BadgeLabel        string `json:"badge_label"`
+	PriceCents        int64  `json:"price_cents"`
+	MonthlyCredits    int64  `json:"monthly_credits"`
+	MaxMembers        int    `json:"max_members"`
+	StorageQuotaBytes int64  `json:"storage_quota_bytes"`
+	Enabled           bool   `json:"enabled"`
+	IsPointsPackage   bool   `json:"is_points_package"`
+}
+
+// UpdateAdminPlan 更新套餐配置 (PUT /admin/plans/:id)
+func UpdateAdminPlan(c *gin.Context) {
+	if !checkPlatformAdmin(c) {
+		return
+	}
+
+	planID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "套餐 ID 格式有误"})
+		return
+	}
+
+	var req UpdatePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求输入不合法"})
+		return
+	}
+
+	if req.PriceCents < 0 || req.MonthlyCredits < 0 || req.StorageQuotaBytes < 0 || req.MaxMembers < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "套餐数值配置不合法"})
+		return
+	}
+
+	var plan model.Plan
+	if err := database.DB.Where("id = ?", planID).First(&plan).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "套餐不存在"})
+		return
+	}
+
+	plan.Name = req.Name
+	plan.BadgeLabel = req.BadgeLabel
+	plan.PriceCents = req.PriceCents
+	plan.MonthlyCredits = req.MonthlyCredits
+	plan.MaxMembers = req.MaxMembers
+	plan.StorageQuotaBytes = req.StorageQuotaBytes
+	plan.Enabled = req.Enabled
+	plan.IsPointsPackage = req.IsPointsPackage
+	plan.UpdatedAt = time.Now()
+
+	if err := database.DB.Save(&plan).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "套餐保存失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, plan)
 }
 
 // CreateOrder 创建充值/购买订单 (POST /billing/orders)

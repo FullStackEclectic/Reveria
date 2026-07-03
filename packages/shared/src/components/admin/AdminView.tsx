@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { RefreshCw, LayoutDashboard, Cpu, Users, Layers, ShieldCheck, FileText, Settings, Globe, Server, CheckCircle, Info, HelpCircle } from "lucide-react";
+import { RefreshCw, LayoutDashboard, Cpu, Users, ShieldCheck, FileText, Settings, Badge, Globe, Server, Info, HelpCircle } from "lucide-react";
 import {
   WorkspaceSummary,
   ProviderSummary,
@@ -25,6 +25,8 @@ import { ModelCatalogPanel } from "./ModelCatalogPanel";
 import { WorkflowTaskPanel } from "./WorkflowTaskPanel";
 import { TemplateAdminPanel } from "./TemplateAdminPanel";
 import { ClientSettingsPanel } from "./ClientSettingsPanel";
+import { SystemSettingsPanel } from "./SystemSettingsPanel";
+import { PlanManagementPanel } from "./PlanManagementPanel";
 
 interface AdminViewProps {
   activeWorkspace?: WorkspaceSummary;
@@ -83,8 +85,8 @@ export function AdminView({
   setTransactions,
   setWorkspaces,
 }: AdminViewProps) {
-  const [activeTab, setActiveTab] = useState<"system" | "channels" | "members" | "workflows" | "templates">("system");
-  const [activeChannelSubTab, setActiveChannelSubTab] = useState<"settings" | "providers" | "models" | "test">("settings");
+  const [activeTab, setActiveTab] = useState<"system" | "channels" | "plans" | "members" | "workflows" | "templates" | "settings">("system");
+  const [activeChannelSubTab, setActiveChannelSubTab] = useState<"providers" | "models" | "test">("providers");
   const [adminMessage, setAdminMessage] = useState("");
   const [billingMode, setBillingMode] = useState<string>("standalone");
   const [channelModeDraft, setChannelModeDraft] = useState<"bridge" | "standalone">("standalone");
@@ -108,9 +110,11 @@ export function AdminView({
   const tabItems = [
     { id: "system", label: "系统大盘", icon: LayoutDashboard },
     { id: "channels", label: "算力通道", icon: Cpu },
+    { id: "plans", label: "套餐管理", icon: Badge },
     { id: "members", label: "人员管理", icon: Users },
     { id: "workflows", label: "调度配置", icon: ShieldCheck },
     { id: "templates", label: "提示词模板", icon: FileText },
+    { id: "settings", label: "系统设置", icon: Settings },
   ] as const;
 
   return (
@@ -240,6 +244,8 @@ export function AdminView({
             </div>
           )}
 
+          {activeTab === "plans" && <PlanManagementPanel />}
+
           {activeTab === "channels" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "32px", background: "#f8fafc", minHeight: "100vh", width: "100%", boxSizing: "border-box" }}>
               
@@ -298,6 +304,7 @@ export function AdminView({
                 <div
                   onClick={() => {
                     setChannelModeDraft("standalone");
+                    setActiveChannelSubTab("providers");
                   }}
                   className="mode-card"
                   style={{
@@ -499,16 +506,7 @@ export function AdminView({
 
                   {activeChannelSubTab === "providers" && (
                     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                      {/* 置顶展示独立自营上游代理设置表单 */}
-                      <ClientSettingsPanel
-                        mode="standalone"
-                        onSettingsSaved={(newMode) => {
-                          setBillingMode(newMode);
-                          refreshAll();
-                        }}
-                      />
-                      
-                      {/* 下方自营服务商列表 */}
+                      {/* 自营服务商列表 */}
                       <div style={{
                         background: "#ffffff",
                         borderRadius: "12px",
@@ -616,6 +614,17 @@ export function AdminView({
 
           {activeTab === "templates" && (
             <TemplateAdminPanel />
+          )}
+
+          {activeTab === "settings" && (
+            <div style={{ padding: "32px", background: "#f8fafc", minHeight: "100vh", width: "100%", boxSizing: "border-box" }}>
+              {/* 页头大标题 */}
+              <header style={{ borderBottom: "1px solid var(--rv-color-border-thin)", paddingBottom: "16px", marginBottom: "20px" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: "700", margin: "0 0 4px 0", color: "var(--rv-color-text-main)" }}>系统全局设置</h2>
+                <p style={{ fontSize: "12px", color: "var(--rv-color-text-muted)", margin: 0 }}>配置修图分站的系统运营基本参数、用户注册机制与赠送点数策略。</p>
+              </header>
+              <SystemSettingsPanel onSettingsSaved={refreshAll} />
+            </div>
           )}
 
         </section>

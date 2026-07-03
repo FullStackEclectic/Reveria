@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ExternalLink, Download, Wand2 } from "lucide-react";
+import { ExternalLink, Download, Wand2, X } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl, assetMimeType, formatFileSize } from "../../utils";
 
@@ -64,7 +64,7 @@ export function AssetPreviewDialog({
   }, [asset.id, sourceUrl]);
 
   function renderAssetPreview(asset: AssetSummary) {
-    const sourceUrl = asset.thumbnail_url ?? asset.file_url;
+    const sourceUrl = asset.file_url ?? asset.thumbnail_url;
     if (asset.asset_type === "image" && sourceUrl) {
       return <img alt={title} src={assetUrl(sourceUrl)} />;
     }
@@ -86,13 +86,22 @@ export function AssetPreviewDialog({
     >
       <section
         aria-label="素材预览"
-        className="asset-dialog"
-        style={{ background: "#ffffff" }}
+        className="asset-dialog asset-preview-dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="panel-header">
-          <h3>{title}</h3>
-          <span>{asset.source} · {asset.asset_type}</span>
+        <div className="asset-preview-dialog-header">
+          <div>
+            <h3>{title}</h3>
+            <span>{asset.source} · {asset.asset_type}</span>
+          </div>
+          <button
+            type="button"
+            className="asset-preview-icon-button"
+            onClick={() => setPreviewAsset(null)}
+            title="关闭"
+          >
+            <X size={16} />
+          </button>
         </div>
         <div className="asset-dialog-preview">
           {asset.asset_type === "image" && sourceUrl ? (
@@ -110,7 +119,7 @@ export function AssetPreviewDialog({
             <span>{formatFileSize(asset.metadata.size)}</span>
           ) : null}
         </div>
-        <div className="task-actions">
+        <div className="asset-preview-dialog-actions">
           {sourceUrl ? (
             <>
               {asset.asset_type === "image" && onEnterEditor && (
@@ -121,9 +130,8 @@ export function AssetPreviewDialog({
                     onEnterEditor(asset);
                     setPreviewAsset(null);
                   }}
-                  style={{ background: "#4f46e5", color: "#ffffff" }}
                 >
-                  <Wand2 size={16} aria-hidden="true" style={{ marginRight: "6px" }} />
+                  <Wand2 size={16} aria-hidden="true" />
                   AI 智能精修
                 </button>
               )}
@@ -136,7 +144,7 @@ export function AssetPreviewDialog({
                   downloadImage(url, filename);
                 }}
               >
-                <Download size={16} aria-hidden="true" style={{ marginRight: "6px" }} />
+                <Download size={16} aria-hidden="true" />
                 下载图片
               </button>
               <a

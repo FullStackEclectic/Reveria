@@ -69,7 +69,7 @@ export function LoginView({
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", borderRadius: "8px", fontSize: "10px", color: "#94a3b8" }}>
                 ART PRESENCE
               </div>
-              <span className="visual-card-pill pill-cyan">✨ 动漫插画渲染</span>
+              <span className="visual-card-pill pill-cyan">动漫插画渲染</span>
             </div>
             
             <div className="visual-card-item card-above">
@@ -79,7 +79,7 @@ export function LoginView({
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", borderRadius: "8px", fontSize: "10px", color: "#94a3b8" }}>
                 AI GENERATION
               </div>
-              <span className="visual-card-pill pill-orange">⚡ 智能电商海报</span>
+              <span className="visual-card-pill pill-orange">智能电商海报</span>
             </div>
           </div>
           

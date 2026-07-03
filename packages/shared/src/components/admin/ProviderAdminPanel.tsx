@@ -20,9 +20,9 @@ export function ProviderAdminPanel({
   setAdminMessage,
   refreshAll,
 }: ProviderAdminPanelProps) {
-  const [name, setName] = useState("OpenAI Compatible");
+  const [name, setName] = useState("官方算力通道");
   const [providerType, setProviderType] = useState("openai");
-  const [apiUrl, setApiUrl] = useState("https://api.openai.com");
+  const [apiUrl, setApiUrl] = useState("https://ai.12zx.net");
   const [apiKey, setApiKey] = useState("");
   const [enabled, setEnabled] = useState(true);
 
@@ -188,23 +188,7 @@ export function ProviderAdminPanel({
               <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="如 12ZX-AI, 官方OpenAI等" />
             </div>
 
-            <div className="assets-form-field">
-              <label style={{ fontSize: "10px", fontWeight: "700" }}>通道协议类型</label>
-              <select
-                value={providerType}
-                onChange={(e) => setProviderType(e.target.value)}
-                style={{ minHeight: "36px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-sm)", padding: "0 10px", background: "#ffffff" }}
-              >
-                <option value="openai">OpenAI Compatible (通用主流协议)</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="volcengine">字节火山引擎</option>
-              </select>
-            </div>
 
-            <div className="assets-form-field">
-              <label style={{ fontSize: "10px", fontWeight: "700" }}>API 请求地址 (Base URL)</label>
-              <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="如 https://api.openai.com" required />
-            </div>
 
             <div className="assets-form-field">
               <label style={{ fontSize: "10px", fontWeight: "700" }}>接口密钥 (API Key)</label>
@@ -244,7 +228,7 @@ export function ProviderAdminPanel({
                       <div>
                         <strong style={{ display: "block", fontSize: "12px", color: "var(--rv-color-text-main)" }}>{provider.name}</strong>
                         <span style={{ display: "block", fontSize: "9px", color: "var(--rv-color-text-muted)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "160px", whiteSpace: "nowrap" }}>
-                          {provider.api_url}
+                          https://ai.12zx.net
                         </span>
                       </div>
                     </div>
@@ -469,9 +453,9 @@ export function ProviderAdminPanel({
                                 }}
                                 style={{ minHeight: "32px", fontSize: "11px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "6px", background: "#ffffff", width: "100%", padding: "0 6px", outline: "none", cursor: "pointer" }}
                               >
-                                <option value="chat">💬 对话 (Chat)</option>
-                                <option value="image">🎨 图像 (Image)</option>
-                                <option value="video">🎬 视频 (Video)</option>
+                                <option value="chat">对话 (Chat)</option>
+                                <option value="image">图像 (Image)</option>
+                                <option value="video">视频 (Video)</option>
                               </select>
                             </td>
                             {/* 计费方式 */}
@@ -486,8 +470,8 @@ export function ProviderAdminPanel({
                                 }}
                                 style={{ minHeight: "32px", fontSize: "11px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "6px", background: "#ffffff", width: "100%", padding: "0 6px", outline: "none", cursor: "pointer" }}
                               >
-                                <option value="per_token">⚡ 按百万 Token 计费</option>
-                                <option value="per_use">🪙 按次计费</option>
+                                <option value="per_token">按百万 Token 计费</option>
+                                <option value="per_use">按次计费</option>
                               </select>
                             </td>
                             {/* 计费点数 */}

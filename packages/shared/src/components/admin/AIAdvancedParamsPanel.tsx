@@ -665,7 +665,7 @@ export function AIAdvancedParamsPanel({
                 }}
                 title="随机种子"
               >
-                🎲 随机
+                随机
               </button>
             </div>
           </div>
@@ -678,7 +678,7 @@ export function AIAdvancedParamsPanel({
           onClick={() => setShowAdvancedSection(!showAdvancedSection)}
           style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", fontSize: "12px", fontWeight: "700", color: "var(--rv-color-primary)", padding: "4px 0" }}
         >
-          <span>✨ 高级设置</span>
+          <span>高级设置</span>
           <span style={{ fontSize: "10px" }}>{showAdvancedSection ? "▲" : "▼"}</span>
         </div>
 

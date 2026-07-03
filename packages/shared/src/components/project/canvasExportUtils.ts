@@ -96,7 +96,7 @@ export function exportCanvasToSVG(
     </g>`;
       } else {
         const asset = assets.find((a) => a.id === item.asset_id);
-        const imageUrl = asset?.thumbnail_url || asset?.file_url;
+        const imageUrl = asset?.file_url || asset?.thumbnail_url;
         const assetImgSrc = imageUrl ? assetUrl(imageUrl) : "";
         const imageElement = assetImgSrc
           ? `

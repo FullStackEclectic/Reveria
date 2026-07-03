@@ -28,28 +28,28 @@ interface RecentExport {
 const PRESETS = [
   { 
     id: "wedding",
-    emoji: "👰", 
+    emoji: "WED", 
     title: "唯美婚礼", 
     desc: "柔和磨皮，暖调高光，高精白皙",
     settings: { exposure: 15, contrast: -10, saturation: 8, blur_strength: 65, eye_enlarge: 20, slim_face: 15, lut_file: "wedding.3dlut" }
   },
   { 
     id: "id_photo",
-    emoji: "🎓", 
+    emoji: "ID", 
     title: "轻颜证件", 
     desc: "通透美白，强效磨皮，精致五官",
     settings: { exposure: 20, contrast: 5, saturation: -5, blur_strength: 80, eye_enlarge: 35, slim_face: 30, lut_file: "id_photo.3dlut" }
   },
   { 
     id: "outdoor",
-    emoji: "🌳", 
+    emoji: "OUT", 
     title: "清新户外", 
     desc: "鲜艳色彩，自适应光影，自然磨皮",
     settings: { exposure: 25, contrast: -5, saturation: 15, blur_strength: 50, eye_enlarge: 15, slim_face: 10, lut_file: "fresh.3dlut" }
   },
   { 
     id: "vintage",
-    emoji: "🍷", 
+    emoji: "RET", 
     title: "复古港风", 
     desc: "金红复古，胶片颗粒，经典阴影",
     settings: { exposure: -5, contrast: 20, saturation: 25, blur_strength: 40, eye_enlarge: 10, slim_face: 5, lut_file: "vintage.3dlut" }

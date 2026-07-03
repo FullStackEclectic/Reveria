@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { X, Search, Sparkles, Image as ImageIcon, Folder, Plus, Maximize2, Minimize2 } from "lucide-react";
+import { X, Search, Sparkles, Image as ImageIcon, Folder, Plus, Maximize2, Minimize2, Eye } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetUrl } from "../../utils";
 
@@ -21,12 +21,15 @@ export function FloatingAssetLibrary({
   addWorkflowResultToCanvas
 }: FloatingAssetLibraryProps) {
   const [position, setPosition] = useState({ x: 120, y: 150 });
+  const [size, setSize] = useState({ width: 720, height: 520 });
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "upload" | "ai">("all");
+  const [mediaTab, setMediaTab] = useState<"all" | "image" | "video">("all");
   const [toastMsg, setToastMsg] = useState("");
 
   const dragRef = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null);
   const windowRef = useRef<HTMLDivElement>(null);
 
   // 一闪而过的提示通知
@@ -34,6 +37,33 @@ export function FloatingAssetLibrary({
     setToastMsg(msg);
     const timer = setTimeout(() => setToastMsg(""), 2000);
     return () => clearTimeout(timer);
+  };
+
+  const getMediaType = (asset: AssetSummary): "image" | "video" | null => {
+    const output = asset.metadata?.output;
+    const outputUrl = typeof output === "string" ? output : "";
+    const mediaUrl = asset.thumbnail_url || asset.file_url || outputUrl;
+    const lowerMediaUrl = mediaUrl.toLowerCase();
+    const mimeType = typeof asset.metadata?.mime_type === "string" ? asset.metadata.mime_type.toLowerCase() : "";
+    const taskType = typeof asset.metadata?.task_type === "string" ? asset.metadata.task_type.toLowerCase() : "";
+
+    if (taskType === "text" || asset.asset_type === "document") {
+      return null;
+    }
+
+    if (asset.asset_type === "video" || mimeType.startsWith("video/") || /\.(mp4|webm|mov)(\?|$)/i.test(lowerMediaUrl)) {
+      return "video";
+    }
+
+    if (asset.asset_type === "image" || mimeType.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|svg)(\?|$)/i.test(lowerMediaUrl)) {
+      return "image";
+    }
+
+    return null;
+  };
+
+  const isVisualAsset = (asset: AssetSummary) => {
+    return getMediaType(asset) !== null;
   };
 
   if (!isOpen) return null;
@@ -70,9 +100,54 @@ export function FloatingAssetLibrary({
     document.removeEventListener("mouseup", handleMouseUp);
   };
 
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      width: size.width,
+      height: size.height
+    };
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "nwse-resize";
+    document.addEventListener("mousemove", handleResizeMouseMove);
+    document.addEventListener("mouseup", handleResizeMouseUp);
+  };
+
+  const handleResizeMouseMove = (e: MouseEvent) => {
+    if (!resizeRef.current) return;
+
+    const maxWidth = Math.max(380, window.innerWidth - position.x - 10);
+    const maxHeight = Math.max(300, window.innerHeight - position.y - 10);
+    const nextWidth = resizeRef.current.width + e.clientX - resizeRef.current.startX;
+    const nextHeight = resizeRef.current.height + e.clientY - resizeRef.current.startY;
+
+    setSize({
+      width: Math.min(maxWidth, Math.max(380, nextWidth)),
+      height: Math.min(maxHeight, Math.max(300, nextHeight))
+    });
+  };
+
+  const handleResizeMouseUp = () => {
+    resizeRef.current = null;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    document.removeEventListener("mousemove", handleResizeMouseMove);
+    document.removeEventListener("mouseup", handleResizeMouseUp);
+  };
+
   // 区分 AI 生成 与 本地上传
   const getFilteredAssets = () => {
     return assets.filter((asset) => {
+      if (!isVisualAsset(asset)) {
+        return false;
+      }
+
+      if (mediaTab !== "all" && getMediaType(asset) !== mediaTab) return false;
+
       // 1. 判断是否是 AI 生成 (workflow_output 类型或 source 为 ai)
       const isAi = asset.asset_type === "workflow_output" || asset.source === "ai";
       
@@ -91,15 +166,16 @@ export function FloatingAssetLibrary({
   };
 
   const filteredAssets = getFilteredAssets();
+  const visibleAssetsCount = assets.filter(isVisualAsset).length;
 
   // 双击或点击添加到画布的动作
   const handleAddAction = (asset: AssetSummary) => {
     if (asset.asset_type === "workflow_output") {
       addWorkflowResultToCanvas(asset.metadata?.title ?? "AI 创意产物", asset.metadata?.output);
-      triggerToast(`已将 AI 产出放置到画布 🎉`);
+      triggerToast("已将 AI 产出放置到画布");
     } else {
       addAssetToCanvas(asset);
-      triggerToast(`已将参考素材放置到画布 🎨`);
+      triggerToast("已将参考素材放置到画布");
     }
   };
 
@@ -110,8 +186,8 @@ export function FloatingAssetLibrary({
         position: "fixed",
         left: `${position.x}px`,
         top: `${position.y}px`,
-        width: "720px",
-        height: isCollapsed ? "48px" : "520px",
+        width: `${size.width}px`,
+        height: isCollapsed ? "48px" : `${size.height}px`,
         background: "rgba(255, 255, 255, 0.88)",
         backdropFilter: "blur(20px)",
         border: "1px solid rgba(255, 255, 255, 0.5)",
@@ -121,10 +197,9 @@ export function FloatingAssetLibrary({
         flexDirection: "column",
         zIndex: 9999,
         overflow: "hidden",
-        resize: isCollapsed ? "none" : "both",
         minWidth: "380px",
         minHeight: isCollapsed ? "48px" : "300px",
-        transition: "height 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+        transition: isCollapsed ? "height 0.2s cubic-bezier(0.4, 0, 0.2, 1)" : "none"
       }}
     >
       {/* 头部：可拖拽区域 */}
@@ -147,7 +222,7 @@ export function FloatingAssetLibrary({
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Folder size={16} style={{ color: "var(--rv-color-primary)" }} />
           <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>
-            项目资产与历史库 ({assets.length})
+            项目资产与历史库 ({visibleAssetsCount})
           </span>
           <span style={{ fontSize: "9px", background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: "10px", color: "var(--rv-color-text-muted)" }}>
             双击折叠
@@ -211,6 +286,35 @@ export function FloatingAssetLibrary({
                     key={tab}
                     type="button"
                     onClick={() => setActiveTab(tab)}
+                    style={{
+                      border: 0,
+                      padding: "4px 10px",
+                      borderRadius: "18px",
+                      fontSize: "10px",
+                      fontWeight: isAct ? "bold" : "normal",
+                      cursor: "pointer",
+                      background: isAct ? "#ffffff" : "transparent",
+                      color: isAct ? "var(--rv-color-primary)" : "var(--rv-color-text-muted)",
+                      boxShadow: isAct ? "0 2px 6px rgba(0,0,0,0.05)" : "none",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 媒体类型筛选 */}
+            <div style={{ display: "flex", background: "rgba(0,0,0,0.04)", padding: "2px", borderRadius: "20px", gap: "2px" }}>
+              {(["all", "image", "video"] as const).map((tab) => {
+                const label = tab === "all" ? "全部类型" : tab === "image" ? "图片" : "视频";
+                const isAct = mediaTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setMediaTab(tab)}
                     style={{
                       border: 0,
                       padding: "4px 10px",
@@ -351,10 +455,13 @@ export function FloatingAssetLibrary({
                               fontSize: "9px",
                               padding: "2px 8px",
                               borderRadius: "6px",
-                              cursor: "pointer"
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "3px"
                             }}
                           >
-                            🔍 预览大图
+                            <Eye size={10} /> 预览大图
                           </button>
                         )}
                       </div>
@@ -365,6 +472,24 @@ export function FloatingAssetLibrary({
             )}
           </div>
         </div>
+      )}
+
+      {!isCollapsed && (
+        <div
+          onMouseDown={handleResizeMouseDown}
+          title="拖拽调整窗口大小"
+          style={{
+            position: "absolute",
+            right: 0,
+            bottom: 0,
+            width: "18px",
+            height: "18px",
+            cursor: "nwse-resize",
+            zIndex: 10001,
+            background:
+              "linear-gradient(135deg, transparent 0 48%, rgba(15, 118, 110, 0.22) 50%, transparent 52%), linear-gradient(135deg, transparent 0 64%, rgba(15, 118, 110, 0.32) 66%, transparent 68%)"
+          }}
+        />
       )}
 
       {/* 消息通知 Toast */}

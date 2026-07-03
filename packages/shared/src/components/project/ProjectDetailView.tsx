@@ -28,6 +28,7 @@ import { TemplateSelectModal } from "./TemplateSelectModal";
 import { runTemplateGeneration } from "./templateWorkflowUtils";
 import { useProjectCanvasState } from "./useProjectCanvasState";
 import { AssetEditorWorkbench } from "../asset/AssetEditorWorkbench";
+import { FileText, FolderOpen, Link2, Maximize2, Settings, Sparkles, Trash2 } from "lucide-react";
 
 interface ProjectDetailViewProps {
   projects: ProjectSummary[];
@@ -357,7 +358,7 @@ export function ProjectDetailView({
               title="从模板创建提示词卡片"
               style={{ color: "var(--rv-color-primary)" }}
             >
-              <span style={{ display: "inline-flex", alignItems: "center", fontSize: "16px" }}>✨</span>
+              <Sparkles size={16} />
             </button>
             <button
               className="rv-toolbar-btn"
@@ -365,7 +366,7 @@ export function ProjectDetailView({
               onClick={addNoteToCanvas}
               title="在画布上添加备注便签"
             >
-              <span style={{ display: "inline-flex", alignItems: "center", fontSize: "16px" }}>📝</span>
+              <FileText size={16} />
             </button>
 
             {selectedItemId && (
@@ -432,7 +433,7 @@ export function ProjectDetailView({
                   style={{ color: "#ef4444" }}
                   title="删除卡片"
                 >
-                  🗑️
+                  <Trash2 size={15} />
                 </button>
               </>
             )}
@@ -446,7 +447,7 @@ export function ProjectDetailView({
               onClick={() => handleToggleLeftTab("library")}
               title="库与历史：查看项目素材与 AI 生成历史"
             >
-              📁
+              <FolderOpen size={15} />
             </button>
             <button
               className={`rv-utility-btn ${isLeftDrawerOpen && activeLeftTab === "share" ? "active" : ""}`}
@@ -454,7 +455,7 @@ export function ProjectDetailView({
               onClick={() => handleToggleLeftTab("share")}
               title="外链交付：生成交付链接、查看客户反馈与评论"
             >
-              🔗
+              <Link2 size={15} />
             </button>
             <button
               className={`rv-utility-btn ${isLeftDrawerOpen && activeLeftTab === "settings" ? "active" : ""}`}
@@ -462,7 +463,7 @@ export function ProjectDetailView({
               onClick={() => handleToggleLeftTab("settings")}
               title="项目设置：管理项目属性、客户绑定及预算上限"
             >
-              ⚙️
+              <Settings size={15} />
             </button>
 
             <div className="rv-utility-divider" />
@@ -504,7 +505,7 @@ export function ProjectDetailView({
               }}
               title="适配屏幕并复位"
             >
-              ⛶
+              <Maximize2 size={15} />
             </button>
           </div>
         </>

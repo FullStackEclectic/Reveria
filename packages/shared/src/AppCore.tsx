@@ -68,6 +68,16 @@ import { Sidebar } from "./components/common/Sidebar";
 import { AssetEditorWorkbench } from "./components/asset/AssetEditorWorkbench";
 import type { RetouchSettings } from "./components/asset/AssetEditorWorkbench";
 
+function planBadgeLabel(plan?: PlanSummary) {
+  if (!plan) return "套餐";
+  const configured = plan.badge_label?.trim();
+  if (configured) return configured.toUpperCase();
+  if (plan.price_cents === 0) return "FREE";
+  if (plan.name.includes("专业") || plan.name.toLowerCase().includes("pro")) return "PRO";
+  if (plan.name.includes("企业") || plan.name.toLowerCase().includes("enterprise")) return "ENT";
+  return "PLAN";
+}
+
 export function AppCore() {
   const [currentUser, setCurrentUser] = useState<UserSummary | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -432,6 +442,9 @@ export function AppCore() {
   const formattedRecharge = formatCredits(activeWorkspace?.recharge_balance);
   const formattedGift = formatCredits(activeWorkspace?.gift_balance);
   const formattedRefund = formatCredits(activeWorkspace?.refund_balance);
+  const currentSubscriptionPlan = plans.find((plan) => plan.id === activeWorkspace?.plan_id && !plan.is_points_package)
+    ?? (!activeWorkspace?.plan_id ? plans.find((plan) => !plan.is_points_package && plan.price_cents === 0) : undefined);
+  const currentPlanLabel = planBadgeLabel(currentSubscriptionPlan);
 
   const currentRole = useMemo(() => {
     if (!currentUser || !activeWorkspace) return null;
@@ -1009,33 +1022,20 @@ export function AppCore() {
         <div className="header-right">
 
           
-          {/* 文档 按钮 */}
+          {/* 文档入口 */}
           <button 
             type="button" 
-            className="btn-publish-project"
+            className="icon-btn-item"
             onClick={() => {
               alert("文档中心功能即将开放，敬请期待！");
             }}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
+            title="文档中心"
           >
-            <FileText size={14} />
-            <span>文档</span>
+            <FileText size={18} />
           </button>
 
           {currentUser ? (
             <>
-              {/* 系统后台入口（仅管理员，且不在桌面端显示） */}
-              {currentUser.is_platform_admin && !(typeof window !== "undefined" && (window as any).go) && (
-                <button
-                  type="button"
-                  className="btn-admin-entrance"
-                  onClick={() => handleViewChange("admin")}
-                  title="进入系统管理后台"
-                >
-                  后台管理
-                </button>
-              )}
-              
               {/* 消息与任务图标 */}
               <div className="header-icon-actions">
                 <button type="button" className="icon-btn-item" title="消息通知" onClick={() => alert("暂无新通知")}>
@@ -1046,7 +1046,7 @@ export function AppCore() {
                 </button>
               </div>
               
-              {/* 用户头像与菜单（物理合并 PRO 算力余额胶囊） */}
+              {/* 用户头像与菜单（物理合并套餐等级与算力余额胶囊） */}
               <div className="user-profile-menu-container" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div 
                   className="pro-credits-badge" 
@@ -1054,7 +1054,7 @@ export function AppCore() {
                   onClick={() => handleViewChange("credits")}
                   title="点击快捷进入点数与套餐充值中心"
                 >
-                  <span className="pro-label">PRO</span>
+                  <span className="pro-label">{currentPlanLabel}</span>
                   <span className="credits-val">{formattedCredits} 积分</span>
                 </div>
                 <button
@@ -1101,6 +1101,20 @@ export function AppCore() {
                       <Coins size={14} />
                       <span>点数中心</span>
                     </button>
+
+                    {currentUser.is_platform_admin && !(typeof window !== "undefined" && (window as any).go) && (
+                      <button
+                        className="dropdown-item admin"
+                        type="button"
+                        onClick={() => {
+                          setIsHeaderUserDropdownOpen(false);
+                          handleViewChange("admin");
+                        }}
+                      >
+                        <Settings size={14} />
+                        <span>后台管理</span>
+                      </button>
+                    )}
 
                     <div className="dropdown-divider" />
 

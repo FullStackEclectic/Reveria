@@ -59,6 +59,17 @@ func InitDatabase() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
+	// 针对 SQLite 优化并发读写性能，防止在并发事务中发生 "database is locked (SQLITE_BUSY)" 报错
+	if dbType == "sqlite" {
+		sqlDB, err := DB.DB()
+		if err == nil {
+			sqlDB.SetMaxOpenConns(1)
+			_, _ = sqlDB.Exec("PRAGMA journal_mode=WAL;")
+			_, _ = sqlDB.Exec("PRAGMA busy_timeout=5000;")
+			log.Println("SQLite 数据库连接已限制 max_open_conns=1 并启用 WAL 模式")
+		}
+	}
+
 	log.Println("数据库连接成功，开始自动迁移表结构...")
 	AutoMigrate()
 }

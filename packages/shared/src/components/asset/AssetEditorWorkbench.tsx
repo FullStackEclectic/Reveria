@@ -292,7 +292,7 @@ export function AssetEditorWorkbench({
             <ArrowLeft size={16} />
           </button>
           <div className="breadcrumb-path">
-            <span className="proj-name">📸 批量照片精修</span>
+            <span className="proj-name">批量照片精修</span>
             <span className="separator">&gt;</span>
             <span className="file-name" title={title || "导入图片"}>{title || "未导入图片"}</span>
           </div>
@@ -576,7 +576,7 @@ export function AssetEditorWorkbench({
                     <img src={assetUrl(thumbUrl)} alt={assetTitle(item)} loading="lazy" />
                     <span className="index-badge">{projectAssets.indexOf(item) + 1}</span>
                     {item.selection_status === "approved" && (
-                      <span className="approved-icon">✓</span>
+                      <span className="approved-icon"><Check size={10} /></span>
                     )}
                   </div>
                   <div className="metadata-box">

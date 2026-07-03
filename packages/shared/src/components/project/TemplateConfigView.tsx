@@ -19,6 +19,9 @@ interface TemplateConfigViewProps {
   setAdvParams: (val: AIAdvancedParams) => void;
   handleStartGeneration: () => void;
   projectAssets: AssetSummary[];
+  selectedModelId: string;
+  setSelectedModelId: (val: string) => void;
+  availableModels: any[];
 }
 
 export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
@@ -35,7 +38,10 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
   advParams,
   setAdvParams,
   handleStartGeneration,
-  projectAssets
+  projectAssets,
+  selectedModelId,
+  setSelectedModelId,
+  availableModels
 }) => {
   const [isRefSelectorOpen, setIsRefSelectorOpen] = React.useState(false);
 
@@ -97,7 +103,10 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
         >
           <Sparkles size={12} style={{ color: "var(--rv-color-primary)" }} />
           <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-primary)" }}>
-            {activeTemplate.model_id ? `模型：${activeTemplate.model_id}` : "模型：默认自动路由"}
+            {(() => {
+              const matched = availableModels.find((m: any) => m.id === selectedModelId);
+              return matched ? `模型：${matched.display_name}` : `模型：${selectedModelId || "默认自动路由"}`;
+            })()}
           </span>
         </div>
       </div>
@@ -105,6 +114,36 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
       {/* 右栏：参数配置与立即生成 */}
       <div style={{ display: "flex", flexDirection: "column", gap: "14px", height: "100%", overflowY: "auto", paddingRight: "8px", position: "relative" }}>
         
+        {/* 模型选择下拉框 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>选择生成算力模型</span>
+          <select
+            value={selectedModelId}
+            onChange={(e) => setSelectedModelId(e.target.value)}
+            style={{
+              width: "100%",
+              height: "36px",
+              background: "var(--rv-color-bg-sidebar)",
+              border: "1px solid var(--rv-color-border-thin)",
+              color: "var(--rv-color-text-main)",
+              borderRadius: "var(--rv-radius-xs)",
+              padding: "0 10px",
+              fontSize: "12px",
+              outline: "none",
+              cursor: "pointer"
+            }}
+          >
+            {availableModels.map((m: any) => (
+              <option key={m.id} value={m.id}>
+                {m.display_name} ({m.name})
+              </option>
+            ))}
+            {availableModels.length === 0 && (
+              <option value={selectedModelId}>{selectedModelId || "默认智能路由"}</option>
+            )}
+          </select>
+        </div>
+
         {/* 正向提示词 */}
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>提示词参数微调</span>
@@ -161,104 +200,139 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
 
         {/* 参考图上传区 */}
         {activeTemplate.need_image && activeTemplate.need_image > 0 ? (() => {
-          // 智能提取所选的宽高比例
-          const targetW = advParams?.width || 1024;
-          const targetH = advParams?.height || 1024;
-          const ratioVal = targetW / targetH;
-
-          // 限制最大显示边界，使上传框完美契合选定的图片宽高比
-          let boxWidth = 240;
-          let boxHeight = 240;
-          if (ratioVal === 1) {
-            boxWidth = 140;
-            boxHeight = 140;
-          } else if (ratioVal > 1) {
-            boxWidth = 240;
-            boxHeight = Math.round(240 / ratioVal);
-          } else {
-            boxHeight = 160;
-            boxWidth = Math.round(160 * ratioVal);
-          }
+          const boxWidth = 150;
+          const boxHeight = 150;
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>
                 参考照片 (需要 {activeTemplate.need_image} 张)
               </span>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  width: `${boxWidth}px`,
-                  height: `${boxHeight}px`,
-                  borderRadius: "var(--rv-radius-xs)",
-                  border: "2px dashed var(--rv-color-border-thin)",
-                  background: "var(--rv-color-bg-sidebar)",
-                  cursor: "pointer",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "4px",
-                  transition: "all 0.2s",
-                  position: "relative",
-                  overflow: "hidden"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--rv-color-primary)";
-                  e.currentTarget.style.background = "var(--rv-color-primary-light)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--rv-color-border-thin)";
-                  e.currentTarget.style.background = "var(--rv-color-bg-sidebar)";
+              <div 
+                style={{ 
+                  display: "flex", 
+                  justifyContent: "center", 
+                  alignItems: "center", 
+                  padding: "16px 0", 
+                  background: "var(--rv-color-bg-sidebar)", 
+                  borderRadius: "var(--rv-radius-xs)", 
+                  border: "1px dashed var(--rv-color-border-thin)",
+                  width: "100%",
+                  boxSizing: "border-box"
                 }}
               >
-                {isUploading ? (
-                  <div style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold" }}>上传中...</div>
-                ) : uploadedImages.length > 0 ? (
-                  <>
-                    <img
-                      src={assetUrl(uploadedImages[0])}
-                      alt="参考图"
-                      style={{ width: "100%", height: "100%", objectFit: "contain", background: "#f8fafc" }}
-                    />
-                    <div style={{ position: "absolute", bottom: "4px", right: "4px", background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: "2px", fontSize: "9px" }}>
-                      更换图片
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={16} style={{ color: "var(--rv-color-text-muted)" }} />
-                    <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>点击上传参考照片</span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleUploadImage}
-                  accept="image/*"
-                  style={{ display: "none" }}
-                />
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    width: `${boxWidth}px`,
+                    height: `${boxHeight}px`,
+                    borderRadius: "var(--rv-radius-xs)",
+                    border: "1.5px dashed rgba(15, 118, 110, 0.25)",
+                    background: "#ffffff",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                    position: "relative",
+                    overflow: "hidden",
+                    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.02)"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "var(--rv-color-primary)";
+                    e.currentTarget.style.background = "var(--rv-color-primary-light)";
+                    e.currentTarget.style.transform = "scale(1.02)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(15, 118, 110, 0.25)";
+                    e.currentTarget.style.background = "#ffffff";
+                    e.currentTarget.style.transform = "scale(1)";
+                  }}
+                >
+                  {isUploading ? (
+                    <div style={{ fontSize: "11px", color: "var(--rv-color-primary)", fontWeight: "bold" }}>上传中...</div>
+                  ) : uploadedImages.length > 0 ? (
+                    <>
+                      <img
+                        src={assetUrl(uploadedImages[0])}
+                        alt="参考图"
+                        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#ffffff" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUploadedImages([]);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: "6px",
+                          right: "6px",
+                          background: "rgba(0,0,0,0.5)",
+                          border: 0,
+                          borderRadius: "100px",
+                          width: "18px",
+                          height: "18px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#ffffff",
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.9)"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.5)"}
+                      >
+                        <X size={10} />
+                      </button>
+                      <div style={{ position: "absolute", bottom: "4px", right: "4px", background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: "2px", fontSize: "9px" }}>
+                        更换图片
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} style={{ color: "var(--rv-color-text-muted)" }} />
+                      <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>点击上传参考照片</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleUploadImage}
+                    accept="image/*"
+                    style={{ display: "none" }}
+                  />
+                </div>
               </div>
 
               {/* 上传与素材库双选按钮组 */}
-              <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
+              <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   style={{
                     flex: 1,
-                    padding: "6px 12px",
-                    background: "rgba(0, 0, 0, 0.02)",
+                    padding: "7px 12px",
+                    background: "#ffffff",
                     border: "1px solid var(--rv-color-border-thin)",
                     borderRadius: "var(--rv-radius-xs)",
                     fontSize: "11px",
                     cursor: "pointer",
                     fontWeight: "700",
                     color: "var(--rv-color-text-main)",
-                    transition: "all 0.2s"
+                    transition: "all 0.2s",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.02)"
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.05)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.02)"}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--rv-color-bg-sidebar)";
+                    e.currentTarget.style.borderColor = "rgba(0,0,0,0.15)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#ffffff";
+                    e.currentTarget.style.borderColor = "var(--rv-color-border-thin)";
+                  }}
                 >
                   本地上传
                 </button>
@@ -267,18 +341,19 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
                   onClick={() => setIsRefSelectorOpen(true)}
                   style={{
                     flex: 1,
-                    padding: "6px 12px",
-                    background: "var(--rv-color-primary-light)",
-                    border: "1px solid rgba(15, 118, 110, 0.15)",
+                    padding: "7px 12px",
+                    background: "var(--rv-color-primary)",
+                    border: "1px solid var(--rv-color-primary)",
                     borderRadius: "var(--rv-radius-xs)",
                     fontSize: "11px",
                     cursor: "pointer",
                     fontWeight: "700",
-                    color: "var(--rv-color-primary)",
-                    transition: "all 0.2s"
+                    color: "#ffffff",
+                    transition: "all 0.2s",
+                    boxShadow: "0 1px 3px rgba(15, 118, 110, 0.15)"
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.15)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "var(--rv-color-primary-light)"}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "hsl(170, 80%, 20%)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "var(--rv-color-primary)"}
                 >
                   选择项目素材库
                 </button>
@@ -398,7 +473,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
                     key={asset.id}
                     className="gen-ref-selector-item"
                     onClick={() => {
-                      setUploadedImages([asset.thumbnail_url || asset.file_url || ""]);
+                      setUploadedImages([asset.file_url || asset.thumbnail_url || ""]);
                       setIsRefSelectorOpen(false);
                     }}
                     title={assetTitle(asset) || "素材"}

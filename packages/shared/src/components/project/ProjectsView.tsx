@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Plus, FolderKanban, Search, Sparkles, Clock, Trash2 } from "lucide-react";
+import { Plus, FolderKanban, Search, Sparkles, Clock, Trash2, Camera } from "lucide-react";
 import "./ProjectsView.css";
 import { ProjectCard } from "./ProjectCard";
 
@@ -267,6 +267,9 @@ export function ProjectsView({
                 boxShadow: filterType === "all" ? "0 2px 6px rgba(0,0,0,0.06)" : "none",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
               }}
             >
               全部项目 ({projects.length})
@@ -285,9 +288,12 @@ export function ProjectsView({
                 boxShadow: filterType === "ai_canvas" ? "0 2px 6px rgba(99, 102, 241, 0.08)" : "none",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
               }}
             >
-              🎨 AI创意画布 ({projects.filter(p => p.project_type !== "retouch").length})
+              <Sparkles size={14} /> AI创意画布 ({projects.filter(p => p.project_type !== "retouch").length})
             </button>
             <button
               type="button"
@@ -305,7 +311,7 @@ export function ProjectsView({
                 transition: "all 0.15s ease",
               }}
             >
-              📸 批量照片精修 ({projects.filter(p => p.project_type === "retouch").length})
+              <Camera size={14} /> 批量照片精修 ({projects.filter(p => p.project_type === "retouch").length})
             </button>
           </div>
 

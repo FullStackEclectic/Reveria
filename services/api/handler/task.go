@@ -157,10 +157,12 @@ func CreateTask(c *gin.Context) {
 	// 动态关联管理后台设置的模型定价 (CreditsCost)
 	if req.SelectedModel != "" {
 		var m model.Model
-		if err := database.DB.Where("id = ?", req.SelectedModel).First(&m).Error; err == nil {
-			if m.CreditsCost > 0 {
-				estCredits = int64(m.CreditsCost + 0.5)
-			}
+		if err := database.DB.Where("id = ?", req.SelectedModel).First(&m).Error; err != nil {
+			// 兜底匹配：若是模板推荐的模型ID没有带 provider_uuid 前缀，则使用 name 进行匹配
+			_ = database.DB.Where("name = ? AND enabled = true", req.SelectedModel).First(&m).Error
+		}
+		if m.CreditsCost > 0 {
+			estCredits = int64(m.CreditsCost + 0.5)
 		}
 	}
 
@@ -304,9 +306,11 @@ func GetTaskDetail(c *gin.Context) {
 // callUpstreamGateway 发包调用 12ZX-AI
 func callUpstreamGateway(task model.GenerationTask, settings model.ClientSettings) {
 	// 更新任务状态为 running
+	progressJSON := `{"progress_text":"已提交请求，等待 AI 响应..."}`
 	database.DB.Model(&task).Updates(map[string]any{
-		"status":     "running",
-		"started_at": time.Now(),
+		"status":         "running",
+		"started_at":     time.Now(),
+		"output_payload": &progressJSON,
 	})
 
 	// 准备发包给网关
@@ -322,22 +326,26 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		settings.UpstreamAPIURL = settings.BridgeMainStationURL
 		log.Printf("[callUpstreamGateway] Bridge Mode: Model=%s, URL=%s", gatewayModelName, settings.UpstreamAPIURL)
 	} else {
+		// 自营模式下强制锁定使用 12ZX 官方网关地址
+		settings.UpstreamAPIURL = "https://ai.12zx.net"
+
 		if task.SelectedModel != nil {
 			var dbModel model.Model
-			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err == nil {
+			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err != nil {
+				// 兜底匹配：若是模板推荐的模型ID没有带 provider_uuid 前缀，则使用 name 进行匹配
+				_ = database.DB.Where("name = ? AND enabled = true", *task.SelectedModel).First(&dbModel).Error
+			}
+			if dbModel.Name != "" {
 				gatewayModelName = dbModel.Name
 				log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
 
-				// 读取模型对应的 Provider，覆盖 settings 的 API 密钥和地址以做多渠道动态分发
+				// 读取模型对应的 Provider，仅覆盖 settings 的 API 密钥
 				var provider model.Provider
 				if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
-					if provider.ApiURL != "" {
-						settings.UpstreamAPIURL = provider.ApiURL
-					}
 					if provider.ApiKey != "" {
 						settings.UpstreamAPIKey = provider.ApiKey
 					}
-					log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
+					log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, locked URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
 				} else {
 					log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
 				}
@@ -500,6 +508,14 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 			sizeStr = "1024x1024"
 		}
 
+		imageCount := 1
+		if ic, ok := payload["image_count"].(float64); ok && ic > 0 {
+			imageCount = int(ic)
+		} else if icVal, ok := payload["image_count"].(int); ok && icVal > 0 {
+			imageCount = icVal
+		}
+		imageCountStr := fmt.Sprintf("%d", imageCount)
+
 		refImg, _ := payload["ref_image_url"].(string)
 		if refImg != "" {
 			// 【图生图分支】调用 /v1/images/edits，使用 multipart/form-data 格式
@@ -563,7 +579,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 
 			_ = bodyWriter.WriteField("prompt", prompt)
 			_ = bodyWriter.WriteField("model", gatewayModelName)
-			_ = bodyWriter.WriteField("n", "1")
+			_ = bodyWriter.WriteField("n", imageCountStr)
 			if sizeStr != "" {
 				_ = bodyWriter.WriteField("size", sizeStr)
 			}
@@ -577,7 +593,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 			gatewayReq := map[string]any{
 				"model":  gatewayModelName,
 				"prompt": prompt,
-				"n":      1,
+				"n":      imageCount,
 				"size":   sizeStr,
 			}
 			reqBody, _ = json.Marshal(gatewayReq)
@@ -647,12 +663,18 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	// 12ZX-AI 文生图通常同步返回图片链接，视频通常是异步任务返回 ID
 	// 针对同步返回（例如 DALLE 生图直接返回数据）：
 	if dataList, ok := responseData["data"].([]any); ok && len(dataList) > 0 {
-		if firstItem, ok := dataList[0].(map[string]any); ok {
-			if url, ok := firstItem["url"].(string); ok {
-				// 同步完成！直接进行下载和结算
-				handleTaskSuccess(task, url)
-				return
+		var urls []string
+		for _, item := range dataList {
+			if m, ok := item.(map[string]any); ok {
+				if url, ok := m["url"].(string); ok && url != "" {
+					urls = append(urls, url)
+				}
 			}
+		}
+		if len(urls) > 0 {
+			// 同步完成！直接进行下载和结算
+			handleTaskSuccess(task, urls)
+			return
 		}
 	}
 
@@ -717,16 +739,20 @@ func pollUpstreamTask(task model.GenerationTask, upstreamTaskID string, settings
 			status, _ := taskData["status"].(string)
 			// 12ZX-AI 状态一般是 success / failed / processing
 			if status == "success" || status == "succeeded" {
-				var url string
-				if resURL, ok := taskData["result_url"].(string); ok {
-					url = resURL
+				var urls []string
+				if resURL, ok := taskData["result_url"].(string); ok && resURL != "" {
+					urls = append(urls, resURL)
 				} else if dataList, ok := taskData["data"].([]any); ok && len(dataList) > 0 {
-					if firstItem, ok := dataList[0].(map[string]any); ok {
-						url, _ = firstItem["url"].(string)
+					for _, item := range dataList {
+						if m, ok := item.(map[string]any); ok {
+							if u, _ := m["url"].(string); u != "" {
+								urls = append(urls, u)
+							}
+						}
 					}
 				}
-				if url != "" {
-					handleTaskSuccess(task, url)
+				if len(urls) > 0 {
+					handleTaskSuccess(task, urls)
 					return
 				}
 			} else if status == "failed" || status == "fail" {
@@ -736,125 +762,154 @@ func pollUpstreamTask(task model.GenerationTask, upstreamTaskID string, settings
 				}
 				handleTaskFailure(task.ID, "GATEWAY_TASK_FAILED", "上游厂商生成失败: "+reason)
 				return
+			} else {
+				// processing 或者 running 状态，写回实时进度
+				progressText := "上游正在努力渲染多图场景中，请稍候..."
+				if pct, ok := taskData["progress"].(float64); ok {
+					progressText = fmt.Sprintf("AI 正在绘制画面 (进度 %.0f%%)...", pct)
+				} else if pctStr, ok := taskData["progress"].(string); ok {
+					progressText = fmt.Sprintf("AI 正在绘制画面 (进度 %s)...", pctStr)
+				}
+				progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
+				database.DB.Model(&task).Update("output_payload", progressJSON)
 			}
 		}
 	}
 }
 
 // handleTaskSuccess 任务成功，下载素材并退还剩余积分
-func handleTaskSuccess(task model.GenerationTask, upstreamURL string) {
+func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	log.Printf("[TaskSucceeded] 任务 %s 生成成功，开始本地化下载...", task.ID)
 
-	// 1. 下载原始大文件至本地存储
 	downloadClient := &http.Client{
 		Transport: insecureTransport,
 		Timeout:   60 * time.Second,
 	}
-	resp, err := downloadClient.Get(upstreamURL)
-	var localURL string
-	var localThumbURL *string
-	var metaStr string
 
-	if err == nil && resp.StatusCode == http.StatusOK {
+	var metaStr string
+	var lastMetaStr string
+
+	totalCount := len(upstreamURLs)
+	// 循环下载每一个生成的图片，落地并存入资产库
+	for idx, url := range upstreamURLs {
+		if url == "" {
+			continue
+		}
+
+		// 每次下载，向 DB 写入当前的下载落地进度，让前端能实时呈现 (已完成 1/6)
+		progressText := fmt.Sprintf("AI 画面生成完毕，正在下载本地化 (已完成 %d/%d)...", idx, totalCount)
+		progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
+		database.DB.Model(&task).Update("output_payload", progressJSON)
+		resp, err := downloadClient.Get(url)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			continue
+		}
+
 		fileBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if err == nil {
-			storageDir := getStorageDir()
-			_ = os.MkdirAll(storageDir, 0755)
-
-			ext := ".jpg"
-			if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
-				ext = ".mp4"
-			}
-			storedName := uuid.New().String() + ext
-			storagePath := filepath.Join(storageDir, storedName)
-			_ = os.WriteFile(storagePath, fileBytes, 0644)
-
-			localURL = "/api/files/" + storedName
-
-			// 2. 生成缩略图
-			if ext == ".jpg" {
-				thumbBytes, err := resizeImage(fileBytes, 320)
-				if err == nil {
-					thumbName := uuid.New().String() + "-thumb.jpg"
-					thumbPath := filepath.Join(storageDir, thumbName)
-					if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
-						u := "/api/files/" + thumbName
-						localThumbURL = &u
-					}
-				}
-			}
-
-			// 读取任务输入参数，提取 prompt 等元信息
-			var prompt string
-			var paramSize string
-			var quality string
-			var modelName string
-
-			var inputPayload map[string]any
-			if json.Unmarshal([]byte(task.InputPayload), &inputPayload) == nil {
-				prompt, _ = inputPayload["prompt"].(string)
-				paramSize, _ = inputPayload["size"].(string)
-				quality, _ = inputPayload["quality"].(string)
-			}
-
-			if task.SelectedModel != nil {
-				var dbModel model.Model
-				if database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error == nil {
-					modelName = dbModel.DisplayName
-					if modelName == "" {
-						modelName = dbModel.Name
-					}
-				} else {
-					modelName = *task.SelectedModel
-				}
-			}
-
-			mimeType := "image/jpeg"
-			if ext == ".mp4" {
-				mimeType = "video/mp4"
-			}
-
-			refImgURL, _ := inputPayload["ref_image_url"].(string)
-
-			metaMap := map[string]any{
-				"task_id":       task.ID.String(),
-				"file_name":     storedName,
-				"url":           localURL,
-				"title":         "AI 创意生成结果",
-				"size":          len(fileBytes),
-				"mime_type":     mimeType,
-				"prompt":        prompt,
-				"size_str":      paramSize,
-				"dimensions":    paramSize,
-				"quality":       quality,
-				"model":         modelName,
-				"ref_image_url": refImgURL,
-			}
-			metaBytes, _ := json.Marshal(metaMap)
-			metaStr = string(metaBytes)
-
-			// 3. 构建 Asset 数据模型并写入数据库
-			asset := model.Asset{
-				ID:           uuid.New(),
-				WorkspaceID:  task.WorkspaceID,
-				ProjectID:    task.ProjectID,
-				AssetType:    assetTypeFromExt(ext),
-				Source:       "generated",
-				FileURL:      localURL,
-				ThumbnailURL: localThumbURL,
-				Metadata:     &metaStr,
-				CreatedAt:    time.Now(),
-			}
-			_ = database.DB.Create(&asset)
+		if err != nil {
+			continue
 		}
+
+		storageDir := getStorageDir()
+		_ = os.MkdirAll(storageDir, 0755)
+
+		ext := ".jpg"
+		if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
+			ext = ".mp4"
+		}
+		storedName := uuid.New().String() + ext
+		storagePath := filepath.Join(storageDir, storedName)
+		_ = os.WriteFile(storagePath, fileBytes, 0644)
+
+		localURL := "/api/files/" + storedName
+
+		var localThumbURL *string
+		if ext == ".jpg" {
+			thumbBytes, err := resizeImage(fileBytes, 320)
+			if err == nil {
+				thumbName := uuid.New().String() + "-thumb.jpg"
+				thumbPath := filepath.Join(storageDir, thumbName)
+				if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+					u := "/api/files/" + thumbName
+					localThumbURL = &u
+				}
+			}
+		}
+
+		// 读取任务输入参数，提取 prompt 等元信息
+		var prompt string
+		var paramSize string
+		var quality string
+		var modelName string
+
+		var inputPayload map[string]any
+		if json.Unmarshal([]byte(task.InputPayload), &inputPayload) == nil {
+			prompt, _ = inputPayload["prompt"].(string)
+			paramSize, _ = inputPayload["size"].(string)
+			quality, _ = inputPayload["quality"].(string)
+		}
+
+		if task.SelectedModel != nil {
+			var dbModel model.Model
+			if database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error == nil {
+				modelName = dbModel.DisplayName
+				if modelName == "" {
+					modelName = dbModel.Name
+				}
+			} else {
+				modelName = *task.SelectedModel
+			}
+		}
+
+		mimeType := "image/jpeg"
+		if ext == ".mp4" {
+			mimeType = "video/mp4"
+		}
+
+		refImgURL, _ := inputPayload["ref_image_url"].(string)
+
+		metaMap := map[string]any{
+			"task_id":       task.ID.String(),
+			"file_name":     storedName,
+			"url":           localURL,
+			"title":         "AI 创意生成结果",
+			"size":          len(fileBytes),
+			"mime_type":     mimeType,
+			"prompt":        prompt,
+			"size_str":      paramSize,
+			"dimensions":    paramSize,
+			"quality":       quality,
+			"model":         modelName,
+			"ref_image_url": refImgURL,
+		}
+		metaBytes, _ := json.Marshal(metaMap)
+		metaStr = string(metaBytes)
+		lastMetaStr = metaStr
+
+		// 构建 Asset 数据模型并写入数据库
+		asset := model.Asset{
+			ID:           uuid.New(),
+			WorkspaceID:  task.WorkspaceID,
+			ProjectID:    task.ProjectID,
+			AssetType:    assetTypeFromExt(ext),
+			Source:       "generated",
+			FileURL:      localURL,
+			ThumbnailURL: localThumbURL,
+			Metadata:     &metaStr,
+			CreatedAt:    time.Now(),
+		}
+		_ = database.DB.Create(&asset)
 	}
 
 	// 4. 积分正式扣减结算事务
 	tx := database.DB.Begin()
 
 	task.Status = "succeeded"
-	task.OutputPayload = &metaStr
+	task.OutputPayload = &lastMetaStr
 	task.CompletedAt = ptrTime(time.Now())
 
 	// 扣减结算

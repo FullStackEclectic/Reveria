@@ -3,6 +3,7 @@ import { AssetSummary, ProjectSummary } from "../../types";
 import { PageFrame } from "../common/PageFrame";
 import { assetUrl } from "../../utils"; // 核心：引入静态资源全路径转换函数
 import "./HistoryView.css";
+import { Check, Image, MessageCircle, Video } from "lucide-react";
 
 interface HistoryViewProps {
   assets: AssetSummary[];
@@ -254,9 +255,12 @@ export function HistoryView({
           fontSize: "12px",
           fontWeight: "700",
           zIndex: 99999,
-          boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)"
+          boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px"
         }}>
-          ✓ {copyFeedback}
+          <Check size={14} /> {copyFeedback}
         </div>
       )}
 
@@ -278,22 +282,22 @@ export function HistoryView({
         </div>
       )}
 
-      {/* 📊 数据指标看板 */}
+      {/* 数据指标看板 */}
       <section className="metrics-container" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))", marginBottom: "20px" }}>
         <div className="credits-metric-card" style={{ cursor: "pointer", borderLeft: "4px solid #6366f1" }} onClick={() => setActiveTab("all")}>
-          <span className="metric-label">📊 连续对话总笔数</span>
+          <span className="metric-label">连续对话总笔数</span>
           <span className="metric-value">{stats.all} 组对话</span>
         </div>
         <div className="credits-metric-card" style={{ cursor: "pointer", borderLeft: "4px solid #f97316" }} onClick={() => setActiveTab("text")}>
-          <span className="metric-label">💬 文本/多轮问答</span>
+          <span className="metric-label">文本/多轮问答</span>
           <span className="metric-value">{stats.text} 组日志</span>
         </div>
         <div className="credits-metric-card" style={{ cursor: "pointer", borderLeft: "4px solid #3b82f6" }} onClick={() => setActiveTab("image")}>
-          <span className="metric-label">🎨 图像设计绘画组</span>
+          <span className="metric-label">图像设计绘画组</span>
           <span className="metric-value">{stats.image} 组日志</span>
         </div>
         <div className="credits-metric-card" style={{ cursor: "pointer", borderLeft: "4px solid #a855f7" }} onClick={() => setActiveTab("video")}>
-          <span className="metric-label">🎬 视频分镜头生成</span>
+          <span className="metric-label">视频分镜头生成</span>
           <span className="metric-value">{stats.video} 组日志</span>
         </div>
       </section>
@@ -315,21 +319,21 @@ export function HistoryView({
             className={`credits-tab-capsule ${activeTab === "text" ? "active" : ""}`}
             onClick={() => setActiveTab("text")}
           >
-            💬 文本对话 ({stats.text})
+            文本对话 ({stats.text})
           </button>
           <button
             type="button"
             className={`credits-tab-capsule ${activeTab === "image" ? "active" : ""}`}
             onClick={() => setActiveTab("image")}
           >
-            🎨 图片生成 ({stats.image})
+            图片生成 ({stats.image})
           </button>
           <button
             type="button"
             className={`credits-tab-capsule ${activeTab === "video" ? "active" : ""}`}
             onClick={() => setActiveTab("video")}
           >
-            🎬 视频生成 ({stats.video})
+            视频生成 ({stats.video})
           </button>
         </div>
 
@@ -345,7 +349,7 @@ export function HistoryView({
           <div style={{ flex: "1 1 240px" }}>
             <input
               type="text"
-              placeholder="🔍 检索对话 Prompt 提示词、流水ID、模型名..."
+              placeholder="检索对话 Prompt 提示词、流水ID、模型名..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -417,7 +421,7 @@ export function HistoryView({
         {/* 主 Timeline 列表 */}
         {paginatedGroups.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 24px", color: "#a8a29e" }}>
-            <div style={{ fontSize: "32px", marginBottom: "12px" }}>💬</div>
+            <MessageCircle size={32} style={{ marginBottom: "12px", color: "#a8a29e" }} />
             <div style={{ fontSize: "13px" }}>没有符合过滤条件的生成对话历史</div>
           </div>
         ) : (
@@ -456,7 +460,7 @@ export function HistoryView({
                       borderRadius: "8px",
                       display: "flex", justifyContent: "center", alignItems: "center"
                     }}>
-                      {isGroupText ? "💬" : isGroupVideo ? "🎬" : "🎨"}
+                      {isGroupText ? <MessageCircle size={17} /> : isGroupVideo ? <Video size={17} /> : <Image size={17} />}
                     </span>
                     <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: "16px", overflow: "hidden" }}>
                       <span style={{ fontSize: "11px", fontWeight: "700", color: "#6366f1", background: "rgba(99, 102, 241, 0.08)", padding: "2px 6px", borderRadius: "4px", flexShrink: 0 }}>
@@ -545,7 +549,7 @@ export function HistoryView({
 
       </div>
 
-      {/* 🔮 专属多轮生成对话详情 Modal 弹窗 */}
+      {/* 专属多轮生成对话详情 Modal 弹窗 */}
       {selectedTaskGroup && (
         <div style={{
           position: "fixed",
@@ -594,7 +598,7 @@ export function HistoryView({
                   </span>
                 </div>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#1c1917", whiteSpace: "pre-wrap", lineHeight: "1.4" }}>
-                  💬 多轮 AI 创作会话审计记录
+                  多轮 AI 创作会话审计记录
                 </h3>
               </div>
               <button
@@ -615,7 +619,7 @@ export function HistoryView({
                   marginLeft: "16px"
                 }}
               >
-                ✕
+                ×
               </button>
             </div>
 
@@ -732,14 +736,14 @@ export function HistoryView({
                                     onClick={() => isVid ? null : setPreviewImageUrl(assetUrl(fileUrl))}
                                     style={{ padding: "4px 8px", fontSize: "11px", color: "#fff", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "4px", cursor: isVid ? "default" : "pointer" }}
                                   >
-                                    {isVid ? "🎥 视频文件" : "🔍 放大原图"}
+                                    {isVid ? "视频文件" : "放大原图"}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleAddToCanvas(subGroup.prompt, assetUrl(fileUrl))}
                                     style={{ padding: "4px 8px", fontSize: "11px", color: "#fff", background: "#4f46e5", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "700" }}
                                   >
-                                    ⚡ 加至画布
+                                    加至画布
                                   </button>
                                 </div>
                               </div>
@@ -781,7 +785,7 @@ export function HistoryView({
                                     onClick={() => handleAddToCanvas(title, content)}
                                     style={{ padding: "2px 8px", fontSize: "11px", cursor: "pointer", border: "none", background: "#4f46e5", color: "#fff", borderRadius: "4px", fontWeight: "700" }}
                                   >
-                                    ⚡ 加至画布
+                                    加至画布
                                   </button>
                                 </div>
                               </div>

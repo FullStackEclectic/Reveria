@@ -58,6 +58,7 @@ export type WorkspaceSummary = {
 export type PlanSummary = {
   id: string;
   name: string;
+  badge_label?: string;
   price_cents: number;
   monthly_credits: number;
   max_members: number;
@@ -445,4 +446,3 @@ export interface PromptTemplate {
   created_at?: string;
   updated_at?: string;
 }
-

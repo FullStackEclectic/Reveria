@@ -185,7 +185,7 @@ export const WorkflowPromptConsole: React.FC<WorkflowPromptConsoleProps> = ({
                           borderRadius: "4px",
                         }}
                       >
-                        📤 上传本地照片
+                        上传本地照片
                       </button>
                       <button
                         type="button"
@@ -208,7 +208,7 @@ export const WorkflowPromptConsole: React.FC<WorkflowPromptConsoleProps> = ({
                           borderRadius: "4px",
                         }}
                       >
-                        📁 从项目素材选择
+                        从项目素材选择
                       </button>
                     </div>
                   )}
@@ -300,7 +300,7 @@ export const WorkflowPromptConsole: React.FC<WorkflowPromptConsoleProps> = ({
               onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
               title={`当前选择模型: ${getAvailableModels().find((m) => m.id === selectedModel)?.display_name || selectedModel}`}
             >
-              🤖
+              AI
             </button>
 
             {isModelDropdownOpen && (

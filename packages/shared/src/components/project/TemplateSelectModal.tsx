@@ -42,6 +42,10 @@ export function TemplateSelectModal({
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
+  // 算力大盘模型列表及当前选中模型 ID
+  const [models, setModels] = useState<any[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
+
   // 前台高阶生成参数微调状态
   const [advParams, setAdvParams] = useState<AIAdvancedParams>({});
 
@@ -49,6 +53,15 @@ export function TemplateSelectModal({
   const [projectAssets, setProjectAssets] = useState<AssetSummary[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 根据当前模板的类型过滤模型
+  const getFilteredModels = (tplType?: string) => {
+    let targetType = "image";
+    if (tplType === "video-generation") targetType = "video";
+    else if (tplType === "text-generation") targetType = "chat";
+    
+    return models.filter(m => m.enabled && m.model_type === targetType);
+  };
 
   // 智能加载当前项目下的所有资产（素材库）以供微调面板选择参考图
   useEffect(() => {
@@ -65,7 +78,7 @@ export function TemplateSelectModal({
             setProjectAssets([]);
           }
         })
-        .catch(() => setProjectAssets([]));
+          .catch(() => setProjectAssets([]));
     }
   }, [projectId]);
 
@@ -86,13 +99,27 @@ export function TemplateSelectModal({
       } else {
         setAdvParams({});
       }
+
+      // 初始化模型选择，如果已导入的模型列表中存在模板推荐的 model_id，则默认选中，否则默认选中第一个可用模型
+      const available = getFilteredModels(activeTemplate.workflow_type);
+      const exactMatch = available.find(
+        (m) => m.id === activeTemplate.model_id || m.name === activeTemplate.model_id
+      );
+      if (exactMatch) {
+        setSelectedModelId(exactMatch.id);
+      } else if (available.length > 0) {
+        setSelectedModelId(available[0].id);
+      } else {
+        setSelectedModelId(activeTemplate.model_id || "");
+      }
     } else {
       setPromptInput("");
       setNegativePromptInput("");
       setUploadedImages([]);
       setAdvParams({});
+      setSelectedModelId("");
     }
-  }, [activeTemplate]);
+  }, [activeTemplate, models]);
 
   useEffect(() => {
     async function loadTemplates() {
@@ -121,6 +148,14 @@ export function TemplateSelectModal({
         );
         if (tplRes.success) {
           setTemplates(tplRes.data);
+        }
+
+        // 加载可用算力模型列表
+        const modelRes = await getJson<{ success: boolean; data: any[] }>(
+          "/api/admin/models"
+        );
+        if (modelRes.success) {
+          setModels(modelRes.data);
         }
       } catch (err) {
         console.error("加载画板模板失败:", err);
@@ -182,7 +217,7 @@ export function TemplateSelectModal({
 
       const asset = await uploadAsset(formData);
       if (asset.file_url || asset.thumbnail_url) {
-        setUploadedImages([asset.thumbnail_url || asset.file_url || ""]);
+        setUploadedImages([asset.file_url || asset.thumbnail_url || ""]);
       }
     } catch (err) {
       console.error("上传参考图失败:", err);
@@ -213,9 +248,10 @@ export function TemplateSelectModal({
       else derivedRatio = "9:16(2k)";
     }
 
-    // 将微调后的所有高级参数重新序列化，回传进临时 template
+    // 将微调后的所有高级参数和选择的模型重新序列化，回传进临时 template
     const finalTemplate: PromptTemplate = {
       ...activeTemplate,
+      model_id: selectedModelId,
       advanced_params: JSON.stringify(advParams),
       default_width: advParams.width || 768,
       default_height: advParams.height || 1152
@@ -358,7 +394,7 @@ export function TemplateSelectModal({
             >
               {(["image-generation", "video-generation", "text-generation"] as const).map((tab) => {
                 const isActive = activeTab === tab;
-                const label = tab === "image-generation" ? "🎨 图像大类" : tab === "video-generation" ? "🎬 视频大类" : "✍️ 文本大类";
+                const label = tab === "image-generation" ? "图像大类" : tab === "video-generation" ? "视频大类" : "文本大类";
                 const tabColorsText = tab === "image-generation" ? "#0f766e" : tab === "video-generation" ? "#4f46e5" : "#d97706";
                 return (
                   <button
@@ -430,6 +466,9 @@ export function TemplateSelectModal({
             setAdvParams={setAdvParams}
             handleStartGeneration={handleStartGeneration}
             projectAssets={projectAssets}
+            selectedModelId={selectedModelId}
+            setSelectedModelId={setSelectedModelId}
+            availableModels={getFilteredModels(activeTemplate.workflow_type)}
           />
         ) : (
           /* 模板分类与列表选择页 */
@@ -526,5 +565,3 @@ export function TemplateSelectModal({
     </div>
   );
 }
-
-

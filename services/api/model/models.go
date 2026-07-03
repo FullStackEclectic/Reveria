@@ -9,17 +9,17 @@ import (
 
 // User 用户表
 type User struct {
-	ID           uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	Email        *string        `gorm:"type:varchar(255);uniqueIndex" json:"email"`
-	Phone        *string        `gorm:"type:varchar(32)" json:"phone"`
-	DisplayName  *string        `gorm:"type:varchar(100)" json:"display_name"`
-	PasswordHash string         `gorm:"type:varchar(255)" json:"-"` // 隐藏密码哈希
-	AvatarURL    *string        `gorm:"type:text" json:"avatar_url"`
+	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	Email           *string        `gorm:"type:varchar(255);uniqueIndex" json:"email"`
+	Phone           *string        `gorm:"type:varchar(32)" json:"phone"`
+	DisplayName     *string        `gorm:"type:varchar(100)" json:"display_name"`
+	PasswordHash    string         `gorm:"type:varchar(255)" json:"-"` // 隐藏密码哈希
+	AvatarURL       *string        `gorm:"type:text" json:"avatar_url"`
 	Status          string         `gorm:"type:varchar(32);default:'active';index" json:"status"`
 	IsPlatformAdmin bool           `gorm:"default:false;not null" json:"is_platform_admin"` // 平台超管标记
 	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Workspace 工作区表
@@ -64,20 +64,20 @@ type Customer struct {
 
 // BrandKit 品牌库表
 type BrandKit struct {
-	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
-	CustomerID      *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
-	Name            string     `gorm:"type:varchar(160);not null" json:"name"`
-	LogoAssetID     *uuid.UUID `gorm:"type:uuid" json:"logo_asset_id"`
-	Colors          *string    `gorm:"type:jsonb" json:"colors"`
-	Fonts           *string    `gorm:"type:jsonb" json:"fonts"`
-	ToneOfVoice     *string    `gorm:"type:text" json:"tone_of_voice"`
-	VisualKeywords  *string    `gorm:"type:jsonb" json:"visual_keywords"`
-	ForbiddenWords  *string    `gorm:"type:jsonb" json:"forbidden_words"`
-	StylePrompt     *string    `gorm:"type:text" json:"style_prompt"`
-	Notes           *string    `gorm:"type:text" json:"notes"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	WorkspaceID    uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
+	CustomerID     *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	Name           string     `gorm:"type:varchar(160);not null" json:"name"`
+	LogoAssetID    *uuid.UUID `gorm:"type:uuid" json:"logo_asset_id"`
+	Colors         *string    `gorm:"type:jsonb" json:"colors"`
+	Fonts          *string    `gorm:"type:jsonb" json:"fonts"`
+	ToneOfVoice    *string    `gorm:"type:text" json:"tone_of_voice"`
+	VisualKeywords *string    `gorm:"type:jsonb" json:"visual_keywords"`
+	ForbiddenWords *string    `gorm:"type:jsonb" json:"forbidden_words"`
+	StylePrompt    *string    `gorm:"type:text" json:"style_prompt"`
+	Notes          *string    `gorm:"type:text" json:"notes"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // Project 项目表
@@ -109,7 +109,7 @@ type Asset struct {
 	AssetType       string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
 	Source          string     `gorm:"type:varchar(32);not null" json:"source"`
 	FileURL         string     `gorm:"type:text;not null" json:"file_url"`
-	LocalPath       *string    `gorm:"type:text" json:"local_path"`                               // 本地硬盘照片路径（仅客户端有用）
+	LocalPath       *string    `gorm:"type:text" json:"local_path"`                                      // 本地硬盘照片路径（仅客户端有用）
 	SelectionStatus string     `gorm:"type:varchar(32);default:'pending';index" json:"selection_status"` // 客户选片状态：pending / approved / rejected
 	ThumbnailURL    *string    `gorm:"type:text" json:"thumbnail_url"`
 	Metadata        *string    `gorm:"type:jsonb" json:"metadata"`
@@ -204,6 +204,7 @@ type ClientSettings struct {
 type Plan struct {
 	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	Name              string    `gorm:"type:varchar(100);not null" json:"name"`
+	BadgeLabel        string    `gorm:"type:varchar(24);default:'';not null" json:"badge_label"`
 	PriceCents        int64     `gorm:"default:0;not null" json:"price_cents"`
 	MonthlyCredits    int64     `gorm:"default:0;not null" json:"monthly_credits"`
 	MaxMembers        int       `gorm:"default:1;not null" json:"max_members"`
@@ -314,16 +315,16 @@ type Provider struct {
 
 // Model 算力模型表
 type Model struct {
-	ID          string    `gorm:"type:varchar(160);primaryKey" json:"id"`
-	ProviderID  string    `gorm:"type:varchar(80);index" json:"provider_id"`
-	Name        string    `gorm:"type:varchar(160);not null" json:"name"`
-	DisplayName string    `gorm:"type:varchar(160);not null" json:"display_name"`
-	ModelType     string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"` // 模型类型：chat (对话), image (图像), video (视频)
+	ID            string    `gorm:"type:varchar(160);primaryKey" json:"id"`
+	ProviderID    string    `gorm:"type:varchar(80);index" json:"provider_id"`
+	Name          string    `gorm:"type:varchar(160);not null" json:"name"`
+	DisplayName   string    `gorm:"type:varchar(160);not null" json:"display_name"`
+	ModelType     string    `gorm:"type:varchar(32);default:'chat'" json:"model_type"`                   // 模型类型：chat (对话), image (图像), video (视频)
 	BillingMethod string    `gorm:"type:varchar(32);default:'per_token';not null" json:"billing_method"` // 计费方式：per_token (按Token), per_use (按次)
 	Enabled       bool      `gorm:"default:true;not null" json:"enabled"`
-	CreditsCost   float64     `gorm:"type:decimal(10,4);default:0.0" json:"credits_cost"` // 调用定价扣点
-	Tags        string    `gorm:"-" json:"tags,omitempty"`       // 虚拟字段：主站标签资源池
-	CreatedAt   time.Time `json:"created_at"`
+	CreditsCost   float64   `gorm:"type:decimal(10,4);default:0.0" json:"credits_cost"` // 调用定价扣点
+	Tags          string    `gorm:"-" json:"tags,omitempty"`                            // 虚拟字段：主站标签资源池
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // TemplateCategory 模板分类表
@@ -340,14 +341,14 @@ type TemplateCategory struct {
 
 // PromptTemplate 提示词模板表
 type PromptTemplate struct {
-	ID            uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	CategoryID    uuid.UUID      `gorm:"type:uuid;index" json:"category_id"`
-	Title         string         `gorm:"type:varchar(160);not null" json:"title"`
-	Content       string         `gorm:"type:text;not null" json:"content"`
-	DefaultWidth  int            `gorm:"default:300" json:"default_width"`
-	DefaultHeight int            `gorm:"default:200" json:"default_height"`
-	WorkflowType  string         `gorm:"type:varchar(60);default:'image-generation'" json:"workflow_type"`
-	NeedImage     int            `gorm:"default:0" json:"need_image"`
+	ID             uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	CategoryID     uuid.UUID      `gorm:"type:uuid;index" json:"category_id"`
+	Title          string         `gorm:"type:varchar(160);not null" json:"title"`
+	Content        string         `gorm:"type:text;not null" json:"content"`
+	DefaultWidth   int            `gorm:"default:300" json:"default_width"`
+	DefaultHeight  int            `gorm:"default:200" json:"default_height"`
+	WorkflowType   string         `gorm:"type:varchar(60);default:'image-generation'" json:"workflow_type"`
+	NeedImage      int            `gorm:"default:0" json:"need_image"`
 	ShowRatio      bool           `gorm:"default:true" json:"show_ratio"`
 	NegativePrompt string         `gorm:"type:text" json:"negative_prompt"`
 	PreviewUrl     string         `gorm:"type:varchar(255)" json:"preview_url"`
@@ -362,26 +363,24 @@ type PromptTemplate struct {
 type AssetRetouchSettings struct {
 	AssetID      uuid.UUID `gorm:"type:uuid;primaryKey;index" json:"asset_id"` // 关联资产ID
 	ProjectID    uuid.UUID `gorm:"type:uuid;index" json:"project_id"`
-	Exposure     float64   `gorm:"default:0.0" json:"exposure"`               // 曝光度 (-100 ~ 100)
-	Contrast     float64   `gorm:"default:0.0" json:"contrast"`               // 对比度 (-100 ~ 100)
-	Saturation   float64   `gorm:"default:0.0" json:"saturation"`             // 饱和度 (-100 ~ 100)
-	BlurStrength float64   `gorm:"default:0.0" json:"blur_strength"`          // 磨皮强度 (0 ~ 100)
-	EyeEnlarge   float64   `gorm:"default:0.0" json:"eye_enlarge"`            // 大眼强度 (0 ~ 100)
-	SlimFace     float64   `gorm:"default:0.0" json:"slim_face"`              // 瘦脸强度 (0 ~ 100)
-	LUTFile      string    `gorm:"type:varchar(255)" json:"lut_file"`         // 应用的 3D LUT 文件路径
-	AdvancedJSON string    `gorm:"type:text" json:"advanced_json"`            // 其它高级/自定义参数 (如 AI 关键点数据)
+	Exposure     float64   `gorm:"default:0.0" json:"exposure"`       // 曝光度 (-100 ~ 100)
+	Contrast     float64   `gorm:"default:0.0" json:"contrast"`       // 对比度 (-100 ~ 100)
+	Saturation   float64   `gorm:"default:0.0" json:"saturation"`     // 饱和度 (-100 ~ 100)
+	BlurStrength float64   `gorm:"default:0.0" json:"blur_strength"`  // 磨皮强度 (0 ~ 100)
+	EyeEnlarge   float64   `gorm:"default:0.0" json:"eye_enlarge"`    // 大眼强度 (0 ~ 100)
+	SlimFace     float64   `gorm:"default:0.0" json:"slim_face"`      // 瘦脸强度 (0 ~ 100)
+	LUTFile      string    `gorm:"type:varchar(255)" json:"lut_file"` // 应用的 3D LUT 文件路径
+	AdvancedJSON string    `gorm:"type:text" json:"advanced_json"`    // 其它高级/自定义参数 (如 AI 关键点数据)
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // AssetComment 资产评论表（用于单张照片的精修意见沟通）
 type AssetComment struct {
 	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	AssetID    uuid.UUID  `gorm:"type:uuid;index" json:"asset_id"`    // 关联资产ID
+	AssetID    uuid.UUID  `gorm:"type:uuid;index" json:"asset_id"` // 关联资产ID
 	ProjectID  uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
-	UserID     *uuid.UUID `gorm:"type:uuid" json:"user_id"`           // 如果是登录用户（修图师/销售）
+	UserID     *uuid.UUID `gorm:"type:uuid" json:"user_id"`            // 如果是登录用户（修图师/销售）
 	ClientName *string    `gorm:"type:varchar(80)" json:"client_name"` // 如果是免登客户
 	Content    string     `gorm:"type:text;not null" json:"content"`   // 评论内容
 	CreatedAt  time.Time  `json:"created_at"`
 }
-
-

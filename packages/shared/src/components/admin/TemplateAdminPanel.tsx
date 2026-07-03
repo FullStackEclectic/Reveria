@@ -353,7 +353,7 @@ export function TemplateAdminPanel() {
             {(["image-generation", "video-generation", "text-generation"] as const).map((tab) => {
               const isActive = activeTab === tab;
               const meta = tabColors[tab];
-              const label = tab === "image-generation" ? "🎨 图像大类" : tab === "video-generation" ? "🎬 视频大类" : "✍️ 文本大类";
+              const label = tab === "image-generation" ? "图像大类" : tab === "video-generation" ? "视频大类" : "文本大类";
               return (
                 <button
                   key={tab}
@@ -455,7 +455,7 @@ export function TemplateAdminPanel() {
                 transition: "all 0.15s"
               }}
             >
-              🌐 显示当前大类全部模板
+              显示当前大类全部模板
             </div>
 
             {orderedCategories.length === 0 ? (
@@ -594,7 +594,7 @@ export function TemplateAdminPanel() {
                         {/* 绝对定位顶部大类胶囊标签 */}
                         <div style={{ position: "absolute", top: "10px", left: "10px" }}>
                           <span style={{ fontSize: "9px", background: "rgba(255,255,255,0.9)", color: tabColors[activeTab].text, padding: "3px 8px", borderRadius: "100px", fontWeight: "800", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
-                            {activeTab === "video-generation" ? "🎬 视频大类" : activeTab === "text-generation" ? "✍️ 文本创意" : "🎨 图像大类"}
+                            {activeTab === "video-generation" ? "视频大类" : activeTab === "text-generation" ? "文本创意" : "图像大类"}
                           </span>
                         </div>
                       </div>
@@ -636,12 +636,12 @@ export function TemplateAdminPanel() {
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                           {tpl.need_image && tpl.need_image > 0 ? (
                             <span style={{ fontSize: "9px", background: "rgba(245, 158, 11, 0.06)", color: "hsl(35, 90%, 40%)", padding: "2px 6px", borderRadius: "4px", fontWeight: "700" }}>
-                              📸 需参考图
+                              需参考图
                             </span>
                           ) : null}
                           {tpl.show_ratio !== false ? (
                             <span style={{ fontSize: "9px", background: "rgba(59, 130, 246, 0.06)", color: "hsl(215, 80%, 45%)", padding: "2px 6px", borderRadius: "4px", fontWeight: "700" }}>
-                              📐 可选比例
+                              可选比例
                             </span>
                           ) : null}
                         </div>
@@ -713,7 +713,7 @@ export function TemplateAdminPanel() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h3 style={{ margin: 0, fontSize: "14px", fontWeight: "800", color: "#0f172a" }}>
-                {editingCatId ? "📝 编辑分类" : "➕ 新建分类"}
+                {editingCatId ? "编辑分类" : "新建分类"}
               </h3>
               <button
                 type="button"

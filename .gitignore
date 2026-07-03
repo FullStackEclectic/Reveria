@@ -6,13 +6,17 @@ dist/
 .env.local
 *.log
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 apps/desktop/src-tauri/gen/
 .next/
 apps/desktop/build/bin/
 *.exe
+*~
 services/api/storage/uploads/
+
 
 
 

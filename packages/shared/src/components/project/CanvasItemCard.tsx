@@ -101,53 +101,62 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
 
     const checkStatus = async () => {
       try {
-        const res = await getJson<{ success: boolean; data: any }>(`/api/tasks/${item.task_id}`);
+        const res = await getJson<any>(`/api/tasks/${item.task_id}`);
         if (!isMounted) return;
 
-        if (res.success && res.data) {
-          const status = res.data.status;
-          if (status === "succeeded") {
-            clearInterval(pollInterval);
+        // 兼容处理包装格式 { success: true, data: ... } 或直接返回的对象
+        const taskData = (res && typeof res.success === "boolean" && res.data) ? res.data : res;
+        if (!taskData || !taskData.status) return;
 
-            const assetsRes = await getJson<{ success: boolean; data: AssetSummary[] }>(
-              `/api/projects/${projectId}/assets`
-            );
-            if (!isMounted) return;
-
-            if (assetsRes.success && assetsRes.data.length > 0) {
-              const latestAsset = assetsRes.data[0];
-              
-              setProjectCanvas((current) => {
-                const nextItems = current.items.map((i: CanvasItem) =>
-                  i.id === item.id
-                    ? {
-                        id: item.id,
-                        type: "asset" as const,
-                        asset_id: latestAsset.id,
-                        title: assetTitle(latestAsset) || item.title,
-                        x: i.x,
-                        y: i.y,
-                        w: i.w,
-                        h: i.h,
-                        board_id: i.board_id,
-                      }
-                    : i
-                );
-                void saveCanvasData(nextItems);
-                return { ...current, items: nextItems };
-              });
+        const status = taskData.status;
+        if (status === "pending") {
+          setProgressText("任务排队中，请稍候...");
+        } else if (status === "running") {
+          let text = "AI 画面正在努力渲染中...";
+          if (taskData.output_payload) {
+            try {
+              const parsed = JSON.parse(taskData.output_payload);
+              if (parsed && parsed.progress_text) {
+                text = parsed.progress_text;
+              }
+            } catch (e) {
+              // 忽略解析错误
             }
-          } else if (status === "failed") {
-            clearInterval(pollInterval);
+          }
+          setProgressText(text);
+        }
 
-            const errorMsg = res.data.error_message || "未知服务商内部错误";
+        if (status === "succeeded") {
+          clearInterval(pollInterval);
+
+          const assetsRes = await getJson<AssetSummary[] | { success: boolean; data: AssetSummary[] }>(
+            `/api/assets?project_id=${encodeURIComponent(projectId)}`
+          );
+          if (!isMounted) return;
+
+          let assetsData: AssetSummary[] = [];
+          if (Array.isArray(assetsRes)) {
+            assetsData = assetsRes;
+          } else if (assetsRes && typeof assetsRes === "object" && Array.isArray((assetsRes as any).data)) {
+            assetsData = (assetsRes as any).data;
+          }
+
+          if (assetsData.length > 0) {
+            const latestAsset = assetsData[0];
+            
             setProjectCanvas((current) => {
-              const nextItems = current.items.map((i) =>
+              const nextItems = current.items.map((i: CanvasItem) =>
                 i.id === item.id
                   ? {
-                      ...i,
-                      title: `❌ AI 生成失败`,
-                      text: `生成时发生错误，请重试。\n具体原因: ${errorMsg}`,
+                      id: item.id,
+                      type: "asset" as const,
+                      asset_id: latestAsset.id,
+                      title: assetTitle(latestAsset) || item.title,
+                      x: i.x,
+                      y: i.y,
+                      w: i.w,
+                      h: i.h,
+                      board_id: i.board_id,
                     }
                   : i
               );
@@ -155,6 +164,23 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
               return { ...current, items: nextItems };
             });
           }
+        } else if (status === "failed") {
+          clearInterval(pollInterval);
+
+          const errorMsg = taskData.error_message || "未知服务商内部错误";
+          setProjectCanvas((current) => {
+            const nextItems = current.items.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    title: `AI 生成失败`,
+                    text: `生成时发生错误，请重试。\n具体原因: ${errorMsg}`,
+                  }
+                : i
+            );
+            void saveCanvasData(nextItems);
+            return { ...current, items: nextItems };
+          });
         }
       } catch (err) {
         console.error("[CanvasItemCard] 自愈轮询异常:", err);
@@ -170,6 +196,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
     };
   }, [item.id, item.task_id, projectId, readOnly]);
 
+  const [progressText, setProgressText] = React.useState<string>("正在努力渲染画面场景...");
   // 画板节点局部大图切换选中的 asset.id
   const [selectedId, setSelectedId] = React.useState<string>("");
 
@@ -227,10 +254,10 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
           <div className="processing-spinner" />
           <span>
             {processingType === "remove-bg"
-              ? "✨ AI 去背景中..."
+              ? "AI 去背景中..."
               : processingType === "upscale"
-              ? "🔍 AI 4K超分中..."
-              : "✏️ AI 消除中..."}
+              ? "AI 4K超分中..."
+              : "AI 消除中..."}
           </span>
         </div>
       )}
@@ -374,16 +401,36 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
                   <Sparkles size={11} style={{ animation: "pulse 1.5s infinite" }} />
                   <span>AI 创意画面渲染中...</span>
                 </div>
-                <div 
-                  style={{ 
-                    fontSize: "8px", 
-                    background: "rgba(255,255,255,0.25)", 
-                    padding: "1px 5px", 
-                    borderRadius: "100px", 
-                    fontWeight: "bold" 
-                  }}
-                >
-                  RUNNING
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div 
+                    title={displayPrompt}
+                    style={{
+                      cursor: "help",
+                      fontSize: "9px",
+                      background: "rgba(255,255,255,0.18)",
+                      borderRadius: "4px",
+                      padding: "1px 5px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "2px",
+                      fontWeight: "normal",
+                      userSelect: "none"
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    提示词
+                  </div>
+                  <div 
+                    style={{ 
+                      fontSize: "8px", 
+                      background: "rgba(255,255,255,0.25)", 
+                      padding: "1px 5px", 
+                      borderRadius: "100px", 
+                      fontWeight: "bold" 
+                    }}
+                  >
+                    RUNNING
+                  </div>
                 </div>
               </div>
               
@@ -418,7 +465,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
                 </div>
                 
                 <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "bold", textAlign: "center", padding: "0 16px" }}>
-                  正在努力渲染电商多图场景...
+                  {progressText}
                 </span>
 
                 {/* 底部跑马灯进度条 */}
@@ -432,41 +479,6 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
                       borderRadius: "100px"
                     }} 
                   />
-                </div>
-              </div>
-
-              {/* 底部：提示词完整滚动面板 */}
-              <div 
-                style={{ 
-                  height: "64px", 
-                  background: "var(--rv-color-bg-sidebar)", 
-                  borderTop: "1px solid var(--rv-color-border-thin)", 
-                  display: "flex", 
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  padding: "6px 12px",
-                  boxSizing: "border-box",
-                  flexShrink: 0
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "var(--rv-color-text-muted)", fontWeight: "bold", marginBottom: "2px" }}>
-                  <span>提示词指令</span>
-                </div>
-                <div 
-                  style={{ 
-                    flex: 1, 
-                    fontSize: "9px", 
-                    color: "var(--rv-color-text-main)", 
-                    overflowY: "auto", 
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                    fontFamily: "JetBrains Mono, monospace",
-                    lineHeight: "1.4"
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  title={displayPrompt}
-                >
-                  {displayPrompt}
                 </div>
               </div>
             </div>

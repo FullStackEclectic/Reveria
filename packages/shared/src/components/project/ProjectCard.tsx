@@ -141,7 +141,7 @@ export function ProjectCard({
 
         {/* 类型浮动指示器 */}
         <span className={`project-type-tag type-${project.project_type || "ai_canvas"}`}>
-          {project.project_type === "retouch" ? "📸 批量修图" : "🎨 AI画布"}
+          {project.project_type === "retouch" ? "批量修图" : "AI画布"}
         </span>
 
         {/* 删除按钮 */}

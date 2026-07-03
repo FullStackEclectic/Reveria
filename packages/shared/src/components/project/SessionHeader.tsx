@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { AISession } from "../../types";
 
 interface SessionHeaderProps {
@@ -61,7 +61,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             borderRadius: "4px"
           }}
         >
-          <span>💬 {activeSession?.title || "AI 对话"}</span>
+          <span>{activeSession?.title || "AI 对话"}</span>
           <ChevronDown size={12} />
         </button>
 
@@ -163,7 +163,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
                     }}
                     title="删除此会话"
                   >
-                    🗑️
+                    删除
                   </button>
                 </div>
               ))}
@@ -193,7 +193,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             transition: "background 0.2s"
           }}
         >
-          ➕
+          <Plus size={13} />
         </button>
         {onClose && (
           <button

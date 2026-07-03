@@ -94,7 +94,7 @@ func main() {
 			auth.POST("/projects", handler.CreateProject)
 			auth.GET("/projects/:id", handler.GetProject)
 			auth.PATCH("/projects/:id", handler.UpdateProject)
-			auth.PUT("/projects/:id", handler.UpdateProject) 
+			auth.PUT("/projects/:id", handler.UpdateProject)
 			auth.DELETE("/projects/:id", handler.DeleteProject)
 
 			// 画布 API
@@ -124,7 +124,7 @@ func main() {
 			auth.POST("/billing/orders", handler.CreateOrder)
 
 			// AI 任务与生成 API
-			auth.GET("/tasks", handler.ListTasks)              // 获取任务大盘列表
+			auth.GET("/tasks", handler.ListTasks) // 获取任务大盘列表
 			auth.POST("/tasks/estimate", handler.EstimateTask)
 			auth.POST("/tasks", handler.CreateTask)
 			auth.GET("/tasks/:id", handler.GetTaskDetail)
@@ -134,7 +134,7 @@ func main() {
 			// 任务日志与留言 API
 			auth.GET("/tasks/:id/comments", handler.ListTaskComments)
 			auth.POST("/tasks/:id/comments", handler.CreateTaskComment)
-			
+
 			// 兼容旧前端的生图工作流接口
 			auth.POST("/workflows/image-generation", handler.CreateTask)
 
@@ -144,17 +144,19 @@ func main() {
 			auth.POST("/workflows/creative-directions", handler.RunCreativeDirections)
 			auth.POST("/workflows/short-video-script-storyboard", handler.RunShortVideoScriptStoryboard)
 			auth.POST("/workflows/xiaohongshu-cover-batch", handler.RunXiaohongshuCoverBatch) // 新增小红书封面批量工作流
-			auth.POST("/workflows/magic-action", handler.RunMagicAction) // 新增画板 AI 魔法修改接口
+			auth.POST("/workflows/magic-action", handler.RunMagicAction)                      // 新增画板 AI 魔法修改接口
 
 			// 分站管理员特权及财务对账接口
-			auth.GET("/admin/users", handler.ListAdminUsers)                                      // 获取系统用户大盘
-			auth.POST("/admin/users/:user_id/platform-admin", handler.UpdatePlatformAdmin)        // 调整超管头衔
+			auth.GET("/admin/users", handler.ListAdminUsers)                               // 获取系统用户大盘
+			auth.POST("/admin/users/:user_id/platform-admin", handler.UpdatePlatformAdmin) // 调整超管头衔
 			auth.GET("/admin/workspace-members", handler.ListWorkspaceMembers)
 			auth.POST("/admin/workspace-members", handler.UpsertWorkspaceMember)
 			auth.DELETE("/admin/workspace-members", handler.DeleteWorkspaceMember)
 			auth.POST("/admin/credits/adjust", handler.AdjustCredits)
+			auth.GET("/admin/plans", handler.ListAdminPlans)
+			auth.PUT("/admin/plans/:id", handler.UpdateAdminPlan)
 			auth.GET("/admin/reports/costs", handler.GetCostReport)
-			auth.POST("/billing/orders/:order_id/mock-pay", handler.MockPayOrder)                 // 模拟支付
+			auth.POST("/billing/orders/:order_id/mock-pay", handler.MockPayOrder) // 模拟支付
 
 			// 后台服务商接入与算力模型大盘真实接口
 			auth.GET("/admin/providers", handler.ListProviders)
@@ -326,5 +328,3 @@ func getBuildVersion(c *gin.Context) {
 		"database_connected": true,
 	})
 }
-
-

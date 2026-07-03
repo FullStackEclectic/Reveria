@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Sparkles, Loader2, Image, ChevronRight } from "lucide-react";
+import { Sparkles, Loader2, Image, ChevronRight, Edit3, RefreshCw, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AssetSummary, UserSummary, WorkflowResult } from "../../types";
 import { assetUrl, assetTitle, getAssetMetadata } from "../../utils";
 
@@ -241,7 +241,7 @@ export function WorkflowHistoryFeed({
                   <div className="gen-avatar-ai">AI</div>
                   <div className="gen-msg-body">
                     <div className="gen-msg-ai-meta">
-                      <span>✨ {isImage ? "图像" : "创意生成"}</span>
+                      <span>{isImage ? "图像" : "创意生成"}</span>
                       <span>·</span>
                       <span style={{ fontWeight: 600 }}>{modelName}</span>
                       {isImage && (
@@ -279,7 +279,7 @@ export function WorkflowHistoryFeed({
                               borderTop: "1px dashed var(--rv-color-border-thin)",
                               paddingTop: "6px"
                             }}>
-                              <span>📊 消耗明细:</span>
+                              <span>消耗明细:</span>
                               {typeof meta.total_tokens === "number" && (
                                 <span title={`输入 Token: ${meta.prompt_tokens ?? 0} | 输出 Token: ${meta.completion_tokens ?? 0}`} style={{ cursor: "help" }}>
                                   Tokens: <strong style={{ color: "var(--rv-color-text-main)" }}>{meta.total_tokens}</strong>
@@ -307,7 +307,7 @@ export function WorkflowHistoryFeed({
                             title="以此为基础编辑"
                             onClick={() => handleReedit(promptText, meta?.ref_image_url)}
                           >
-                            <span style={{ fontSize: "12px" }}>✏️</span>
+                            <Edit3 size={12} />
                           </button>
                           <button
                             type="button"
@@ -315,7 +315,7 @@ export function WorkflowHistoryFeed({
                             title="重新生成"
                             onClick={() => handleRegenerate(promptText, meta?.task_type, meta?.ref_image_url)}
                           >
-                            <span style={{ fontSize: "12px" }}>🔄</span>
+                            <RefreshCw size={12} />
                           </button>
                           <button
                             type="button"
@@ -323,7 +323,7 @@ export function WorkflowHistoryFeed({
                             title="点赞"
                             onClick={() => handleFeedback(asset.id, "up")}
                           >
-                            <span style={{ fontSize: "12px" }}>👍</span>
+                            <ThumbsUp size={12} />
                           </button>
                           <button
                             type="button"
@@ -331,7 +331,7 @@ export function WorkflowHistoryFeed({
                             title="点踩"
                             onClick={() => handleFeedback(asset.id, "down")}
                           >
-                            <span style={{ fontSize: "12px" }}>👎</span>
+                            <ThumbsDown size={12} />
                           </button>
                         </div>
 
@@ -406,7 +406,7 @@ export function WorkflowHistoryFeed({
                   <div className="gen-avatar-ai">AI</div>
                   <div className="gen-msg-body">
                     <div className="gen-msg-ai-meta">
-                      <span>✨ 多图画廊 (已生成 {batchAssets.length} 张)</span>
+                      <span>多图画廊 (已生成 {batchAssets.length} 张)</span>
                       <span>·</span>
                       <span style={{ fontWeight: 600 }}>{modelName}</span>
                       <span>·</span>
@@ -505,7 +505,7 @@ export function WorkflowHistoryFeed({
                             title="以此为基础编辑"
                             onClick={() => handleReedit(promptText, meta?.ref_image_url)}
                           >
-                            <span style={{ fontSize: "12px" }}>✏️</span>
+                            <Edit3 size={12} />
                           </button>
                           <button
                             type="button"
@@ -513,7 +513,7 @@ export function WorkflowHistoryFeed({
                             title="重新生成"
                             onClick={() => handleRegenerate(promptText, meta?.task_type, meta?.ref_image_url)}
                           >
-                            <span style={{ fontSize: "12px" }}>🔄</span>
+                            <RefreshCw size={12} />
                           </button>
                           <button
                             type="button"
@@ -521,7 +521,7 @@ export function WorkflowHistoryFeed({
                             title="点赞"
                             onClick={() => handleFeedback(activeAsset.id, "up")}
                           >
-                            <span style={{ fontSize: "12px" }}>👍</span>
+                            <ThumbsUp size={12} />
                           </button>
                           <button
                             type="button"
@@ -529,7 +529,7 @@ export function WorkflowHistoryFeed({
                             title="点踩"
                             onClick={() => handleFeedback(activeAsset.id, "down")}
                           >
-                            <span style={{ fontSize: "12px" }}>👎</span>
+                            <ThumbsDown size={12} />
                           </button>
                         </div>
 
@@ -608,10 +608,10 @@ export function WorkflowHistoryFeed({
                 <div className="gen-msg-ai-meta">
                   <span>
                     {activeTask.task_type === "image_generation" || activeTask.task_type === "text_to_image"
-                      ? "✨ 图像生成"
+                      ? "图像生成"
                       : activeTask.task_type === "video_generation"
-                      ? "✨ 视频生成"
-                      : "✨ 文本生成"}
+                      ? "视频生成"
+                      : "文本生成"}
                   </span>
                   <span>·</span>
                   <span style={{ fontWeight: 600 }}>{activeTask.selected_model ? String(activeTask.selected_model).replace(/\s*\(.*?\)\s*/g, "") : (activeTask.task_type === "text" ? "GPT-4o" : "gpt-image-2")}</span>
@@ -656,7 +656,7 @@ export function WorkflowHistoryFeed({
                     >
                       <Loader2 size={24} style={{ color: "var(--rv-color-primary)", animation: "spin 2s linear infinite" }} />
                       <span style={{ fontSize: "12px", color: "var(--rv-color-text-main)", fontWeight: "bold" }}>
-                        {activeProgress > 0 ? `⚡ 正在生成 ${activeProgress}%` : "⌛ 思考排队中..."}
+                        {activeProgress > 0 ? `正在生成 ${activeProgress}%` : "思考排队中..."}
                       </span>
                       
                       {/* 进度条 */}
@@ -685,7 +685,7 @@ export function WorkflowHistoryFeed({
         <div className="gen-msg-bubble gen-msg-ai">
           <div className="gen-avatar-ai">AI</div>
           <div className="gen-msg-body">
-            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>❌ 生成失败</div>
+            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
             <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
               {(workflowResult.output as any)?.message || "工作流执行失败，请检查 API 连接状态"}
             </div>
@@ -698,7 +698,7 @@ export function WorkflowHistoryFeed({
         <div key={task.id} className="gen-msg-bubble gen-msg-ai">
           <div className="gen-avatar-ai">AI</div>
           <div className="gen-msg-body">
-            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>❌ 生成失败</div>
+            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
             <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
               {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
             </div>

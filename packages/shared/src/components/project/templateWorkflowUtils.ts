@@ -109,7 +109,7 @@ export async function runTemplateGeneration({
     {
       id: placeholderId,
       type: "note" as const,
-      title: `✨ 正在生成 ${template.title}...`,
+      title: `正在生成 ${template.title}...`,
       text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
       x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
       y: Math.round(-panY + 100 + (itemsCount % 5) * 30),
@@ -175,7 +175,7 @@ export async function runTemplateGeneration({
         negative_prompt: payload.negative_prompt || template.negative_prompt || "",
         size: sizePayload,
         quality: "medium",
-        image_count: 1,
+        image_count: advParams.image_count ?? (template.title.includes("多图") ? 6 : 1),
         ref_image_url: payload.ref_image_url,
         steps: advParams.steps ?? 28,
         cfg_scale: advParams.cfg_scale ?? 7.0,
@@ -311,56 +311,60 @@ export async function runTemplateGeneration({
               const taskStatus = taskRes.data.status;
               if (taskStatus === "succeeded") {
                 clearInterval(pollInterval);
-                const assetsRes = await getJson<{ success: boolean; data: AssetSummary[] }>(
-                  `/api/projects/${projectId}/assets`
+                const assetsRes = await getJson<AssetSummary[] | { success: boolean; data: AssetSummary[] }>(
+                  `/api/assets?project_id=${encodeURIComponent(projectId)}`
                 );
-                if (assetsRes.success && assetsRes.data.length > 0) {
-                  const latestAsset = assetsRes.data[0];
+                
+                let assetsData: AssetSummary[] = [];
+                if (Array.isArray(assetsRes)) {
+                  assetsData = assetsRes;
+                } else if (assetsRes && typeof assetsRes === "object" && Array.isArray((assetsRes as any).data)) {
+                  assetsData = (assetsRes as any).data;
+                }
+
+                if (assetsData.length > 0) {
+                  const latestAsset = assetsData[0];
                   if (setAssets) {
-                    setAssets(assetsRes.data);
+                    setAssets(assetsData);
                   }
                   
-                  const successItems: CanvasItem[] = projectCanvas.items.map((item) =>
-                    item.id === placeholderId
-                      ? {
-                          id: placeholderId,
-                          type: "asset" as const,
-                          asset_id: latestAsset.id,
-                          title: assetTitle(latestAsset) || template.title,
-                          x: item.x,
-                          y: item.y,
-                          w: item.w,
-                          h: item.h,
-                          board_id: item.board_id,
-                        }
-                      : item
-                  );
-
-                  setProjectCanvas((current) => ({
-                    ...current,
-                    items: successItems,
-                  }));
-                  void saveCanvasData(successItems);
+                  setProjectCanvas((current) => {
+                    const successItems = current.items.map((item) =>
+                      item.id === placeholderId
+                        ? {
+                            id: placeholderId,
+                            type: "asset" as const,
+                            asset_id: latestAsset.id,
+                            title: assetTitle(latestAsset) || template.title,
+                            x: item.x,
+                            y: item.y,
+                            w: item.w,
+                            h: item.h,
+                            board_id: item.board_id,
+                          }
+                        : item
+                    );
+                    void saveCanvasData(successItems);
+                    return { ...current, items: successItems };
+                  });
                 }
                 showToast(`“${template.title}”生成完毕！`);
               } else if (taskStatus === "failed") {
                 clearInterval(pollInterval);
                 
-                const failItems = projectCanvas.items.map((item) =>
-                  item.id === placeholderId
-                    ? {
-                        ...item,
-                        title: `❌ ${template.title} 生成失败`,
-                        text: `错误信息: ${taskRes.data.error_message || "未知服务商内部错误"}`,
-                      }
-                    : item
-                );
-
-                setProjectCanvas((current) => ({
-                  ...current,
-                  items: failItems,
-                }));
-                void saveCanvasData(failItems);
+                setProjectCanvas((current) => {
+                  const failItems = current.items.map((item) =>
+                    item.id === placeholderId
+                      ? {
+                          ...item,
+                          title: `${template.title} 生成失败`,
+                          text: `错误信息: ${taskRes.data.error_message || "未知服务商内部错误"}`,
+                        }
+                      : item
+                  );
+                  void saveCanvasData(failItems);
+                  return { ...current, items: failItems };
+                });
                 showToast("任务生成失败");
               }
             }
@@ -383,7 +387,7 @@ export async function runTemplateGeneration({
       item.id === placeholderId
         ? {
             ...item,
-            title: `❌ ${template.title} 生成出错`,
+            title: `${template.title} 生成出错`,
             text: `生成时发生错误，请重试。\n具体原因: ${err.message || err}`,
           }
         : item

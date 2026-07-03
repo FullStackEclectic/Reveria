@@ -39,6 +39,7 @@ export function ModelCatalogPanel({
   const [modelType, setModelType] = useState("chat"); // chat, image, video
   const [creditsCost, setCreditsCost] = useState(10);
   const [modelEnabled, setModelEnabled] = useState(true);
+  const [billingMethod, setBillingMethod] = useState<"per_token" | "per_use">("per_token");
 
   // 定价规则表单
   const [ruleName, setRuleName] = useState("大纲分析基础计费");
@@ -95,6 +96,7 @@ export function ModelCatalogPanel({
         name: modelName,
         display_name: displayName,
         model_type: modelType,
+        billing_method: billingMethod,
         credits_cost: creditsCost,
         enabled: modelEnabled,
       });
@@ -121,6 +123,7 @@ export function ModelCatalogPanel({
         name: model.name,
         display_name: model.display_name,
         model_type: model.model_type,
+        billing_method: model.billing_method,
         credits_cost: editingCost,
         enabled: model.enabled
       });
@@ -306,19 +309,37 @@ export function ModelCatalogPanel({
                 <label style={{ fontSize: "10px", fontWeight: "700" }}>模型类型</label>
                 <select
                   value={modelType}
-                  onChange={(e) => setModelType(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setModelType(val);
+                    setBillingMethod(val === "chat" ? "per_token" : "per_use");
+                  }}
                   style={{ minHeight: "36px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-sm)", padding: "0 10px", background: "#ffffff" }}
                 >
-                  <option value="chat">💬 对话</option>
-                  <option value="image">🎨 图像</option>
-                  <option value="video">🎬 视频</option>
+                  <option value="chat">对话</option>
+                  <option value="image">图像</option>
+                  <option value="video">视频</option>
                 </select>
               </div>
 
               <div className="assets-form-field">
-                <label style={{ fontSize: "10px", fontWeight: "700" }}>单次扣除点数</label>
-                <input type="number" min={0} value={creditsCost} onChange={(e) => setCreditsCost(Number(e.target.value))} required />
+                <label style={{ fontSize: "10px", fontWeight: "700" }}>计费方式</label>
+                <select
+                  value={billingMethod}
+                  onChange={(e) => setBillingMethod(e.target.value as any)}
+                  style={{ minHeight: "36px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-sm)", padding: "0 10px", background: "#ffffff" }}
+                >
+                  <option value="per_token">按 Token 计费</option>
+                  <option value="per_use">按次计费</option>
+                </select>
               </div>
+            </div>
+
+            <div className="assets-form-field">
+              <label style={{ fontSize: "10px", fontWeight: "700" }}>
+                {billingMethod === "per_token" ? "每百万 Token 扣除点数 (MTokens)" : "单次扣除点数 (Per Use)"}
+              </label>
+              <input type="number" min={0} value={creditsCost} onChange={(e) => setCreditsCost(Number(e.target.value))} required />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
@@ -341,8 +362,9 @@ export function ModelCatalogPanel({
                 <thead>
                   <tr style={{ background: "rgba(0,0,0,0.01)", borderBottom: "1px solid var(--rv-color-border-thin)", fontWeight: "bold", color: "var(--rv-color-text-muted)" }}>
                     <th style={{ padding: "10px 14px" }}>模型展示名 / ID</th>
+                    <th style={{ padding: "10px 14px", width: "100px" }}>计费方式</th>
                     <th style={{ padding: "10px 14px", width: "90px" }}>分类类型</th>
-                    <th style={{ padding: "10px 14px", width: "130px" }}>计费扣点/次</th>
+                    <th style={{ padding: "10px 14px", width: "120px" }}>计费单价</th>
                     <th style={{ padding: "10px 14px", width: "140px", textAlign: "right" }}>操作</th>
                   </tr>
                 </thead>
@@ -352,19 +374,24 @@ export function ModelCatalogPanel({
                       const isEditing = editingModelId === model.id;
                       
                       // 模型类型标识
-                      let typeLabel = "💬 对话";
+                      let typeLabel = "对话";
                       let typeColor = "rgba(59, 130, 246, 0.08)";
                       let textColor = "#2563eb";
                       
                       if (model.model_type === "image") {
-                        typeLabel = "🎨 图像";
+                        typeLabel = "图像";
                         typeColor = "rgba(16, 185, 129, 0.08)";
                         textColor = "#059669";
                       } else if (model.model_type === "video") {
-                        typeLabel = "🎬 视频";
+                        typeLabel = "视频";
                         typeColor = "rgba(139, 92, 246, 0.08)";
                         textColor = "#7c3aed";
                       }
+
+                      const isPerToken = model.billing_method === "per_token" || 
+                                         (!model.billing_method && model.model_type === "chat");
+                      const billingColor = isPerToken ? "rgba(14, 116, 144, 0.08)" : "rgba(180, 83, 9, 0.08)";
+                      const billingTextColor = isPerToken ? "#0e7490" : "#b45309";
 
                       return (
                         <tr key={model.id} style={{ borderBottom: "1px solid var(--rv-color-border-thin)", transition: "background 0.2s" }} className="user-row-hover">
@@ -373,6 +400,12 @@ export function ModelCatalogPanel({
                             <strong style={{ display: "block", color: "var(--rv-color-text-main)" }}>{model.display_name ?? model.name}</strong>
                             <span style={{ display: "block", fontSize: "9px", color: "var(--rv-color-text-muted)", marginTop: "2px" }}>
                               Code: <code style={{ fontFamily: "monospace" }}>{model.name}</code> · {providerNameFor(model.provider_id)}
+                            </span>
+                          </td>
+                          {/* 计费方式 */}
+                          <td style={{ padding: "10px 14px" }}>
+                            <span style={{ fontSize: "10px", fontWeight: "bold", background: billingColor, color: billingTextColor, padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
+                              {isPerToken ? "按 Token" : "按次计费"}
                             </span>
                           </td>
                           {/* 模型类型 */}
@@ -392,6 +425,9 @@ export function ModelCatalogPanel({
                                   onChange={(e) => setEditingCost(Number(e.target.value))}
                                   style={{ width: "65px", height: "26px", border: "1px solid var(--rv-color-primary)", borderRadius: "4px", padding: "0 6px", fontSize: "11px" }}
                                 />
+                                <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)" }}>
+                                  {isPerToken ? "点/M" : "点/次"}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => handleSaveQuickCost(model)}
@@ -402,7 +438,10 @@ export function ModelCatalogPanel({
                               </div>
                             ) : (
                               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                <span><strong>{model.credits_cost ?? 0}</strong> 点</span>
+                                <span style={{ whiteSpace: "nowrap" }}>
+                                  <strong>{model.credits_cost ?? 0}</strong> 点
+                                  {isPerToken ? " / M" : ""}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -410,7 +449,7 @@ export function ModelCatalogPanel({
                                     setEditingCost(model.credits_cost ?? 0);
                                   }}
                                   style={{ border: 0, background: "transparent", cursor: "pointer", color: "var(--rv-color-text-muted)", display: "inline-flex", alignItems: "center" }}
-                                  title="修改单次计费"
+                                  title="修改计费"
                                 >
                                   <Edit2 size={11} />
                                 </button>

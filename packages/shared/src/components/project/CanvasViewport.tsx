@@ -136,9 +136,9 @@ export function CanvasViewport({
     visibleItems.forEach((item) => {
       if (item.type === "asset" && item.asset_id) {
         const asset = assets.find((a) => a.id === item.asset_id);
-        if (asset && (asset.thumbnail_url || asset.file_url) && !realResolutions[asset.id]) {
+        if (asset && (asset.file_url || asset.thumbnail_url) && !realResolutions[asset.id]) {
           const img = new Image();
-          img.src = assetUrl(asset.thumbnail_url ?? asset.file_url ?? "");
+          img.src = assetUrl(asset.file_url ?? asset.thumbnail_url ?? "");
           img.onload = () => {
             setRealResolutions((prev) => ({
               ...prev,

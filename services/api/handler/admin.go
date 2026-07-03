@@ -735,7 +735,9 @@ func FetchUpstreamModels(c *gin.Context) {
 		return
 	}
 
-	url := strings.TrimSuffix(req.ApiURL, "/") + "/v1/models"
+	// 强制锁定使用 12ZX 官方网关地址
+	apiHost := "https://ai.12zx.net"
+	url := strings.TrimSuffix(apiHost, "/") + "/v1/models"
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "上游 API 链接格式有误"})

@@ -9,6 +9,7 @@ import {
 import { PageFrame } from "../common/PageFrame";
 import { formatCredits } from "../../utils";
 import "./CreditsView.css";
+import { Check, Zap } from "lucide-react";
 
 interface CreditsViewProps {
   activeWorkspace: WorkspaceSummary | undefined;
@@ -204,9 +205,12 @@ export function CreditsView({
           fontSize: "12px",
           fontWeight: "700",
           zIndex: 99999,
-          boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)"
+          boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px"
         }}>
-          ✓ 已成功复制 {copyFeedback} ID 
+          <Check size={14} /> 已成功复制 {copyFeedback} ID 
         </div>
       )}
 
@@ -260,7 +264,7 @@ export function CreditsView({
               onClick={() => void handleMockPay()}
               style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#ffffff", borderRadius: "8px", padding: "8px 16px", fontWeight: "600", cursor: "pointer", fontSize: "13px" }}
             >
-              {isPayingOrder ? "正在支付..." : "💰 模拟付款成功"}
+              {isPayingOrder ? "正在支付..." : "模拟付款成功"}
             </button>
           </div>
         </div>
@@ -278,7 +282,7 @@ export function CreditsView({
               账户积分余额
             </div>
             <div style={{ fontSize: "40px", fontWeight: "900", color: "#ffffff", margin: "8px 0 16px 0", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "32px" }}>⚡</span> {formattedCredits} <span style={{ fontSize: "16px", fontWeight: "600", color: "#e0e7ff" }}>积分</span>
+              <Zap size={32} /> {formattedCredits} <span style={{ fontSize: "16px", fontWeight: "600", color: "#e0e7ff" }}>积分</span>
             </div>
             <div className="wallet-details-grid">
               <div className="wallet-detail-item">
@@ -298,7 +302,7 @@ export function CreditsView({
 
           {/* 快捷点数充值面板 */}
           <div className="quick-recharge-panel">
-            <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: "800", color: "#1c1917" }}>⚡ 在线积分直充</h3>
+            <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: "800", color: "#1c1917" }}>在线积分直充</h3>
             <span style={{ fontSize: "12px", color: "#78716c" }}>积分即充即用，永久有效，支持大模型生成和对话</span>
             
             <div className="quick-package-grid">
@@ -477,7 +481,7 @@ export function CreditsView({
           {/* 特权配额状态卡 */}
           <div className="side-resource-card">
             <h3 style={{ margin: "0 0 12px 0", fontSize: "15px", fontWeight: "800", color: "#1c1917", display: "flex", alignItems: "center", gap: "6px" }}>
-              👑 {planName}
+              {planName}
             </h3>
             
             <div className="resource-progress-item">
@@ -503,7 +507,7 @@ export function CreditsView({
 
           {/* 垂直小型订阅升级列表 */}
           <div className="compact-plans-panel">
-            <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: "800", color: "#1c1917" }}>💎 包月套餐订阅</h3>
+            <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: "800", color: "#1c1917" }}>包月套餐订阅</h3>
             <span style={{ fontSize: "12px", color: "#78716c" }}>订阅以升级空间与席位配额，并获赠高额月度积分</span>
             
             <div style={{ marginTop: "12px" }}>
@@ -593,7 +597,7 @@ export function CreditsView({
               alignItems: "center"
             }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#1c1917" }}>📋 日志中心</h3>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "#1c1917" }}>日志中心</h3>
                 <span style={{ fontSize: "12px", color: "#78716c" }}>查询该工作区下所有历史消费明细、入账记录及时间段筛选</span>
               </div>
               <button
@@ -613,7 +617,7 @@ export function CreditsView({
                   fontWeight: "bold"
                 }}
               >
-                ✕
+                ×
               </button>
             </div>
 
@@ -688,7 +692,7 @@ export function CreditsView({
                 <span style={{ fontSize: "11px", color: "#78716c", fontWeight: "700", display: "block", marginBottom: "4px" }}>模糊检索:</span>
                 <input
                   type="text"
-                  placeholder="🔍 搜索备注、任务 ID、流水 ID..."
+                  placeholder="搜索备注、任务 ID、流水 ID..."
                   value={logSearchQuery}
                   onChange={(e) => setLogSearchQuery(e.target.value)}
                   style={{

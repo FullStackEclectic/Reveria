@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Camera, Loader2, Sparkles } from "lucide-react";
 import { CustomerSummary, BrandKitSummary, ProjectSummary, WorkspaceSummary, UserSummary } from "../../types";
 import { postJson } from "../../utils";
 
@@ -195,8 +195,8 @@ export function NewProjectModal({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: projectType === "ai_canvas" ? "#6366f1" : "var(--rv-color-text-main, #1c1917)" }}>
-                    🎨 AI 创意画布
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 700, color: projectType === "ai_canvas" ? "#6366f1" : "var(--rv-color-text-main, #1c1917)" }}>
+                    <Sparkles size={15} /> AI 创意画布
                   </span>
                   <div
                     style={{
@@ -243,8 +243,8 @@ export function NewProjectModal({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: projectType === "retouch" ? "#06b6d4" : "var(--rv-color-text-main, #1c1917)" }}>
-                    📸 批量照片精修
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 700, color: projectType === "retouch" ? "#06b6d4" : "var(--rv-color-text-main, #1c1917)" }}>
+                    <Camera size={15} /> 批量照片精修
                   </span>
                   <div
                     style={{

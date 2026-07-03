@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles, Undo, Redo, LogOut, MessageSquare } from "lucide-react";
 import { ProjectSummary, ProjectCanvasDocument, WorkspaceSummary, UserSummary } from "../../types";
-import { postJson } from "../../utils";
+import { formatCredits, getJson, postJson } from "../../utils";
 
 interface ProjectDetailTopbarProps {
   selectedProject: ProjectSummary;
@@ -78,6 +78,38 @@ export function ProjectDetailTopbar({
   const activeBoard = boards.find((b) => b.id === activeBoardId) || { id: "default", name: "主画板" };
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [realtimeCredits, setRealtimeCredits] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!activeWorkspace?.id) {
+      setRealtimeCredits(null);
+      return;
+    }
+
+    const fetchBalance = async () => {
+      try {
+        const res = await getJson<{ total_credits?: number }>(`/api/credits/${activeWorkspace.id}/balance`);
+        if (res && typeof res.total_credits === "number") {
+          setRealtimeCredits(res.total_credits);
+        }
+      } catch (err) {
+        console.error("Failed to fetch real-time balance in project topbar:", err);
+      }
+    };
+
+    void fetchBalance();
+    const timer = window.setInterval(() => {
+      void fetchBalance();
+    }, 20000);
+
+    return () => window.clearInterval(timer);
+  }, [activeWorkspace?.id]);
+
+  const creditBalance = realtimeCredits !== null
+    ? realtimeCredits
+    : activeWorkspace
+      ? ((activeWorkspace.recharge_balance ?? 0) + (activeWorkspace.gift_balance ?? 0) + (activeWorkspace.refund_balance ?? 0))
+      : 0;
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -336,7 +368,7 @@ export function ProjectDetailTopbar({
                     }}
                     style={{ color: "var(--rv-color-primary)" }}
                   >
-                    ➕ 新建画板
+                    <Plus size={12} /> 新建画板
                   </button>
                 </div>
               )}
@@ -371,10 +403,10 @@ export function ProjectDetailTopbar({
 
       {/* 右侧：点数、状态、手动保存、导出下拉 */}
       <div className="rv-topbar-section" style={{ gap: "10px" }}>
-        {/* PRO 算力额度 - 沿用首页设计样式 */}
+        {/* 算力积分余额 */}
         <div className="pro-credits-badge" style={{ height: "30px", marginLeft: "4px" }}>
-          <span className="pro-label" style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)" }}>PRO</span>
-          <span className="credits-val">{activeWorkspace?.credit_balance ?? 0} 点</span>
+          <span className="pro-label" style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)" }}>积分</span>
+          <span className="credits-val">{formatCredits(creditBalance)} 积分</span>
         </div>
 
         {/* 状态徽章 - 精致磨砂边缘 */}
