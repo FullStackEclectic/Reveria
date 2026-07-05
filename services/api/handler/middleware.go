@@ -10,18 +10,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// AuthMiddleware 简单的鉴权中间件
+// AuthMiddleware JWT 鉴权中间件
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			// 如果没有提供登录态，但在本地开发测试中为了让桌面端跑通，可以提供一个默认虚拟用户 UUID
-			// 这里我们使用一个固定的 UUID 占位
-			defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
-			c.Set("user_id", defaultUserID)
-			c.Next()
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未提供登录凭证"})
+			c.Abort()
 			return
 		}
 
@@ -33,25 +31,21 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenStr := strings.TrimSpace(parts[1])
-		userID, err := uuid.Parse(tokenStr)
+
+		// 使用 JWT 校验 Token 签名和有效期
+		userID, err := ParseAccessToken(tokenStr)
 		if err != nil {
-			// 在完整的生产环境中，这里应该解析 JWT 或者查询 auth_sessions 表
-			// 目前开发过渡期，只要 token 是个 UUID，我们就直接作为 user_id 使用
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "无效的 Token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "登录凭证无效或已过期，请重新登录"})
 			c.Abort()
 			return
 		}
 
-		// 检查用户是否存在，若不存在则临时创建（平滑过渡，保证可用性）
+		// 验证用户存在性
 		var user model.User
 		if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-			// 自动建一个临时用户以防报错
-			user = model.User{
-				ID:          userID,
-				Status:      "active",
-				DisplayName: ptrString("开发者用户"),
-			}
-			database.DB.Create(&user)
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户不存在"})
+			c.Abort()
+			return
 		}
 
 		c.Set("user_id", userID)
@@ -96,4 +90,13 @@ func getStorageDir() string {
 		return "storage/uploads"
 	}
 	return dir
+}
+
+// forUpdate 条件化地在查询上添加 FOR UPDATE 行锁
+// SQLite 不支持 FOR UPDATE，直接跳过；Postgres 正常使用
+func forUpdate(tx *gorm.DB) *gorm.DB {
+	if database.IsSQLite {
+		return tx
+	}
+	return tx.Set("gorm:query_option", "FOR UPDATE")
 }

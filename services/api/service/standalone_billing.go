@@ -8,7 +8,16 @@ import (
 	"reveria/services/api/model"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
+
+// forUpdateSvc 条件化地在查询上添加 FOR UPDATE 行锁
+func forUpdateSvc(tx *gorm.DB) *gorm.DB {
+	if database.IsSQLite {
+		return tx
+	}
+	return tx.Set("gorm:query_option", "FOR UPDATE")
+}
 
 // StandaloneBilling 本地独立计费模式实现
 type StandaloneBilling struct{}
@@ -31,7 +40,7 @@ func (s *StandaloneBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUI
 	tx := database.DB.Begin()
 
 	var ws model.Workspace
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", workspaceID).First(&ws).Error; err != nil {
+	if err := forUpdateSvc(tx).Where("id = ?", workspaceID).First(&ws).Error; err != nil {
 		tx.Rollback()
 		return false, err
 	}
@@ -127,7 +136,7 @@ func (s *StandaloneBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUI
 	tx := database.DB.Begin()
 
 	var ws model.Workspace
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", workspaceID).First(&ws).Error; err != nil {
+	if err := forUpdateSvc(tx).Where("id = ?", workspaceID).First(&ws).Error; err != nil {
 		tx.Rollback()
 		return err
 	}

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { SliderItem } from "./SliderItem";
 import { Link2, ChevronRight, ChevronDown, HelpCircle } from "lucide-react";
 
 interface PortraitAdjustmentsProps {
@@ -539,266 +540,46 @@ export function PortraitAdjustments({
 
                   {g.id === "skin" && (
                     <div className="sliders-list">
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>皮肤平整度</span>
-                          <span className="value">{portraitSettings.flatness}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.flatness}
-                          onChange={(e) => handlePortraitSliderChange("flatness", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span className="highlight-dot">极细磨皮</span>
-                          <span className="value">{portraitSettings.blurStrength}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.blurStrength}
-                          onChange={(e) => handlePortraitSliderChange("blurStrength", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>去面光 (脸部)</span>
-                          <span className="value">{portraitSettings.removeShine}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.removeShine}
-                          onChange={(e) => handlePortraitSliderChange("removeShine", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>泛黄额头</span>
-                          <span className="value">{portraitSettings.yellowForehead}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.yellowForehead}
-                          onChange={(e) => handlePortraitSliderChange("yellowForehead", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>泛黑眼圈</span>
-                          <span className="value">{portraitSettings.darkCircles}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.darkCircles}
-                          onChange={(e) => handlePortraitSliderChange("darkCircles", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>泛黑鼻导</span>
-                          <span className="value">{portraitSettings.darkNose}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.darkNose}
-                          onChange={(e) => handlePortraitSliderChange("darkNose", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>去面部杂色</span>
-                          <span className="value">{portraitSettings.facialNoise}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.facialNoise}
-                          onChange={(e) => handlePortraitSliderChange("facialNoise", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
+                      <SliderItem label="皮肤平整度" value={portraitSettings.flatness} onChange={(v) => handlePortraitSliderChange("flatness", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="极细磨皮" value={portraitSettings.blurStrength} onChange={(v) => handlePortraitSliderChange("blurStrength", v)} onAutoSave={handleAutoSave} highlight />
+                      <SliderItem label="去面光 (脸部)" value={portraitSettings.removeShine} onChange={(v) => handlePortraitSliderChange("removeShine", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="泛黄额头" value={portraitSettings.yellowForehead} onChange={(v) => handlePortraitSliderChange("yellowForehead", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="泛黑眼圈" value={portraitSettings.darkCircles} onChange={(v) => handlePortraitSliderChange("darkCircles", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="泛黑鼻导" value={portraitSettings.darkNose} onChange={(v) => handlePortraitSliderChange("darkNose", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="去面部杂色" value={portraitSettings.facialNoise} onChange={(v) => handlePortraitSliderChange("facialNoise", v)} onAutoSave={handleAutoSave} />
                     </div>
                   )}
 
                   {g.id === "reshape" && (
                     <div className="sliders-list">
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏骨头型</span>
-                          <span className="value">{portraitSettings.boneShape}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.boneShape}
-                          onChange={(e) => handlePortraitSliderChange("boneShape", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏额宽</span>
-                          <span className="value">{portraitSettings.foreheadWidth}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.foreheadWidth}
-                          onChange={(e) => handlePortraitSliderChange("foreheadWidth", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏高颧骨</span>
-                          <span className="value">{portraitSettings.cheekboneHeight}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.cheekboneHeight}
-                          onChange={(e) => handlePortraitSliderChange("cheekboneHeight", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏中骨</span>
-                          <span className="value">{portraitSettings.midBone}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.midBone}
-                          onChange={(e) => handlePortraitSliderChange("midBone", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span className="highlight-dot">去双下巴</span>
-                          <span className="value">{portraitSettings.doubleChin}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.doubleChin}
-                          onChange={(e) => handlePortraitSliderChange("doubleChin", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>下巴纹缩窄</span>
-                          <span className="value">{portraitSettings.chinCrease}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.chinCrease}
-                          onChange={(e) => handlePortraitSliderChange("chinCrease", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>去鼻唇沟</span>
-                          <span className="value">{portraitSettings.nasolabialFolds}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.nasolabialFolds}
-                          onChange={(e) => handlePortraitSliderChange("nasolabialFolds", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
+                      <SliderItem label="捏骨头型" value={portraitSettings.boneShape} onChange={(v) => handlePortraitSliderChange("boneShape", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="捏额宽" value={portraitSettings.foreheadWidth} onChange={(v) => handlePortraitSliderChange("foreheadWidth", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="捏高颧骨" value={portraitSettings.cheekboneHeight} onChange={(v) => handlePortraitSliderChange("cheekboneHeight", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="捏中骨" value={portraitSettings.midBone} onChange={(v) => handlePortraitSliderChange("midBone", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="去双下巴" value={portraitSettings.doubleChin} onChange={(v) => handlePortraitSliderChange("doubleChin", v)} onAutoSave={handleAutoSave} highlight />
+                      <SliderItem label="下巴纹缩窄" value={portraitSettings.chinCrease} onChange={(v) => handlePortraitSliderChange("chinCrease", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="去鼻唇沟" value={portraitSettings.nasolabialFolds} onChange={(v) => handlePortraitSliderChange("nasolabialFolds", v)} onAutoSave={handleAutoSave} />
                     </div>
                   )}
 
                   {g.id === "eye" && (
                     <div className="sliders-list">
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span className="highlight-dot">捏上眼皮 (大眼)</span>
-                          <span className="value">{portraitSettings.upperEyelid}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.upperEyelid}
-                          onChange={(e) => handlePortraitSliderChange("upperEyelid", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏大眼袋</span>
-                          <span className="value">{portraitSettings.eyeBags}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.eyeBags}
-                          onChange={(e) => handlePortraitSliderChange("eyeBags", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>去卧蚕</span>
-                          <span className="value">{portraitSettings.tearTrough}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.tearTrough}
-                          onChange={(e) => handlePortraitSliderChange("tearTrough", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>去鼻孔暗度</span>
-                          <span className="value">{portraitSettings.removeNostril}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.removeNostril}
-                          onChange={(e) => handlePortraitSliderChange("removeNostril", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
+                      <SliderItem label="捏上眼皮 (大眼)" value={portraitSettings.upperEyelid} onChange={(v) => handlePortraitSliderChange("upperEyelid", v)} onAutoSave={handleAutoSave} highlight />
+                      <SliderItem label="捏大眼袋" value={portraitSettings.eyeBags} onChange={(v) => handlePortraitSliderChange("eyeBags", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="去卧蚕" value={portraitSettings.tearTrough} onChange={(v) => handlePortraitSliderChange("tearTrough", v)} onAutoSave={handleAutoSave} />
+                      <SliderItem label="去鼻孔暗度" value={portraitSettings.removeNostril} onChange={(v) => handlePortraitSliderChange("removeNostril", v)} onAutoSave={handleAutoSave} />
                     </div>
                   )}
 
                   {g.id === "makeup" && (
                     <div className="sliders-list">
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>腮红平整</span>
-                          <span className="value">{portraitSettings.blushFlat}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.blushFlat}
-                          onChange={(e) => handlePortraitSliderChange("blushFlat", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
+                      <SliderItem label="腮红平整" value={portraitSettings.blushFlat} onChange={(v) => handlePortraitSliderChange("blushFlat", v)} onAutoSave={handleAutoSave} />
                     </div>
                   )}
 
                   {g.id === "hair" && (
                     <div className="sliders-list">
-                      <div className="slider-item">
-                        <div className="slider-label">
-                          <span>捏小发效 (发量)</span>
-                          <span className="value">{portraitSettings.hairVolume}</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="100" 
-                          value={portraitSettings.hairVolume}
-                          onChange={(e) => handlePortraitSliderChange("hairVolume", Number(e.target.value))}
-                          onMouseUp={handleAutoSave}
-                        />
-                      </div>
+                      <SliderItem label="捏小发效 (发量)" value={portraitSettings.hairVolume} onChange={(v) => handlePortraitSliderChange("hairVolume", v)} onAutoSave={handleAutoSave} />
                     </div>
                   )}
 

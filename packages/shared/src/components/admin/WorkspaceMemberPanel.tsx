@@ -19,6 +19,7 @@ import {
 import { WorkspaceMemberSummary, WorkspaceSummary, UserSummary } from "../../types";
 import { postJson, deleteJson } from "../../utils";
 import { AdjustCreditsModal } from "./AdjustCreditsModal";
+import { SeatAllocationModal } from "./SeatAllocationModal";
 
 interface WorkspaceMemberPanelProps {
   workspaceMembers: WorkspaceMemberSummary[];
@@ -66,12 +67,6 @@ export function WorkspaceMemberPanel({
   const [showCreditsModal, setShowCreditsModal] = useState(false);
   const [selectedUserForCredits, setSelectedUserForCredits] = useState<UserSummary | null>(null);
   
-  // 席位表单字段
-  const [role, setRole] = useState("member");
-  const [status, setStatus] = useState("active");
-  const [dailyLimit, setDailyLimit] = useState(0);
-  const [monthlyLimit, setMonthlyLimit] = useState(0);
-
   // 触发复制 UUID
   const handleCopyId = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -111,61 +106,9 @@ export function WorkspaceMemberPanel({
 
   // 打开席位编辑 / 加入工作区弹窗
   const openSeatingModal = (user: UserSummary) => {
-    const existingMember = workspaceMembers.find((m) => m.user_id === user.id);
     setSelectedUserForSeat(user);
-    if (existingMember) {
-      setRole(existingMember.role);
-      setStatus(existingMember.status || "active");
-      setDailyLimit(existingMember.daily_credit_limit || 0);
-      setMonthlyLimit(existingMember.monthly_credit_limit || 0);
-    } else {
-      setRole("member");
-      setStatus("active");
-      setDailyLimit(0);
-      setMonthlyLimit(0);
-    }
     setShowSeatModal(true);
   };
-
-  // 提交席位分配
-  async function handleUpsertWorkspaceMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const workspaceId = activeWorkspace?.id;
-    if (!workspaceId) {
-      setAdminMessage("席位分配失败：未连接 API 或没有选定工作区");
-      return;
-    }
-    if (!selectedUserForSeat) return;
-
-    try {
-      const member = await postJson<WorkspaceMemberSummary>(
-        "/api/admin/workspace-members",
-        {
-          workspace_id: workspaceId,
-          operator_id: currentUser?.id ?? null,
-          user_id: selectedUserForSeat.id,
-          role,
-          status: status || "active",
-          daily_credit_limit: dailyLimit > 0 ? dailyLimit : null,
-          monthly_credit_limit: monthlyLimit > 0 ? monthlyLimit : null,
-        }
-      );
-      
-      setWorkspaceMembers((current) => [
-        member,
-        ...current.filter((item) => item.user_id !== member.user_id),
-      ]);
-      setAdminMessage(`已保存工作区席位配置：${selectedUserForSeat.display_name}`);
-      setShowSeatModal(false);
-      setSelectedUserForSeat(null);
-      
-      if (refreshAll) {
-        await refreshAll();
-      }
-    } catch {
-      setAdminMessage("席位保存失败：账户无权限或数据库连接错误");
-    }
-  }
 
   // 移除工作区席位
   async function handleRemoveWorkspaceMember(user: UserSummary) {
@@ -599,203 +542,18 @@ export function WorkspaceMemberPanel({
         </div>
       </div>
 
-      {/* 4. 精致的席位分配磨砂模态框 (Modal) */}
-      {showSeatModal && selectedUserForSeat && (
-        <div 
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.45)",
-            backdropFilter: "blur(6px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            animation: "fadeIn 0.2s ease"
-          }}
-        >
-          <div 
-            className="panel"
-            style={{
-              width: "440px",
-              padding: "28px",
-              background: "#ffffff",
-              borderRadius: "16px",
-              boxShadow: "0 12px 40px rgba(0, 0, 0, 0.12)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "20px",
-              minHeight: "auto"
-            }}
-          >
-            {/* Modal 头部 */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>工作区席位与配额设置</h3>
-                <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>
-                  为该用户在当前工作区分配系统角色并设定点数上限
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSeatModal(false);
-                  setSelectedUserForSeat(null);
-                }}
-                style={{
-                  border: 0,
-                  background: "rgba(0,0,0,0.03)",
-                  borderRadius: "50%",
-                  width: "28px",
-                  height: "28px",
-                  display: "grid",
-                  placeItems: "center",
-                  cursor: "pointer",
-                  color: "var(--rv-color-text-muted)"
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
 
-            {/* 用户快速简报 */}
-            <div 
-              style={{ 
-                background: "rgba(15, 118, 110, 0.04)", 
-                border: "1px solid rgba(15, 118, 110, 0.1)", 
-                borderRadius: "8px", 
-                padding: "12px 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px"
-              }}
-            >
-              <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "var(--rv-color-primary)", color: "#ffffff", display: "grid", placeItems: "center", fontWeight: "bold" }}>
-                {selectedUserForSeat.display_name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <strong style={{ display: "block", fontSize: "12px", color: "var(--rv-color-text-main)" }}>
-                  {selectedUserForSeat.display_name}
-                </strong>
-                <span style={{ display: "block", fontSize: "10px", color: "var(--rv-color-text-muted)" }}>
-                  {selectedUserForSeat.email ?? selectedUserForSeat.id}
-                </span>
-              </div>
-            </div>
-
-            {/* 表单提交 */}
-            <form onSubmit={handleUpsertWorkspaceMember} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div className="assets-form-field">
-                  <label style={{ fontSize: "11px", fontWeight: "700" }}>席位角色</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    style={{ 
-                      minHeight: "38px", 
-                      border: "1px solid var(--rv-color-border-thin)", 
-                      borderRadius: "8px", 
-                      padding: "0 10px", 
-                      background: "#ffffff",
-                      fontSize: "12px"
-                    }}
-                  >
-                    <option value="owner">所有者 (Owner)</option>
-                    <option value="admin">管理员 (Admin)</option>
-                    <option value="member">普通成员 (Member)</option>
-                  </select>
-                </div>
-
-                <div className="assets-form-field">
-                  <label style={{ fontSize: "11px", fontWeight: "700" }}>成员状态</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    style={{ 
-                      minHeight: "38px", 
-                      border: "1px solid var(--rv-color-border-thin)", 
-                      borderRadius: "8px", 
-                      padding: "0 10px", 
-                      background: "#ffffff",
-                      fontSize: "12px"
-                    }}
-                  >
-                    <option value="active">正常启用</option>
-                    <option value="suspended">封禁挂起</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div className="assets-form-field">
-                  <label style={{ fontSize: "11px", fontWeight: "700" }}>日消费点数上限</label>
-                  <input
-                    type="number"
-                    value={dailyLimit}
-                    onChange={(e) => setDailyLimit(Number(e.target.value))}
-                    placeholder="0 代表不设限"
-                    style={{ height: "38px", borderRadius: "8px", fontSize: "12px" }}
-                  />
-                </div>
-
-                <div className="assets-form-field">
-                  <label style={{ fontSize: "11px", fontWeight: "700" }}>月消费点数上限</label>
-                  <input
-                    type="number"
-                    value={monthlyLimit}
-                    onChange={(e) => setMonthlyLimit(Number(e.target.value))}
-                    placeholder="0 代表不设限"
-                    style={{ height: "38px", borderRadius: "8px", fontSize: "12px" }}
-                  />
-                </div>
-              </div>
-
-              <div 
-                style={{ 
-                  background: "rgba(245, 158, 11, 0.03)", 
-                  border: "1px solid rgba(245, 158, 11, 0.15)", 
-                  borderRadius: "8px", 
-                  padding: "10px 12px", 
-                  display: "flex", 
-                  gap: "8px", 
-                  color: "#d97706" 
-                }}
-              >
-                <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
-                <span style={{ fontSize: "10px", lineHeight: "1.4" }}>
-                  <strong>分配警告:</strong> 点数上限指该用户在<strong>当前选定的工作区</strong>内的消费额度限制，系统级别将自动在其触发任务时扣减相应点数。
-                </span>
-              </div>
-
-              {/* 动作按钮 */}
-              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "4px" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSeatModal(false);
-                    setSelectedUserForSeat(null);
-                  }}
-                  className="secondary-button"
-                  style={{ minHeight: "36px", fontSize: "12px", borderRadius: "8px" }}
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  style={{ minHeight: "36px", fontSize: "12px", borderRadius: "8px", padding: "0 16px" }}
-                >
-                  <UserPlus size={14} />
-                  保存席位配额
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 席位分配模态框 */}
+      <SeatAllocationModal
+        showSeatModal={showSeatModal}
+        selectedUserForSeat={selectedUserForSeat}
+        onClose={() => { setShowSeatModal(false); setSelectedUserForSeat(null); }}
+        activeWorkspace={activeWorkspace}
+        members={workspaceMembers}
+        setMembers={setWorkspaceMembers}
+        setAdminMessage={setAdminMessage}
+        currentUser={currentUser}
+      />
 
       {/* 5. 手动调额磨砂模态框 */}
       <AdjustCreditsModal

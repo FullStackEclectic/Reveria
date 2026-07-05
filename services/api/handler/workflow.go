@@ -237,8 +237,10 @@ func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSet
 			modelName = settings.BridgeTextModel
 		}
 	} else {
-		// 自营模式下强制锁定使用 12ZX 官方网关地址
-		settings.UpstreamAPIURL = "https://ai.12zx.net"
+		// 自营模式下使用站长配置的上游网关地址，未配置时使用默认地址
+		if settings.UpstreamAPIURL == "" {
+			settings.UpstreamAPIURL = "https://ai.12zx.net"
+		}
 
 		// 智能从已启用的 Provider 列表中自动抽取一个可用通道的 Key
 		var p model.Provider

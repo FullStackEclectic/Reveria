@@ -411,7 +411,7 @@ func MockPayOrder(c *gin.Context) {
 	tx := database.DB.Begin()
 
 	var order model.Order
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", orderID).First(&order).Error; err != nil {
+	if err := forUpdate(tx).Where("id = ?", orderID).First(&order).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到指定订单"})
 		return
@@ -447,7 +447,7 @@ func MockPayOrder(c *gin.Context) {
 
 	// 2. 更新工作区信息 (增加 Gift 余额和存储配额)
 	var ws model.Workspace
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", order.WorkspaceID).First(&ws).Error; err != nil {
+	if err := forUpdate(tx).Where("id = ?", order.WorkspaceID).First(&ws).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新工作区账本失败"})
 		return

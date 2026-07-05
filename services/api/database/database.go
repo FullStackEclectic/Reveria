@@ -17,6 +17,10 @@ import (
 
 var DB *gorm.DB
 
+// IsSQLite 标识当前是否使用 SQLite 数据库引擎
+// SQLite 不支持 SELECT ... FOR UPDATE 行级锁语法，需要在相关代码中条件化处理
+var IsSQLite bool
+
 // InitDatabase 初始化数据库连接，支持 Postgres 与 SQLite
 func InitDatabase() {
 	var err error
@@ -27,6 +31,8 @@ func InitDatabase() {
 	if dbType == "" {
 		dbType = "sqlite"
 	}
+
+	IsSQLite = (dbType == "sqlite")
 
 	var dialector gorm.Dialector
 
