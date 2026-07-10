@@ -376,6 +376,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
               value={advParams}
               onChange={setAdvParams}
               showAdvancedToggle={true}
+              modelId={selectedModelId}
             />
           </div>
         )}
@@ -454,48 +455,51 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
                 <X size={16} />
               </button>
             </div>
-            {projectAssets && projectAssets.length > 0 ? (
-              <div 
-                className="gen-ref-selector-grid" 
-                style={{ 
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
-                  gridAutoRows: "90px",
-                  gap: "10px",
-                  overflowY: "auto", 
-                  flex: 1, 
-                  paddingBottom: "16px",
-                  maxHeight: "none"
-                }}
-              >
-                {projectAssets.map((asset) => (
-                  <div
-                    key={asset.id}
-                    className="gen-ref-selector-item"
-                    onClick={() => {
-                      setUploadedImages([asset.file_url || asset.thumbnail_url || ""]);
-                      setIsRefSelectorOpen(false);
-                    }}
-                    title={assetTitle(asset) || "素材"}
-                    style={{ 
-                      cursor: "pointer",
-                      height: "100%",
-                      width: "100%",
-                      borderRadius: "8px",
-                      overflow: "hidden",
-                      border: "1px solid var(--rv-color-border-thin)",
-                      position: "relative"
-                    }}
-                  >
-                    <img src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} alt={assetTitle(asset) || "资产"} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ padding: "40px 10px", color: "var(--rv-color-text-muted)", fontSize: "11px", textAlign: "center", lineHeight: "1.6" }}>
-                当前项目内无可用图片资产。<br />请先通过本地上传或从左侧素材区添加。
-              </div>
-            )}
+            {(() => {
+              const imageAssets = projectAssets.filter(asset => asset.asset_type === "image");
+              return imageAssets.length > 0 ? (
+                <div 
+                  className="gen-ref-selector-grid" 
+                  style={{ 
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gridAutoRows: "90px",
+                    gap: "10px",
+                    overflowY: "auto", 
+                    flex: 1, 
+                    paddingBottom: "16px",
+                    maxHeight: "none"
+                  }}
+                >
+                  {imageAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="gen-ref-selector-item"
+                      onClick={() => {
+                        setUploadedImages([asset.file_url || asset.thumbnail_url || ""]);
+                        setIsRefSelectorOpen(false);
+                      }}
+                      title={assetTitle(asset) || "素材"}
+                      style={{ 
+                        cursor: "pointer",
+                        height: "100%",
+                        width: "100%",
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        border: "1px solid var(--rv-color-border-thin)",
+                        position: "relative"
+                      }}
+                    >
+                      <img src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")} alt={assetTitle(asset) || "资产"} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: "40px 10px", color: "var(--rv-color-text-muted)", fontSize: "11px", textAlign: "center", lineHeight: "1.6" }}>
+                  当前项目内无可用图片资产。<br />请先通过本地上传或从左侧素材区添加。
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

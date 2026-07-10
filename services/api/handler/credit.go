@@ -568,3 +568,29 @@ func MockPayOrder(c *gin.Context) {
 		"data":    order,
 	})
 }
+
+// ListWorkspaceOrders 查询工作区订单记录 (GET /credits/:workspace_id/orders)
+func ListWorkspaceOrders(c *gin.Context) {
+	workspaceIDStr := c.Param("workspace_id")
+	workspaceID, err := uuid.Parse(workspaceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区 ID 格式有误"})
+		return
+	}
+
+	actorID := c.MustGet("user_id").(uuid.UUID)
+
+	if !hasWorkspaceRole(workspaceID, actorID, []string{"owner", "admin", "member"}) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限查看此账本订单"})
+		return
+	}
+
+	var orders []model.Order
+	if err := database.DB.Where("workspace_id = ?", workspaceID).Order("created_at desc").Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "查询订单记录失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, orders)
+}
+

@@ -129,6 +129,7 @@ export function AppCore() {
     handleCreateOrder,
     handleMockPay,
   } = useOrderFlow({
+    currentUser,
     activeWorkspace,
     setTransactions,
     setAdminMessage,
@@ -150,6 +151,10 @@ export function AppCore() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>("all");
   useEffect(() => {
+    if (!currentUser) {
+      setCategories([]);
+      return;
+    }
     async function initCategories() {
       try {
         const catsRes = await getJson<any>("/api/template-categories");
@@ -161,7 +166,7 @@ export function AppCore() {
       }
     }
     void initCategories();
-  }, []);
+  }, [currentUser]);
   const [searchQuery, setSearchQuery] = useState("");
   const triggerLogin = (callback?: () => void) => { if (callback) setLoginCallback(() => callback); setIsLoginModalOpen(true); };
   const [projectsViewMode, setProjectsViewMode] = useState<"list" | "detail">("list");
@@ -311,6 +316,18 @@ export function AppCore() {
       notes: selectedCustomer.notes ?? "",
     });
   }, [selectedCustomer?.id]);
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setCurrentUser(null);
+      triggerLogin();
+    };
+    window.addEventListener("reveria-unauthorized", handleUnauthorized);
+    return () => {
+      window.removeEventListener("reveria-unauthorized", handleUnauthorized);
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedActiveView = localStorage.getItem("reveria.activeView");

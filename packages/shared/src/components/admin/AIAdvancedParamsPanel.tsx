@@ -25,12 +25,14 @@ interface AIAdvancedParamsPanelProps {
   value: AIAdvancedParams;
   onChange: (val: AIAdvancedParams) => void;
   showAdvancedToggle?: boolean; // 是否显示“先进的”开关
+  modelId?: string; // 当前选中的模型 ID
 }
 
 export function AIAdvancedParamsPanel({
   value,
   onChange,
-  showAdvancedToggle = true
+  showAdvancedToggle = true,
+  modelId
 }: AIAdvancedParamsPanelProps) {
   // 合并默认值
   const params: AIAdvancedParams = {
@@ -145,6 +147,79 @@ export function AIAdvancedParamsPanel({
   // 状态折叠
   const [showAdvancedSection, setShowAdvancedSection] = React.useState(false);
   const [isAdvancedSamplerEnabled, setIsAdvancedSamplerEnabled] = React.useState(true);
+
+  const isSdModel = !(
+    modelId === "gpt-image-2" || 
+    modelId?.includes("dall-e") || 
+    modelId?.includes("midjourney") || 
+    modelId?.includes("mj-") ||
+    modelId?.includes("gpt-")
+  );
+
+  if (!isSdModel) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}>
+        {/* 宽高比例 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>宽高比例</span>
+          <div className="gen-preset-grid" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "6px" }}>
+            {(["1:1", "3:2", "2:3", "4:3", "3:4", "9:16", "1:1(2k)", "16:9(2k)", "9:16(2k)", "16:9(4k)", "9:16(4k)", "custom"] as const).map((ratio) => (
+              <button
+                key={ratio}
+                type="button"
+                className={`gen-preset-btn ${params.aspect_ratio === ratio ? "active" : ""}`}
+                onClick={() => handleRatioClick(ratio)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  padding: "6px",
+                  borderRadius: "var(--rv-radius-xs)",
+                  border: "1px solid var(--rv-color-border-thin)",
+                  background: params.aspect_ratio === ratio ? "var(--rv-color-primary-light)" : "#ffffff",
+                  color: params.aspect_ratio === ratio ? "var(--rv-color-primary)" : "var(--rv-color-text-main)",
+                  cursor: "pointer",
+                  fontWeight: params.aspect_ratio === ratio ? "700" : "normal"
+                }}
+              >
+                {ratio === "custom" ? (
+                  <div style={{ width: "10px", height: "10px", border: "1.5px dashed currentColor", borderRadius: "1px", display: "inline-block", flexShrink: 0 }} />
+                ) : (
+                  <div className="gen-preset-ratio-box" style={getRatioBoxStyle(ratio)} />
+                )}
+                <span className="gen-preset-ratio-text" style={{ fontSize: "10px" }}>{ratio === "custom" ? "自定义" : ratio}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 宽度与高度滑块 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", background: "rgba(0, 0, 0, 0.01)", padding: "10px", borderRadius: "var(--rv-radius-xs)", border: "1px solid var(--rv-color-border-thin)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>宽度 (Width)</span>
+            <input
+              type="number"
+              disabled={params.aspect_ratio !== "custom"}
+              value={params.width}
+              onChange={(e) => updateParam("width", Number(e.target.value))}
+              style={{ width: "100%", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "4px 8px", fontSize: "11px", fontWeight: "bold", background: params.aspect_ratio !== "custom" ? "rgba(0, 0, 0, 0.04)" : "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span style={{ fontSize: "10px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>高度 (Height)</span>
+            <input
+              type="number"
+              disabled={params.aspect_ratio !== "custom"}
+              value={params.height}
+              onChange={(e) => updateParam("height", Number(e.target.value))}
+              style={{ width: "100%", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "4px 8px", fontSize: "11px", fontWeight: "bold", background: params.aspect_ratio !== "custom" ? "rgba(0, 0, 0, 0.04)" : "#ffffff", color: "var(--rv-color-text-main)", outline: "none" }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}>

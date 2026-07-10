@@ -41,11 +41,16 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		progressText := fmt.Sprintf("AI 画面生成完毕，正在下载本地化 (已完成 %d/%d)...", idx, totalCount)
 		progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
 		database.DB.Model(&task).Update("output_payload", progressJSON)
+
+		log.Printf("[TaskSucceeded] 开始下载图片 %d/%d: %s", idx+1, totalCount, url)
 		resp, err := downloadClient.Get(url)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			if resp != nil {
-				resp.Body.Close()
-			}
+		if err != nil {
+			log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (网络错误): %v, URL: %s", idx+1, totalCount, err, url)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (HTTP %d), URL: %s", idx+1, totalCount, resp.StatusCode, url)
+			resp.Body.Close()
 			continue
 		}
 
@@ -143,7 +148,11 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			Metadata:     &metaStr,
 			CreatedAt:    time.Now(),
 		}
-		_ = database.DB.Create(&asset)
+		if err := database.DB.Create(&asset).Error; err != nil {
+			log.Printf("[TaskSucceeded] 创建资产记录失败: %v, ID: %s, file: %s", err, asset.ID, localURL)
+		} else {
+			log.Printf("[TaskSucceeded] 成功创建资产记录: %s, file: %s", asset.ID, localURL)
+		}
 	}
 
 	// 4. 积分正式扣减结算事务

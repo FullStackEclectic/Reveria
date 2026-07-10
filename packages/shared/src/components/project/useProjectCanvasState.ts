@@ -267,12 +267,37 @@ export function useProjectCanvasState({
     }));
   }
 
+  function addFrameToCanvas() {
+    pushToHistory(projectCanvas);
+    setProjectCanvas((current) => ({
+      ...current,
+      version: 1,
+      items: [
+        ...current.items,
+        {
+          id: createCanvasItemId(),
+          type: "frame",
+          title: "新建画框",
+          text: "",
+          x: Math.round(-panX + 80 + (current.items.length % 4) * 40),
+          y: Math.round(-panY + 80 + (current.items.length % 5) * 30),
+          w: 480,
+          h: 360,
+          board_id: activeBoardId,
+        },
+      ],
+    }));
+  }
+
   function removeCanvasItem(itemId: string) {
     pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
       version: 1,
       items: current.items.filter((item) => item.id !== itemId),
+      connections: (current.connections || []).filter(
+        (c) => c.fromItemId !== itemId && c.toItemId !== itemId
+      ),
     }));
     if (selectedItemId === itemId) {
       setSelectedItemId("");
@@ -437,6 +462,7 @@ export function useProjectCanvasState({
     pushToHistory,
     addAssetToCanvas,
     addNoteToCanvas,
+    addFrameToCanvas,
     removeCanvasItem,
     saveProjectCanvas,
     handleCreateBoard,

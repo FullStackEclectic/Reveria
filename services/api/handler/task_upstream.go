@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
 	"time"
 
 	"reveria/services/api/database"
@@ -247,19 +248,21 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		} else if icVal, ok := payload["image_count"].(int); ok && icVal > 0 {
 			imageCount = icVal
 		}
-		imageCountStr := fmt.Sprintf("%d", imageCount)
+		if imageCount < 1 {
+			imageCount = 1
+		}
+		if imageCount > 16 { // 限制单次最多生成 16 张图片
+			imageCount = 16
+		}
 
 		refImg, _ := payload["ref_image_url"].(string)
+		var imgBytes []byte
+		var err error
+
 		if refImg != "" {
-			// 【图生图分支】调用 /v1/images/edits，使用 multipart/form-data 格式
-			upstreamURL = fmt.Sprintf("%s/v1/images/edits", settings.UpstreamAPIURL)
 			log.Printf("[callUpstreamGateway] ImageToImage (edits): Downloading reference image %s", refImg)
 
-			// 读取参考图片数据
-			var imgBytes []byte
-			var err error
-
-			// 1. 尝试直接从本地磁盘读取（消除内部 HTTP 环回请求可能导致的 404/卡死等网络风险）
+			// 1. 尝试直接从本地磁盘读取
 			lastSlash := strings.LastIndex(refImg, "/")
 			if lastSlash != -1 {
 				fileName := refImg[lastSlash+1:]
@@ -287,49 +290,215 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 				}
 				log.Printf("[callUpstreamGateway] ImageToImage (edits): Successfully downloaded image via HTTP: %s", refImg)
 			}
+		}
 
-			// 拼装 multipart body
-			bodyBuf := &bytes.Buffer{}
-			bodyWriter := multipart.NewWriter(bodyBuf)
+		// 上游 API 限制单次请求 n 最大为 4，需要分批请求
+		// 采用串行执行（非并发），降低上游压力
+		// 核心改进：部分成功也算成功，已成功的图片不会因后续批次失败而丢失
+		var batches []int
+		var subPrompts []string
+		isMultiSceneTemplate := false
 
-			fileName := "reference.png"
-			if strings.Contains(refImg, ".jpg") || strings.Contains(refImg, ".jpeg") {
-				fileName = "reference.jpg"
-			} else if strings.Contains(refImg, ".webp") {
-				fileName = "reference.webp"
+		if strings.Contains(prompt, "需要一张") &&
+			strings.Contains(prompt, "产品配戴图") &&
+			strings.Contains(prompt, "产品细节图") {
+			isMultiSceneTemplate = true
+
+			prefix := ""
+			idxNeed := strings.Index(prompt, "需要一张")
+			if idxNeed != -1 {
+				prefix = prompt[:idxNeed]
 			}
 
-			fileWriter, err := bodyWriter.CreateFormFile("image", fileName)
-			if err != nil {
-				handleTaskFailure(task.ID, "MULTIPART_ERROR", "创建图片表单字段失败: "+err.Error())
-				return
-			}
-			_, err = io.Copy(fileWriter, bytes.NewReader(imgBytes))
-			if err != nil {
-				handleTaskFailure(task.ID, "MULTIPART_ERROR", "写入图片表单数据失败: "+err.Error())
-				return
+			suffix := "，图片尺寸1200*1200，绝对不能拼图，请务必生成单张画面，绝对禁止使用多格拼图。"
+
+			scenes := []string{
+				"需要一张产品主图，以精美的饰品特写展示产品的卖点与工艺品质",
+				"需要一张产品配戴图，由单个模特佩戴展示产品的实际佩戴效果与时尚氛围",
+				"需要一张近距离产品细节图，展示产品的精细纹路、材质工艺与细节特写",
+				"需要一张产品白底图，在纯白色背景上展示产品的真实结构与本色",
+				"需要一张材质/卖点图，突出展示做工精细",
+				"需要一张场景/礼物氛围图，展示产品在精美的礼品包装盒场景中传递心意",
 			}
 
-			_ = bodyWriter.WriteField("prompt", prompt)
-			_ = bodyWriter.WriteField("model", gatewayModelName)
-			_ = bodyWriter.WriteField("n", imageCountStr)
-			if sizeStr != "" {
-				_ = bodyWriter.WriteField("size", sizeStr)
+			limit := imageCount
+			if limit > len(scenes) {
+				limit = len(scenes)
 			}
-
-			contentType = bodyWriter.FormDataContentType()
-			_ = bodyWriter.Close()
-			reqBody = bodyBuf.Bytes()
+			for i := 0; i < limit; i++ {
+				subPrompts = append(subPrompts, prefix+scenes[i]+suffix)
+				batches = append(batches, 1)
+			}
 		} else {
-			// 【文生图分支】调用 /v1/images/generations，使用 application/json 格式
-			upstreamURL = fmt.Sprintf("%s/v1/images/generations", settings.UpstreamAPIURL)
-			gatewayReq := map[string]any{
-				"model":  gatewayModelName,
-				"prompt": prompt,
-				"n":      imageCount,
-				"size":   sizeStr,
+			maxPerBatch := 4
+			if refImg != "" {
+				maxPerBatch = 2 // 图生图每批上限降低，提高成功率
 			}
-			reqBody, _ = json.Marshal(gatewayReq)
+			tempCount := imageCount
+			for tempCount > 0 {
+				if tempCount >= maxPerBatch {
+					batches = append(batches, maxPerBatch)
+					tempCount -= maxPerBatch
+				} else {
+					batches = append(batches, tempCount)
+					tempCount = 0
+				}
+			}
+		}
+
+		// 图生图超时 300 秒（需上传参考图+生成多张变体），文生图 90 秒
+		httpTimeout := 90 * time.Second
+		if refImg != "" {
+			httpTimeout = 300 * time.Second
+		}
+
+		log.Printf("[callUpstreamGateway] 总计请求 %d 张图片，分 %d 批串行执行，timeout=%s", imageCount, len(batches), httpTimeout)
+
+		// 写入进度提示
+		progressJSON := fmt.Sprintf(`{"progress_text":"正在生成 %d 张图片，请耐心等待..."}`, imageCount)
+		database.DB.Model(&task).Update("output_payload", progressJSON)
+
+		var allURLs []string
+		var lastErr error
+
+		for batchIdx, count := range batches {
+			// 更新进度
+			if batchIdx > 0 {
+				progressJSON = fmt.Sprintf(`{"progress_text":"已生成 %d/%d 张图片，继续生成中..."}`, len(allURLs), imageCount)
+				database.DB.Model(&task).Update("output_payload", progressJSON)
+			}
+
+			// 确定本批次的 prompt
+			currentPrompt := prompt
+			if isMultiSceneTemplate && batchIdx < len(subPrompts) {
+				currentPrompt = subPrompts[batchIdx]
+				log.Printf("[callUpstreamGateway] 一图生多图拆分提示词，批次 %d/%d: %s", batchIdx+1, len(batches), currentPrompt)
+			}
+
+			var batchUpstreamURL string
+			var batchReqBody []byte
+			var batchContentType string = "application/json"
+
+			if refImg != "" {
+				// 【图生图分支】调用 /v1/images/edits
+				batchUpstreamURL = fmt.Sprintf("%s/v1/images/edits", settings.UpstreamAPIURL)
+				bodyBuf := &bytes.Buffer{}
+				bodyWriter := multipart.NewWriter(bodyBuf)
+
+				fileName := "reference.png"
+				if strings.Contains(refImg, ".jpg") || strings.Contains(refImg, ".jpeg") {
+					fileName = "reference.jpg"
+				} else if strings.Contains(refImg, ".webp") {
+					fileName = "reference.webp"
+				}
+
+				fileWriter, fErr := bodyWriter.CreateFormFile("image", fileName)
+				if fErr != nil {
+					lastErr = fmt.Errorf("创建图片表单字段失败: %w", fErr)
+					log.Printf("[callUpstreamGateway] 批次 %d/%d 构建表单失败: %v", batchIdx+1, len(batches), fErr)
+					break
+				}
+				_, fErr = io.Copy(fileWriter, bytes.NewReader(imgBytes))
+				if fErr != nil {
+					lastErr = fmt.Errorf("写入图片表单数据失败: %w", fErr)
+					log.Printf("[callUpstreamGateway] 批次 %d/%d 写入表单失败: %v", batchIdx+1, len(batches), fErr)
+					break
+				}
+
+				_ = bodyWriter.WriteField("prompt", currentPrompt)
+				_ = bodyWriter.WriteField("model", gatewayModelName)
+				_ = bodyWriter.WriteField("n", fmt.Sprintf("%d", count))
+				if sizeStr != "" {
+					_ = bodyWriter.WriteField("size", sizeStr)
+				}
+
+				batchContentType = bodyWriter.FormDataContentType()
+				_ = bodyWriter.Close()
+				batchReqBody = bodyBuf.Bytes()
+			} else {
+				// 【文生图分支】调用 /v1/images/generations
+				batchUpstreamURL = fmt.Sprintf("%s/v1/images/generations", settings.UpstreamAPIURL)
+				gatewayReq := map[string]any{
+					"model":  gatewayModelName,
+					"prompt": currentPrompt,
+					"n":      count,
+					"size":   sizeStr,
+				}
+				batchReqBody, _ = json.Marshal(gatewayReq)
+			}
+
+			log.Printf("[callUpstreamGateway] 发送批次 %d/%d, n=%d", batchIdx+1, len(batches), count)
+
+			batchReq, bErr := http.NewRequest("POST", batchUpstreamURL, bytes.NewBuffer(batchReqBody))
+			if bErr != nil {
+				lastErr = fmt.Errorf("网关连接失败: %w", bErr)
+				log.Printf("[callUpstreamGateway] 批次 %d/%d 创建请求失败: %v", batchIdx+1, len(batches), bErr)
+				continue // 跳过此批次，尝试下一批
+			}
+
+			batchReq.Header.Set("Content-Type", batchContentType)
+			batchReq.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
+
+			batchClient := &http.Client{
+				Transport: insecureTransport,
+				Timeout:   httpTimeout,
+			}
+			batchResp, bErr := batchClient.Do(batchReq)
+			if bErr != nil {
+				lastErr = fmt.Errorf("调用主网关超时: %w", bErr)
+				log.Printf("[callUpstreamGateway] 批次 %d/%d 请求超时: %v", batchIdx+1, len(batches), bErr)
+				continue // 跳过此批次，尝试下一批
+			}
+
+			batchRespBytes, _ := io.ReadAll(batchResp.Body)
+			batchResp.Body.Close()
+
+			if batchResp.StatusCode != http.StatusOK {
+				var errorResp map[string]any
+				_ = json.Unmarshal(batchRespBytes, &errorResp)
+				msg := "网关调用错误"
+				if errData, ok := errorResp["error"].(map[string]any); ok {
+					if m, ok := errData["message"].(string); ok {
+						msg = m
+					}
+				}
+				lastErr = fmt.Errorf("GATEWAY_%d: %s", batchResp.StatusCode, msg)
+				log.Printf("[callUpstreamGateway] 批次 %d/%d 返回错误: %s", batchIdx+1, len(batches), msg)
+				continue // 跳过此批次，尝试下一批
+			}
+
+			var batchResponseData map[string]any
+			if err := json.Unmarshal(batchRespBytes, &batchResponseData); err != nil {
+				lastErr = fmt.Errorf("网关返回数据无法解析")
+				log.Printf("[callUpstreamGateway] 批次 %d/%d 响应解析失败", batchIdx+1, len(batches))
+				continue
+			}
+
+			if dataList, ok := batchResponseData["data"].([]any); ok && len(dataList) > 0 {
+				for _, item := range dataList {
+					if m, ok := item.(map[string]any); ok {
+						if url, ok := m["url"].(string); ok && url != "" {
+							allURLs = append(allURLs, url)
+						}
+					}
+				}
+			}
+
+			log.Printf("[callUpstreamGateway] 批次 %d/%d 成功，累计已获得 %d 张图片", batchIdx+1, len(batches), len(allURLs))
+		}
+
+		// 部分成功也算成功：只要有 >= 1 张图片就走成功流程
+		if len(allURLs) > 0 {
+			log.Printf("[callUpstreamGateway] 请求 %d 张图片，实际返回 %d 张", imageCount, len(allURLs))
+			handleTaskSuccess(task, allURLs)
+			return
+		} else {
+			errMsg := "上游未返回任何图片数据"
+			if lastErr != nil {
+				errMsg = lastErr.Error()
+			}
+			handleTaskFailure(task.ID, "NO_IMAGES_GENERATED", errMsg)
+			return
 		}
 	} else if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
 		// 视频生成

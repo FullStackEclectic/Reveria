@@ -1,5 +1,5 @@
 import { PromptTemplate, AssetSummary, ProjectCanvasDocument, CanvasItem } from "../../types";
-import { postJson, putJson, getJson, assetTitle } from "../../utils";
+import { postJson, putJson, getJson, assetTitle, getAssetMetadata } from "../../utils";
 
 interface GenerateParams {
   template: PromptTemplate;
@@ -175,7 +175,7 @@ export async function runTemplateGeneration({
         negative_prompt: payload.negative_prompt || template.negative_prompt || "",
         size: sizePayload,
         quality: "medium",
-        image_count: advParams.image_count ?? (template.title.includes("多图") ? 6 : 1),
+        image_count: Math.max(1, Math.min(advParams.image_count ?? (template.title.includes("多图") ? 6 : 1), 16)),
         ref_image_url: payload.ref_image_url,
         steps: advParams.steps ?? 28,
         cfg_scale: advParams.cfg_scale ?? 7.0,
@@ -290,7 +290,7 @@ export async function runTemplateGeneration({
           items: textItems,
         }));
         void saveCanvasData(textItems);
-        showToast(`“${template.title}”创意生成成功！`);
+        showToast(`\u201c${template.title}\u201d创意生成成功！`);
       } else if (task && task.id) {
         const taskId = task.id;
         
@@ -306,9 +306,10 @@ export async function runTemplateGeneration({
 
         const pollInterval = setInterval(async () => {
           try {
-            const taskRes = await getJson<{ success: boolean; data: any }>(`/api/tasks/${taskId}`);
-            if (taskRes.success && taskRes.data) {
-              const taskStatus = taskRes.data.status;
+            const res = await getJson<any>(`/api/tasks/${taskId}`);
+            const taskData = (res && typeof res.success === "boolean" && res.data) ? res.data : res;
+            if (taskData) {
+              const taskStatus = taskData.status;
               if (taskStatus === "succeeded") {
                 clearInterval(pollInterval);
                 const assetsRes = await getJson<AssetSummary[] | { success: boolean; data: AssetSummary[] }>(
@@ -323,10 +324,11 @@ export async function runTemplateGeneration({
                 }
 
                 if (assetsData.length > 0) {
-                  const latestAsset = assetsData[0];
                   if (setAssets) {
                     setAssets(assetsData);
                   }
+
+                  const latestAsset = assetsData[0];
                   
                   setProjectCanvas((current) => {
                     const successItems = current.items.map((item) =>
@@ -348,7 +350,7 @@ export async function runTemplateGeneration({
                     return { ...current, items: successItems };
                   });
                 }
-                showToast(`“${template.title}”生成完毕！`);
+                showToast(`\u201c${template.title}\u201d生成完毕！`);
               } else if (taskStatus === "failed") {
                 clearInterval(pollInterval);
                 
@@ -358,7 +360,7 @@ export async function runTemplateGeneration({
                       ? {
                           ...item,
                           title: `${template.title} 生成失败`,
-                          text: `错误信息: ${taskRes.data.error_message || "未知服务商内部错误"}`,
+                          text: `错误信息: ${taskData.error_message || "未知服务商内部错误"}`,
                         }
                       : item
                   );
@@ -366,6 +368,26 @@ export async function runTemplateGeneration({
                   return { ...current, items: failItems };
                 });
                 showToast("任务生成失败");
+              } else if (taskStatus === "running") {
+                // 从 output_payload 中读取实时进度文本并更新占位卡片
+                let progressText = "AI 正在生成中，请耐心等待...";
+                try {
+                  const outputPayload = typeof taskData.output_payload === "string"
+                    ? JSON.parse(taskData.output_payload)
+                    : taskData.output_payload;
+                  if (outputPayload?.progress_text) {
+                    progressText = outputPayload.progress_text;
+                  }
+                } catch (_e) { /* ignore parse error */ }
+
+                setProjectCanvas((current) => ({
+                  ...current,
+                  items: current.items.map((item) =>
+                    item.id === placeholderId
+                      ? { ...item, text: `提示词: ${payload.prompt}\n\n${progressText}` }
+                      : item
+                  ),
+                }));
               }
             }
           } catch (err) {
@@ -375,8 +397,9 @@ export async function runTemplateGeneration({
 
         setTimeout(() => {
           clearInterval(pollInterval);
-        }, 120000);
+        }, 600000);  // 多图生成可能需要较长时间，总超时 10 分钟
       }
+
     } else {
       throw new Error("接口返回失败");
     }

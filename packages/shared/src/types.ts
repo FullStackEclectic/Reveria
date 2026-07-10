@@ -179,7 +179,7 @@ export type CanvasBoard = {
 
 export type CanvasItem = {
   id: string;
-  type: "asset" | "note";
+  type: "asset" | "note" | "frame";
   asset_id?: string;
   task_id?: string; // 关联的异步生图任务 ID
   title: string;

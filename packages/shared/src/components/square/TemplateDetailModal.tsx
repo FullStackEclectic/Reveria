@@ -351,6 +351,7 @@ export function TemplateDetailModal({
                 value={advParams}
                 onChange={setAdvParams}
                 showAdvancedToggle={true}
+                modelId={template.model_id}
               />
             </div>
 

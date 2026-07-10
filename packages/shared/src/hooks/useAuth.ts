@@ -46,6 +46,11 @@ export function useAuth({
     }
   }
 
+  useEffect(() => {
+    void restoreCurrentUser();
+  }, []);
+
+
   // 退出登录
   async function handleLogout() {
     try {

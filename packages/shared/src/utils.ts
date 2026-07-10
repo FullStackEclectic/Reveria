@@ -310,6 +310,16 @@ export function withAuthHeaders(headers: Record<string, string> = {}) {
   };
 }
 
+function handleHttpStatus(status: number) {
+  if (status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      window.dispatchEvent(new Event("reveria-unauthorized"));
+    }
+  }
+}
+
 export async function getJson<T>(
   path: string,
   headers?: Record<string, string>,
@@ -318,6 +328,7 @@ export async function getJson<T>(
     headers: withAuthHeaders(headers),
   });
   if (!response.ok) {
+    handleHttpStatus(response.status);
     throw new Error(`GET ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
@@ -332,6 +343,7 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    handleHttpStatus(response.status);
     throw new Error(`POST ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
@@ -349,6 +361,7 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    handleHttpStatus(response.status);
     throw new Error(`PUT ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
@@ -361,6 +374,7 @@ export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
+    handleHttpStatus(response.status);
     throw new Error(`DELETE ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
@@ -376,6 +390,7 @@ export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
     body: formData,
   });
   if (!response.ok) {
+    handleHttpStatus(response.status);
     throw new Error(`POST /api/assets/upload failed with ${response.status}`);
   }
   return (await response.json()) as AssetSummary;

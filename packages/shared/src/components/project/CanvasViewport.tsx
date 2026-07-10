@@ -131,6 +131,9 @@ export function CanvasViewport({
   const [realResolutions, setRealResolutions] = useState<Record<string, string>>({});
   const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
   const currentTempCoords = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
+  const batchDragStartOffsets = useRef<{ id: string; startX: number; startY: number }[]>([]);
 
   useEffect(() => {
     visibleItems.forEach((item) => {
@@ -289,15 +292,17 @@ export function CanvasViewport({
         if (setProjectCanvas) {
           setProjectCanvas((curr) => {
             const nextConns = curr.connections ? [...curr.connections] : [];
-            const exists = nextConns.some(
+            const idx = nextConns.findIndex(
               (c) => c.fromItemId === connectionSourceId && c.toItemId === itemId
             );
-            if (!exists) {
+            if (idx === -1) {
               nextConns.push({
                 id: `conn-${Date.now()}`,
                 fromItemId: connectionSourceId,
                 toItemId: itemId,
               });
+            } else {
+              nextConns.splice(idx, 1);
             }
             return {
               ...curr,
@@ -310,10 +315,54 @@ export function CanvasViewport({
       return;
     }
 
-    setSelectedItemId(itemId);
+    const isShiftPressed = e.shiftKey;
+    let nextSelected = [...selectedItemIds];
+    if (!nextSelected.includes(itemId)) {
+      if (isShiftPressed) {
+        nextSelected.push(itemId);
+      } else {
+        nextSelected = [itemId];
+      }
+    } else if (isShiftPressed) {
+      nextSelected = nextSelected.filter(id => id !== itemId);
+    }
+    
+    setSelectedItemIds(nextSelected);
+    setSelectedItemId(nextSelected.length === 1 ? nextSelected[0] : "");
+
     setDraggingCanvasItemId(itemId);
     const item = projectCanvas.items.find((i) => i.id === itemId);
     if (!item) return;
+
+    // 联动平移项集合计算
+    let linkedItemIds = [...nextSelected];
+    
+    // 如果是画框，寻找并联动包裹的所有子卡片
+    if (item.type === "frame") {
+      const frameRect = { x1: item.x, y1: item.y, x2: item.x + item.w, y2: item.y + item.h };
+      const frameChildrenIds = visibleItems.filter(child => 
+        child.id !== item.id &&
+        child.x >= frameRect.x1 &&
+        child.y >= frameRect.y1 &&
+        (child.x + child.w) <= frameRect.x2 &&
+        (child.y + child.h) <= frameRect.y2
+      ).map(child => child.id);
+      
+      linkedItemIds = Array.from(new Set([...linkedItemIds, ...frameChildrenIds]));
+    }
+    
+    // 把当前正在拖拽的卡片放在首位
+    linkedItemIds = linkedItemIds.filter(id => id !== itemId);
+    linkedItemIds.unshift(itemId);
+
+    batchDragStartOffsets.current = linkedItemIds.map(id => {
+      const linkedItem = projectCanvas.items.find(i => i.id === id);
+      return {
+        id,
+        startX: linkedItem ? linkedItem.x : 0,
+        startY: linkedItem ? linkedItem.y : 0,
+      };
+    });
 
     currentTempCoords.current = { x: item.x, y: item.y, w: item.w, h: item.h };
     itemDragStart.current = {
@@ -345,6 +394,16 @@ export function CanvasViewport({
           if (e.target === e.currentTarget) {
             setSelectedItemId("");
             setConnectionSourceId("");
+            setSelectedItemIds([]);
+            
+            if (!readOnly) {
+              setSelectionBox({
+                startX: e.clientX,
+                startY: e.clientY,
+                curX: e.clientX,
+                curY: e.clientY
+              });
+            }
           }
         }
       }}
@@ -354,6 +413,12 @@ export function CanvasViewport({
           const dy = e.clientY - dragStart.current.y;
           setPanX(dragStart.current.panX + dx);
           setPanY(dragStart.current.panY + dy);
+        } else if (selectionBox) {
+          setSelectionBox({
+            ...selectionBox,
+            curX: e.clientX,
+            curY: e.clientY
+          });
         } else if (draggingCanvasItemId && !readOnly) {
           const item = projectCanvas.items.find((i) => i.id === draggingCanvasItemId);
           if (item) {
@@ -366,8 +431,8 @@ export function CanvasViewport({
             let snappedX = Math.round(targetX / snapGrid) * snapGrid;
             let snappedY = Math.round(targetY / snapGrid) * snapGrid;
 
-            // --- 对齐吸附 Snapping 算法 ---
-            const otherItems = visibleItems.filter((i) => i.id !== draggingCanvasItemId);
+            // --- 对齐吸附 Snapping 算法 (只应用于主拖拽卡片) ---
+            const otherItems = visibleItems.filter((i) => !batchDragStartOffsets.current.some(b => b.id === i.id));
             const snapThreshold = 10;
             const guides: typeof activeGuides = [];
             let snappedToOtherX = false;
@@ -433,13 +498,23 @@ export function CanvasViewport({
 
             setActiveGuides(guides);
 
-            currentTempCoords.current = { x: snappedX, y: snappedY, w: item.w, h: item.h };
+            // 计算实际的主卡片位移
+            const actualDx = snappedX - itemDragStart.current.itemX;
+            const actualDy = snappedY - itemDragStart.current.itemY;
 
-            const element = document.getElementById(`canvas-item-${draggingCanvasItemId}`);
-            if (element) {
-              element.style.left = `${snappedX}px`;
-              element.style.top = `${snappedY}px`;
-            }
+            // 平移所有联动元素
+            batchDragStartOffsets.current.forEach(offset => {
+              const elX = Math.round((offset.startX + actualDx) / snapGrid) * snapGrid;
+              const elY = Math.round((offset.startY + actualDy) / snapGrid) * snapGrid;
+              
+              const el = document.getElementById(`canvas-item-${offset.id}`);
+              if (el) {
+                el.style.left = `${elX}px`;
+                el.style.top = `${elY}px`;
+              }
+            });
+
+            currentTempCoords.current = { x: snappedX, y: snappedY, w: item.w, h: item.h };
 
             // 同步覆盖层元素
             const toolbar = document.querySelector(".canvas-floating-toolbar") as HTMLElement;
@@ -573,41 +648,107 @@ export function CanvasViewport({
       onMouseUp={() => {
         setIsPanning(false);
         setActiveGuides([]);
+
+        if (selectionBox) {
+          const rectX1 = (Math.min(selectionBox.startX, selectionBox.curX) - panX) / zoom;
+          const rectY1 = (Math.min(selectionBox.startY, selectionBox.curY) - panY) / zoom;
+          const rectX2 = (Math.max(selectionBox.startX, selectionBox.curX) - panX) / zoom;
+          const rectY2 = (Math.max(selectionBox.startY, selectionBox.curY) - panY) / zoom;
+
+          const newlySelected = visibleItems.filter((item) => {
+            const itemX1 = item.x;
+            const itemY1 = item.y;
+            const itemX2 = item.x + item.w;
+            const itemY2 = item.y + item.h;
+            return !(itemX2 < rectX1 || itemX1 > rectX2 || itemY2 < rectY1 || itemY1 > rectY2);
+          }).map((item) => item.id);
+
+          setSelectedItemIds(newlySelected);
+          setSelectedItemId(newlySelected.length === 1 ? newlySelected[0] : "");
+          setSelectionBox(null);
+        }
+
         if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
           const targetId = draggingCanvasItemId || resizingItemId;
           const { x, y, w, h } = currentTempCoords.current;
+
           if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
             if (pushToHistory) pushToHistory(projectCanvas);
-            setProjectCanvas((current) => ({
-              ...current,
-              items: current.items.map((i) =>
-                i.id === targetId ? { ...i, x, y, w, h } : i
-              ),
-            }));
+
+            if (draggingCanvasItemId && batchDragStartOffsets.current.length > 1) {
+              const actualDx = x - itemDragStart.current.itemX;
+              const actualDy = y - itemDragStart.current.itemY;
+              const snapGrid = 8;
+
+              setProjectCanvas((current) => {
+                const nextItems = current.items.map((i) => {
+                  const offset = batchDragStartOffsets.current.find((b) => b.id === i.id);
+                  if (offset) {
+                    const elX = Math.round((offset.startX + actualDx) / snapGrid) * snapGrid;
+                    const elY = Math.round((offset.startY + actualDy) / snapGrid) * snapGrid;
+                    return { ...i, x: elX, y: elY };
+                  }
+                  return i;
+                });
+                return { ...current, items: nextItems };
+              });
+            } else {
+              setProjectCanvas((current) => ({
+                ...current,
+                items: current.items.map((i) =>
+                  i.id === targetId ? { ...i, x, y, w, h } : i
+                ),
+              }));
+            }
           }
         }
         setDraggingCanvasItemId("");
         setResizingItemId("");
+        batchDragStartOffsets.current = [];
         currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
       }}
       onMouseLeave={() => {
         setIsPanning(false);
         setActiveGuides([]);
+        setSelectionBox(null);
+
         if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
           const targetId = draggingCanvasItemId || resizingItemId;
           const { x, y, w, h } = currentTempCoords.current;
+
           if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
             if (pushToHistory) pushToHistory(projectCanvas);
-            setProjectCanvas((current) => ({
-              ...current,
-              items: current.items.map((i) =>
-                i.id === targetId ? { ...i, x, y, w, h } : i
-              ),
-            }));
+
+            if (draggingCanvasItemId && batchDragStartOffsets.current.length > 1) {
+              const actualDx = x - itemDragStart.current.itemX;
+              const actualDy = y - itemDragStart.current.itemY;
+              const snapGrid = 8;
+
+              setProjectCanvas((current) => {
+                const nextItems = current.items.map((i) => {
+                  const offset = batchDragStartOffsets.current.find((b) => b.id === i.id);
+                  if (offset) {
+                    const elX = Math.round((offset.startX + actualDx) / snapGrid) * snapGrid;
+                    const elY = Math.round((offset.startY + actualDy) / snapGrid) * snapGrid;
+                    return { ...i, x: elX, y: elY };
+                  }
+                  return i;
+                });
+                return { ...current, items: nextItems };
+              });
+            } else {
+              setProjectCanvas((current) => ({
+                ...current,
+                items: current.items.map((i) =>
+                  i.id === targetId ? { ...i, x, y, w, h } : i
+                ),
+              }));
+            }
           }
         }
         setDraggingCanvasItemId("");
         setResizingItemId("");
+        batchDragStartOffsets.current = [];
         currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
       }}
       onContextMenu={(e) => e.preventDefault()}
@@ -722,7 +863,7 @@ export function CanvasViewport({
           visibleItems.map((item) => {
             const asset = item.asset_id ? assets.find((a) => a.id === item.asset_id) : null;
             const colors = getCardColorStyle(item.color);
-            const isSelected = selectedItemId === item.id;
+            const isSelected = selectedItemId === item.id || selectedItemIds.includes(item.id);
 
             return (
               <CanvasItemCard
@@ -732,6 +873,7 @@ export function CanvasViewport({
                 asset={asset}
                 assets={assets}
                 isSelected={isSelected}
+                showResizeHandles={isSelected && selectedItemId === item.id}
                 readOnly={readOnly}
                 colors={colors}
                 processingItemId={processingItemId}
@@ -786,6 +928,30 @@ export function CanvasViewport({
           handleDrawSimilar={handleDrawSimilar}
         />
       )}
+
+      {/* 框选的虚线外框 */}
+      {selectionBox && (() => {
+        const rect = viewportRef.current?.getBoundingClientRect();
+        const left = rect ? Math.min(selectionBox.startX, selectionBox.curX) - rect.left : 0;
+        const top = rect ? Math.min(selectionBox.startY, selectionBox.curY) - rect.top : 0;
+        const width = Math.abs(selectionBox.startX - selectionBox.curX);
+        const height = Math.abs(selectionBox.startY - selectionBox.curY);
+        return (
+          <div
+            style={{
+              position: "absolute",
+              left: `${left}px`,
+              top: `${top}px`,
+              width: `${width}px`,
+              height: `${height}px`,
+              border: "1.5px dashed var(--rv-color-primary)",
+              background: "rgba(15, 118, 110, 0.08)",
+              pointerEvents: "none",
+              zIndex: 9999
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

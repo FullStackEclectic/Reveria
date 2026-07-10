@@ -257,6 +257,7 @@ export function TemplateForm({
             value={advParams}
             onChange={setAdvParams}
             showAdvancedToggle={true}
+            modelId={modelId}
           />
         </div>
       </div>

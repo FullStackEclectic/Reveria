@@ -84,6 +84,12 @@ export function ModelSquare({
 
   // 1. 初始化拉取公开数据
   useEffect(() => {
+    if (!currentUser) {
+      setTemplates([]);
+      setModels([]);
+      setLoading(false);
+      return;
+    }
     async function initSquareData() {
       setLoading(true);
       try {
@@ -105,7 +111,7 @@ export function ModelSquare({
       }
     }
     void initSquareData();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (categories.length > 0) {

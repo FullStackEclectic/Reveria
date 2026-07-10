@@ -28,7 +28,7 @@ import { TemplateSelectModal } from "./TemplateSelectModal";
 import { runTemplateGeneration } from "./templateWorkflowUtils";
 import { useProjectCanvasState } from "./useProjectCanvasState";
 import { AssetEditorWorkbench } from "../asset/AssetEditorWorkbench";
-import { FileText, FolderOpen, Link2, Maximize2, Settings, Sparkles, Trash2 } from "lucide-react";
+import { FileText, FolderOpen, Link2, Maximize2, Settings, Sparkles, Trash2, Frame } from "lucide-react";
 
 interface ProjectDetailViewProps {
   projects: ProjectSummary[];
@@ -181,6 +181,7 @@ export function ProjectDetailView({
     pushToHistory,
     addAssetToCanvas,
     addNoteToCanvas,
+    addFrameToCanvas,
     removeCanvasItem,
     saveProjectCanvas,
     handleCreateBoard,
@@ -367,6 +368,14 @@ export function ProjectDetailView({
               title="在画布上添加备注便签"
             >
               <FileText size={16} />
+            </button>
+            <button
+              className="rv-toolbar-btn"
+              type="button"
+              onClick={addFrameToCanvas}
+              title="在画布上添加画框容器"
+            >
+              <Frame size={16} />
             </button>
 
             {selectedItemId && (

@@ -60,6 +60,7 @@ export interface CanvasItemCardProps {
   onMouseDownCard: (e: React.MouseEvent, itemId: string) => void;
   handleResizeStart: (e: React.MouseEvent, itemId: string, handle: "top-left" | "top-right" | "bottom-left" | "bottom-right") => void;
   assets?: AssetSummary[];
+  showResizeHandles?: boolean;
 }
 
 export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
@@ -77,6 +78,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
   onMouseDownCard,
   handleResizeStart,
   assets,
+  showResizeHandles = true,
 }) => {
   // 智能断网/刷新自愈：如果检测到是正在生成的 AI 节点且附带 task_id，自动启动查询或轮询，将真实结果写回后端
   useEffect(() => {
@@ -229,11 +231,13 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
   const activeSiblingId = selectedId || (asset ? asset.id : "");
   const activeSibling = (siblings.length >= 2 && siblings.find((s: AssetSummary) => s.id === activeSiblingId)) || asset;
 
+    const isFrame = item.type === "frame";
+
   return (
     <article
       className={`canvas-item theme-card-${item.color || "default"} ${
         isAssetCard ? "canvas-item-asset" : ""
-      } ${isSelected && !readOnly ? "selected" : ""}`}
+      } ${isFrame ? "canvas-item-frame" : ""} ${isSelected && !readOnly ? "selected" : ""}`}
       id={`canvas-item-${item.id}`}
       onDragStart={(e) => e.preventDefault()}
       style={{
@@ -241,10 +245,11 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
         top: item.y,
         width: item.w,
         height: item.h,
-        backgroundColor: colors.background,
-        borderColor: isSelected && !readOnly ? "var(--rv-color-primary)" : colors.border,
+        backgroundColor: isFrame ? "transparent" : colors.background,
+        borderColor: isFrame ? "transparent" : (isSelected && !readOnly ? "var(--rv-color-primary)" : colors.border),
+        boxShadow: isFrame ? "none" : undefined,
         color: colors.text,
-        zIndex: isSelected ? 10 : "auto",
+        zIndex: isFrame ? (isSelected ? 12 : 1) : (isSelected ? 15 : "auto"),
       }}
       onMouseDown={(e) => onMouseDownCard(e, item.id)}
     >
@@ -263,7 +268,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
       )}
 
       {/* 调节大小手柄 */}
-      {isSelected && !readOnly && (
+      {isSelected && !readOnly && showResizeHandles && (
         <>
           <div className="resize-handle top-left" onMouseDown={(e) => handleResizeStart(e, item.id, "top-left")} />
           <div className="resize-handle top-right" onMouseDown={(e) => handleResizeStart(e, item.id, "top-right")} />
@@ -293,77 +298,164 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
             style={{ width: "100%", height: "100%", objectFit: "contain" }}
             draggable={false}
           />
-        ) : siblings.length >= 2 && activeSibling ? (
-          /* 画布上的微型多图切换画廊组件 */
-          <div style={{ display: "flex", width: "100%", height: "100%", overflow: "hidden", pointerEvents: "auto" }}>
-            {/* 左侧：主图显示 */}
-            <div style={{ flex: 1, height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
-              <img
-                alt="AI focus sibling"
-                src={assetUrl(activeSibling.file_url ?? activeSibling.thumbnail_url ?? "")}
-                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-              />
-              {/* 微型多图标签 */}
-              <div style={{ position: "absolute", bottom: "6px", left: "6px", background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: "3px", fontSize: "9px", pointerEvents: "none" }}>
-                画廊 1/{siblings.length}
+        ) : siblings.length >= 2 && activeSibling ? ( (() => {
+          // 动态根据卡片高度等比计算尺寸
+          const baseHeight = item.h || 320;
+          const bottomBarH = Math.max(56, Math.round(baseHeight * 0.08));
+          const thumbS = Math.max(44, Math.round(baseHeight * 0.06));
+          const thumbG = Math.max(6, Math.round(baseHeight * 0.008));
+          const padY = Math.max(6, Math.round(baseHeight * 0.008));
+          const padX = Math.max(8, Math.round(baseHeight * 0.012));
+          const fSize = Math.max(9, Math.round(baseHeight * 0.015));
+          const labelPadY = Math.max(2, Math.round(baseHeight * 0.004));
+          const labelPadX = Math.max(6, Math.round(baseHeight * 0.01));
+          const labelRad = Math.max(3, Math.round(baseHeight * 0.005));
+          const labelDist = Math.max(6, Math.round(baseHeight * 0.01));
+          const borderW = Math.max(2, Math.round(baseHeight * 0.003));
+          const borderRad = Math.max(4, Math.round(baseHeight * 0.008));
+
+          return (
+            <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", overflow: "hidden", pointerEvents: "auto" }}>
+              {/* 上侧：主图显示 */}
+              <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", minHeight: 0 }}>
+                <img
+                  alt="AI focus sibling"
+                  src={assetUrl(activeSibling.file_url ?? activeSibling.thumbnail_url ?? "")}
+                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                />
+                {/* 微型多图标签 */}
+                <div style={{ 
+                  position: "absolute", 
+                  bottom: `${labelDist}px`, 
+                  left: `${labelDist}px`, 
+                  background: "rgba(0,0,0,0.6)", 
+                  color: "#fff", 
+                  padding: `${labelPadY}px ${labelPadX}px`, 
+                  borderRadius: `${labelRad}px`, 
+                  fontSize: `${fSize}px`, 
+                  pointerEvents: "none" 
+                }}>
+                  画廊 {siblings.findIndex(s => s.id === activeSibling.id) + 1}/{siblings.length}
+                </div>
+              </div>
+              
+              {/* 下侧：宽幅水平缩略图选项卡 (等比缩放) */}
+              <div 
+                style={{ 
+                  height: `${bottomBarH}px`, 
+                  display: "flex", 
+                  flexDirection: "row", 
+                  gap: `${thumbG}px`, 
+                  padding: `${padY}px ${padX}px`, 
+                  overflowX: "auto", 
+                  background: "var(--rv-color-bg-sidebar)",
+                  borderTop: "1px solid var(--rv-color-border-thin)",
+                  boxSizing: "border-box"
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {siblings.map((s: AssetSummary, idx: number) => {
+                  const isSel = s.id === activeSibling.id;
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => setSelectedId(s.id)}
+                      style={{
+                        width: `${thumbS}px`,
+                        height: `${thumbS}px`,
+                        borderRadius: `${borderRad}px`,
+                        overflow: "hidden",
+                        border: isSel ? `${borderW}px solid var(--rv-color-primary)` : `${borderW}px solid transparent`,
+                        cursor: "pointer",
+                        opacity: isSel ? 1 : 0.6,
+                        boxSizing: "border-box",
+                        flexShrink: 0
+                      }}
+                    >
+                      <img 
+                        src={assetUrl(s.thumbnail_url ?? s.file_url ?? "")} 
+                        alt={`sib ${idx}`}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            
-            {/* 右侧：超细垂直缩略图选项卡 (阻止拖拽干扰) */}
-            <div 
-              style={{ 
-                width: "36px", 
-                display: "flex", 
-                flexDirection: "column", 
-                gap: "4px", 
-                padding: "4px 2px", 
-                overflowY: "auto", 
-                background: "var(--rv-color-bg-sidebar)",
-                borderLeft: "1px solid var(--rv-color-border-thin)",
-                boxSizing: "border-box"
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {siblings.map((s: AssetSummary, idx: number) => {
-                const isSel = s.id === activeSibling.id;
-                return (
-                  <div
-                    key={s.id}
-                    onClick={() => setSelectedId(s.id)}
-                    style={{
-                      width: "28px",
-                      height: "28px",
-                      borderRadius: "4px",
-                      overflow: "hidden",
-                      border: isSel ? "1.5px solid var(--rv-color-primary)" : "1.5px solid transparent",
-                      cursor: "pointer",
-                      opacity: isSel ? 1 : 0.6,
-                      boxSizing: "border-box",
-                      flexShrink: 0
-                    }}
-                  >
-                    <img 
-                      src={assetUrl(s.thumbnail_url ?? s.file_url ?? "")} 
-                      alt={`sib ${idx}`}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          );
+        })()
         ) : asset.file_url || asset.thumbnail_url ? (
           <img
             alt=""
             src={assetUrl(asset.file_url ?? asset.thumbnail_url ?? "")}
+            style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
           />
         ) : (
           <div className="canvas-item-fallback">{asset.asset_type}</div>
         )
+      ) : item.type === "frame" ? (
+        <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", position: "relative" }}>
+          {/* 画框标题栏 */}
+          <div
+            style={{
+              position: "absolute",
+              top: "-24px",
+              left: "4px",
+              fontSize: "12px",
+              fontWeight: "bold",
+              color: colors.text || "var(--rv-color-primary)",
+              pointerEvents: "auto",
+              userSelect: "none"
+            }}
+          >
+            {readOnly ? (
+              <span>{item.title || "画框"}</span>
+            ) : (
+              <input
+                type="text"
+                value={item.title || "画框"}
+                onChange={(e) => {
+                  if (!setProjectCanvas) return;
+                  const val = e.target.value;
+                  setProjectCanvas((curr) => ({
+                    ...curr,
+                    items: curr.items.map((i) =>
+                      i.id === item.id ? { ...i, title: val } : i
+                    ),
+                  }));
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  outline: 0,
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  color: colors.text || "var(--rv-color-primary)",
+                  padding: 0,
+                  margin: 0,
+                  width: "120px"
+                }}
+              />
+            )}
+          </div>
+          {/* 画框的主体空心区 */}
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              boxSizing: "border-box",
+              borderRadius: "var(--rv-radius-xs)",
+              background: "rgba(15, 118, 110, 0.02)",
+              border: isSelected && !readOnly ? "2px dashed var(--rv-color-primary)" : "2px dashed rgba(15, 118, 110, 0.25)",
+              pointerEvents: "none"
+            }}
+          />
+        </div>
       ) : (() => {
         const isAiGenerationNode = item.type === "note" && item.title && (item.title.includes("正在生成") || item.title.includes("生成中"));
         
