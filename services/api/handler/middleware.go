@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"reveria/services/api/database"
@@ -87,9 +88,24 @@ func ptrString(s string) *string {
 func getStorageDir() string {
 	dir := os.Getenv("REVERIA_STORAGE_DIR")
 	if dir == "" {
-		return "storage/uploads"
+		dir = "storage/uploads"
 	}
-	return dir
+	if filepath.IsAbs(dir) {
+		return filepath.Clean(dir)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return filepath.Clean(dir)
+	}
+
+	// 支持从仓库根目录或 services/api 目录启动，避免相对路径指向两个不同的存储目录。
+	serviceDir := filepath.Join(cwd, "services", "api")
+	if _, statErr := os.Stat(filepath.Join(serviceDir, "go.mod")); statErr == nil {
+		return filepath.Clean(filepath.Join(serviceDir, dir))
+	}
+
+	return filepath.Clean(filepath.Join(cwd, dir))
 }
 
 // forUpdate 条件化地在查询上添加 FOR UPDATE 行锁

@@ -1,17 +1,15 @@
 import React from "react";
-import { formatCredits } from "../../utils";
+import { assetUrl } from "../../utils";
 
 interface TaskDetailModalProps {
   selectedTaskGroup: any;
   onClose: () => void;
-  previewImageUrl: string | null;
   setPreviewImageUrl: (url: string | null) => void;
 }
 
 export function TaskDetailModal({
   selectedTaskGroup,
   onClose,
-  previewImageUrl,
   setPreviewImageUrl,
 }: TaskDetailModalProps) {
   const [copyFeedback, setCopyFeedback] = React.useState("");
@@ -182,41 +180,58 @@ export function TaskDetailModal({
                   {/* 对话生成的媒体资产 (图片/视频) */}
                   {subMediaAssets.length > 0 && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: "10px", marginBottom: "12px" }}>
-                      {subMediaAssets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="history-detail-media-card"
-                          style={{
-                            aspectRatio: "1",
-                            borderRadius: "8px",
-                            overflow: "hidden",
-                            background: "#f5f5f4",
-                            position: "relative",
-                            cursor: "pointer",
-                            border: "1px solid #e7e5e4"
-                          }}
-                          onClick={() => setPreviewImageUrl(asset.url)}
-                        >
-                          <img
-                            src={asset.url}
-                            alt="生成缩略图"
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          />
-                          <div style={{
-                            position: "absolute",
-                            bottom: 0, left: 0, right: 0,
-                            background: "linear-gradient(transparent, rgba(0,0,0,0.6))",
-                            padding: "6px 8px",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center"
-                          }}>
-                            <span style={{ fontSize: "9px", color: "#ffffff", opacity: 0.8 }}>
-                              {asset.asset_type === "video" ? "视频" : "图像"}
-                            </span>
+                      {subMediaAssets.map((asset) => {
+                        const thumbnailUrl = assetUrl(asset.thumbnail_url ?? asset.file_url ?? "");
+                        const originalUrl = assetUrl(asset.file_url ?? asset.thumbnail_url ?? "");
+                        const isVideo = asset.asset_type === "video";
+
+                        return (
+                          <div
+                            key={asset.id}
+                            className="history-detail-media-card"
+                            style={{
+                              aspectRatio: "1",
+                              borderRadius: "8px",
+                              overflow: "hidden",
+                              background: "#f5f5f4",
+                              position: "relative",
+                              cursor: isVideo ? "default" : "pointer",
+                              border: "1px solid #e7e5e4"
+                            }}
+                            onClick={() => {
+                              if (!isVideo && originalUrl) setPreviewImageUrl(originalUrl);
+                            }}
+                          >
+                            {isVideo ? (
+                              <video
+                                src={originalUrl}
+                                controls
+                                preload="metadata"
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            ) : (
+                              <img
+                                src={thumbnailUrl}
+                                alt="生成缩略图"
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            )}
+                            <div style={{
+                              position: "absolute",
+                              bottom: 0, left: 0, right: 0,
+                              background: "linear-gradient(transparent, rgba(0,0,0,0.6))",
+                              padding: "6px 8px",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center"
+                            }}>
+                              <span style={{ fontSize: "9px", color: "#ffffff", opacity: 0.8 }}>
+                                {isVideo ? "视频" : "图像"}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 

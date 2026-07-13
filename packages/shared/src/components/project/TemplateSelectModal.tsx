@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { X, Sparkles, Folder, ArrowLeft, LayoutTemplate, Upload, Image as ImageIcon } from "lucide-react";
-import { TemplateCategory, PromptTemplate, AssetSummary } from "../../types";
+import { TemplateCategory, PromptTemplate, AssetSummary, TemplateExecutionConfig, TemplateGenerationPayload } from "../../types";
 import { getJson, uploadAsset, assetUrl } from "../../utils";
+import { parseTemplateExecutionConfig, serializeTemplateExecutionConfig } from "../../templateExecution";
 import { AIAdvancedParamsPanel, AIAdvancedParams } from "../admin/AIAdvancedParamsPanel";
 import { TemplateConfigView } from "./TemplateConfigView";
 import { TemplateCard, CategorySidebar } from "./TemplateSubComponents";
@@ -10,7 +11,7 @@ interface TemplateSelectModalProps {
   onClose: () => void;
   onGenerate: (
     template: PromptTemplate,
-    payload: { prompt: string; negative_prompt: string; ratio: string; ref_image_url: string | null }
+    payload: TemplateGenerationPayload
   ) => void;
   workspaceId: string;
   projectId: string;
@@ -48,6 +49,7 @@ export function TemplateSelectModal({
 
   // 前台高阶生成参数微调状态
   const [advParams, setAdvParams] = useState<AIAdvancedParams>({});
+  const [executionConfig, setExecutionConfig] = useState<TemplateExecutionConfig>(() => parseTemplateExecutionConfig({}));
 
   // 项目图片素材资产列表（用于参考图的素材库选择）
   const [projectAssets, setProjectAssets] = useState<AssetSummary[]>([]);
@@ -88,6 +90,7 @@ export function TemplateSelectModal({
       setPromptInput(activeTemplate.content || "");
       setNegativePromptInput(activeTemplate.negative_prompt || "");
       setUploadedImages([]);
+      setExecutionConfig(parseTemplateExecutionConfig(activeTemplate));
       
       if (activeTemplate.advanced_params) {
         try {
@@ -117,6 +120,7 @@ export function TemplateSelectModal({
       setNegativePromptInput("");
       setUploadedImages([]);
       setAdvParams({});
+      setExecutionConfig(parseTemplateExecutionConfig({}));
       setSelectedModelId("");
     }
   }, [activeTemplate, models]);
@@ -229,6 +233,14 @@ export function TemplateSelectModal({
 
   const handleStartGeneration = () => {
     if (!activeTemplate) return;
+    if (executionConfig.output_mode === "scenes" && executionConfig.scenes.some((scene) => !scene.title.trim() || !scene.prompt.trim())) {
+      alert("请完善每个场景的名称和提示词");
+      return;
+    }
+    if (executionConfig.reference_mode === "required" && uploadedImages.length === 0) {
+      alert("请先选择参考图片");
+      return;
+    }
 
     // 智能推导 ratio 字符串，以适配原有的卡片布局与大小算法
     let derivedRatio = "1:1";
@@ -253,6 +265,7 @@ export function TemplateSelectModal({
       ...activeTemplate,
       model_id: selectedModelId,
       advanced_params: JSON.stringify(advParams),
+      execution_config: serializeTemplateExecutionConfig(executionConfig),
       default_width: advParams.width || 768,
       default_height: advParams.height || 1152
     };
@@ -262,6 +275,8 @@ export function TemplateSelectModal({
       negative_prompt: negativePromptInput,
       ratio: derivedRatio,
       ref_image_url: uploadedImages.length > 0 ? uploadedImages[0] : null,
+      execution_config: executionConfig,
+      scenes: executionConfig.output_mode === "scenes" ? executionConfig.scenes : [],
     });
     onClose();
   };
@@ -464,6 +479,8 @@ export function TemplateSelectModal({
             handleUploadImage={handleUploadImage}
             advParams={advParams}
             setAdvParams={setAdvParams}
+            executionConfig={executionConfig}
+            setExecutionConfig={setExecutionConfig}
             handleStartGeneration={handleStartGeneration}
             projectAssets={projectAssets}
             selectedModelId={selectedModelId}

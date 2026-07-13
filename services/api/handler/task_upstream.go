@@ -100,13 +100,14 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
 		prompt, _ := payload["prompt"].(string)
 
-		responseMsg, promptTokens, completionTokens := callUpstreamLLM(prompt, gatewayModelName, settings)
+		messages := buildConversationMessages(task, prompt)
+		responseMsg, promptTokens, completionTokens := callUpstreamLLMWithMessages(messages, gatewayModelName, settings)
 		totalTokens := promptTokens + completionTokens
 
 		// 根据模型指定的计费方式进行计费 (per_token 按 Token 百万折算，per_use 按次固定扣除)
 		actualCost := int64(0)
 		actualCostFloat := 0.0
-		
+
 		if task.SelectedModel != nil && *task.SelectedModel != "" {
 			var m model.Model
 			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&m).Error; err == nil {
@@ -115,7 +116,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 						actualCost = int64(m.CreditsCost + 0.5)
 						actualCostFloat = m.CreditsCost
 					} else {
-						actualCost = int64((float64(totalTokens) * m.CreditsCost) / 1000000.0 + 0.5)
+						actualCost = int64((float64(totalTokens)*m.CreditsCost)/1000000.0 + 0.5)
 						actualCostFloat = float64(totalTokens) * m.CreditsCost / 1000000.0
 					}
 				}
@@ -139,6 +140,9 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 			"total_tokens":      totalTokens,
 			"actual_credits":    actualCostFloat,
 		}
+		if task.ConversationID != nil {
+			outMap["conversation_id"] = *task.ConversationID
+		}
 		outBytes, _ := json.Marshal(outMap)
 		outStr := string(outBytes)
 
@@ -151,7 +155,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		var ws model.Workspace
 		if err := forUpdate(tx).Where("id = ?", task.WorkspaceID).First(&ws).Error; err == nil {
 			remaining := actualCost
-			
+
 			// 依次扣减 Recharge -> Gift -> Refund
 			if ws.RechargeBalance >= remaining {
 				ws.RechargeBalance -= remaining
@@ -160,7 +164,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 				remaining -= ws.RechargeBalance
 				ws.RechargeBalance = 0
 			}
-			
+
 			if remaining > 0 {
 				if ws.GiftBalance >= remaining {
 					ws.GiftBalance -= remaining
@@ -170,7 +174,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 					ws.GiftBalance = 0
 				}
 			}
-			
+
 			if remaining > 0 {
 				if ws.RefundBalance >= remaining {
 					ws.RefundBalance -= remaining
@@ -180,9 +184,9 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 					ws.RefundBalance = 0
 				}
 			}
-			
+
 			tx.Save(&ws)
-			
+
 			// 3. 记录消费流水记录
 			consumeReason := fmt.Sprintf("AI 文本生成任务完成结算扣费 (Total Tokens: %d, 实际消耗: %f 积分)", totalTokens, actualCostFloat)
 			transaction := model.CreditTransaction{
@@ -256,6 +260,11 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		}
 
 		refImg, _ := payload["ref_image_url"].(string)
+		operation, _ := payload["operation"].(string)
+		if (operation == "image-to-image" || operation == "image-edit") && refImg == "" {
+			handleTaskFailure(task.ID, "REFERENCE_IMAGE_REQUIRED", "当前模板必须提供参考图片")
+			return
+		}
 		var imgBytes []byte
 		var err error
 
@@ -296,37 +305,10 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		// 采用串行执行（非并发），降低上游压力
 		// 核心改进：部分成功也算成功，已成功的图片不会因后续批次失败而丢失
 		var batches []int
-		var subPrompts []string
-		isMultiSceneTemplate := false
-
-		if strings.Contains(prompt, "需要一张") &&
-			strings.Contains(prompt, "产品配戴图") &&
-			strings.Contains(prompt, "产品细节图") {
-			isMultiSceneTemplate = true
-
-			prefix := ""
-			idxNeed := strings.Index(prompt, "需要一张")
-			if idxNeed != -1 {
-				prefix = prompt[:idxNeed]
-			}
-
-			suffix := "，图片尺寸1200*1200，绝对不能拼图，请务必生成单张画面，绝对禁止使用多格拼图。"
-
-			scenes := []string{
-				"需要一张产品主图，以精美的饰品特写展示产品的卖点与工艺品质",
-				"需要一张产品配戴图，由单个模特佩戴展示产品的实际佩戴效果与时尚氛围",
-				"需要一张近距离产品细节图，展示产品的精细纹路、材质工艺与细节特写",
-				"需要一张产品白底图，在纯白色背景上展示产品的真实结构与本色",
-				"需要一张材质/卖点图，突出展示做工精细",
-				"需要一张场景/礼物氛围图，展示产品在精美的礼品包装盒场景中传递心意",
-			}
-
-			limit := imageCount
-			if limit > len(scenes) {
-				limit = len(scenes)
-			}
-			for i := 0; i < limit; i++ {
-				subPrompts = append(subPrompts, prefix+scenes[i]+suffix)
+		scenes := parseGenerationScenes(payload)
+		if len(scenes) > 0 {
+			imageCount = len(scenes)
+			for range scenes {
 				batches = append(batches, 1)
 			}
 		} else {
@@ -370,9 +352,9 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 
 			// 确定本批次的 prompt
 			currentPrompt := prompt
-			if isMultiSceneTemplate && batchIdx < len(subPrompts) {
-				currentPrompt = subPrompts[batchIdx]
-				log.Printf("[callUpstreamGateway] 一图生多图拆分提示词，批次 %d/%d: %s", batchIdx+1, len(batches), currentPrompt)
+			if batchIdx < len(scenes) {
+				currentPrompt = buildScenePrompt(prompt, scenes[batchIdx])
+				log.Printf("[callUpstreamGateway] 执行场景 %d/%d (%s)", batchIdx+1, len(scenes), scenes[batchIdx].Title)
 			}
 
 			var batchUpstreamURL string
@@ -594,6 +576,81 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	// 更新 upstream_task_id 并启动协程异步轮询
 	database.DB.Model(&model.GenerationTask{}).Where("id = ?", task.ID).Update("upstream_task_id", upstreamTaskID)
 	go pollUpstreamTask(task, upstreamTaskID, settings)
+}
+
+func buildConversationMessages(task model.GenerationTask, currentPrompt string) []upstreamChatMessage {
+	messages := make([]upstreamChatMessage, 0, 41)
+	var input struct {
+		Messages []upstreamChatMessage `json:"messages"`
+	}
+	_ = json.Unmarshal([]byte(task.InputPayload), &input)
+	if len(input.Messages) > 0 {
+		start := 0
+		if len(input.Messages) > 40 {
+			start = len(input.Messages) - 40
+		}
+		for _, message := range input.Messages[start:] {
+			role := strings.TrimSpace(message.Role)
+			content := strings.TrimSpace(message.Content)
+			if (role != "user" && role != "assistant") || content == "" {
+				continue
+			}
+			contentRunes := []rune(content)
+			if len(contentRunes) > 32768 {
+				content = string(contentRunes[:32768])
+			}
+			messages = append(messages, upstreamChatMessage{Role: role, Content: content})
+		}
+	} else if task.ConversationID != nil && strings.TrimSpace(*task.ConversationID) != "" {
+		var previousTasks []model.GenerationTask
+		database.DB.
+			Where(
+				"project_id = ? AND conversation_id = ? AND task_type = ? AND status = ? AND id <> ? AND created_at < ?",
+				task.ProjectID,
+				*task.ConversationID,
+				"text",
+				"succeeded",
+				task.ID,
+				task.CreatedAt,
+			).
+			Order("created_at desc").
+			Limit(20).
+			Find(&previousTasks)
+
+		for index := len(previousTasks) - 1; index >= 0; index-- {
+			previous := previousTasks[index]
+			var input map[string]any
+			if json.Unmarshal([]byte(previous.InputPayload), &input) != nil {
+				continue
+			}
+			prompt, _ := input["prompt"].(string)
+			prompt = strings.TrimSpace(prompt)
+			if prompt == "" || previous.OutputPayload == nil {
+				continue
+			}
+
+			var output map[string]any
+			if json.Unmarshal([]byte(*previous.OutputPayload), &output) != nil {
+				continue
+			}
+			answer, _ := output["output"].(string)
+			if strings.TrimSpace(answer) == "" {
+				answer, _ = output["summary"].(string)
+			}
+			answer = strings.TrimSpace(answer)
+			if answer == "" {
+				continue
+			}
+
+			messages = append(messages,
+				upstreamChatMessage{Role: "user", Content: prompt},
+				upstreamChatMessage{Role: "assistant", Content: answer},
+			)
+		}
+	}
+
+	messages = append(messages, upstreamChatMessage{Role: "user", Content: currentPrompt})
+	return messages
 }
 
 // pollUpstreamTask 轮询 12ZX-AI 异步任务进度

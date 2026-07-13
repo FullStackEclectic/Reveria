@@ -1,9 +1,10 @@
-import { PromptTemplate, AssetSummary, ProjectCanvasDocument, CanvasItem } from "../../types";
+import { PromptTemplate, AssetSummary, ProjectCanvasDocument, CanvasItem, TemplateGenerationPayload } from "../../types";
 import { postJson, putJson, getJson, assetTitle, getAssetMetadata } from "../../utils";
+import { parseTemplateExecutionConfig } from "../../templateExecution";
 
 interface GenerateParams {
   template: PromptTemplate;
-  payload: { prompt: string; negative_prompt: string; ratio: string; ref_image_url: string | null };
+  payload: TemplateGenerationPayload;
   workspaceId: string;
   projectId: string;
   customerId: string | null | undefined;
@@ -132,6 +133,8 @@ export async function runTemplateGeneration({
 
   // 3. 发起请求
   const workflowType = template.workflow_type || "image-generation";
+  const executionConfig = payload.execution_config || parseTemplateExecutionConfig(template);
+  const runtimeScenes = executionConfig.output_mode === "scenes" ? payload.scenes : [];
   let apiUrl = "/api/tasks";
   let postData: any = {
     workspace_id: workspaceId,
@@ -175,7 +178,14 @@ export async function runTemplateGeneration({
         negative_prompt: payload.negative_prompt || template.negative_prompt || "",
         size: sizePayload,
         quality: "medium",
-        image_count: Math.max(1, Math.min(advParams.image_count ?? (template.title.includes("多图") ? 6 : 1), 16)),
+        image_count: executionConfig.output_mode === "scenes"
+          ? runtimeScenes.length
+          : executionConfig.output_mode === "variants"
+            ? Math.max(1, Math.min(advParams.image_count ?? 2, executionConfig.max_outputs))
+            : 1,
+        operation: executionConfig.operation,
+        output_mode: executionConfig.output_mode,
+        scenes: runtimeScenes,
         ref_image_url: payload.ref_image_url,
         steps: advParams.steps ?? 28,
         cfg_scale: advParams.cfg_scale ?? 7.0,

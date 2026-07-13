@@ -20,7 +20,7 @@ import {
   ModelSummary,
   AISession,
 } from "../../types";
-import { getJson, postJson, assetUrl, assetTitle, uploadAsset, getAssetMetadata } from "../../utils";
+import { getJson, postJson, assetUrl, assetTitle, uploadAsset, getAssetMetadata, isTextAsset, assetTextContent } from "../../utils";
 import { WorkflowHistoryFeed } from "./WorkflowHistoryFeed";
 import {
   quickTasks,
@@ -565,6 +565,7 @@ export function ProjectWorkflowPanel({
     const base = {
       workspace_id: activeWorkspace?.id || selectedProject.workspace_id || "",
       project_id: selectedProjectId,
+      conversation_id: currentSessionId,
       selected_model: selectedModel,
       prompt: workflowInput,
       negative_prompt: "",
@@ -613,7 +614,19 @@ export function ProjectWorkflowPanel({
         temperature: 0.7,
       },
       input_payload: {
-        prompt: workflowInput
+        prompt: workflowInput,
+        messages: aiAssets
+          .filter(isTextAsset)
+          .slice(-20)
+          .flatMap((asset) => {
+            const meta = getAssetMetadata(asset);
+            const prompt = typeof meta.prompt === "string" ? meta.prompt.trim() : "";
+            const output = assetTextContent(asset);
+            return [
+              ...(prompt ? [{ role: "user", content: prompt }] : []),
+              ...(output ? [{ role: "assistant", content: output }] : []),
+            ];
+          })
       }
     };
   }

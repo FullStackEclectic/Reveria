@@ -35,7 +35,7 @@ services:
     ports:
       - "127.0.0.1:14100:4100"
     volumes:
-      - ./services/api/uploads:/app/uploads
+      - ./services/api/storage/uploads:/app/storage/uploads
     networks:
       - reveria-net
 

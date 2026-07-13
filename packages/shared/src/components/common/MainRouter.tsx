@@ -258,6 +258,7 @@ export function MainRouter({
     case "customers":
       return (
         <CustomersView
+          activeWorkspace={activeWorkspace}
           customers={customers}
           setCustomers={setCustomers}
           selectedCustomer={selectedCustomer || undefined}

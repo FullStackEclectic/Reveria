@@ -12,11 +12,28 @@ import {
   Trash2,
   Eye,
   Video,
-  FolderOpen
+  FolderOpen,
+  Bot,
+  Copy,
+  Check,
+  Clock3
 } from "lucide-react";
-import { AssetSummary, ProjectSummary, WorkspaceSummary, UserSummary } from "../../types";
+import { AISession, AssetSummary, ProjectSummary, WorkspaceSummary, UserSummary } from "../../types";
 import { PageFrame } from "../common/PageFrame";
-import { formatFileSize, assetTitle, assetMimeType, assetUrl, uploadAsset, postJson, assetTypeFromMime, getAssetMetadata } from "../../utils";
+import {
+  formatFileSize,
+  assetTitle,
+  assetMimeType,
+  assetUrl,
+  uploadAsset,
+  postJson,
+  assetTypeFromMime,
+  getAssetMetadata,
+  isTextAsset,
+  assetTextContent,
+  textAssetTitle,
+} from "../../utils";
+import { TextConversationDialog, TextConversation } from "./TextConversationDialog";
 import "./AssetsView.css";
 
 
@@ -31,6 +48,10 @@ interface AssetsViewProps {
   deletingAssetId: string;
 }
 
+type AssetGridItem =
+  | { id: string; kind: "asset"; asset: AssetSummary }
+  | { id: string; kind: "conversation"; conversation: TextConversation };
+
 export function AssetsView({
   assets,
   setAssets,
@@ -43,6 +64,9 @@ export function AssetsView({
 }: AssetsViewProps) {
   const [activeTab, setActiveTab] = useState<"upload" | "link">("upload");
   const [filterType, setFilterType] = useState<string>("all");
+  const [copiedAssetId, setCopiedAssetId] = useState("");
+  const [deletingConversationId, setDeletingConversationId] = useState("");
+  const [selectedConversation, setSelectedConversation] = useState<TextConversation | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isImportingAssets, setIsImportingAssets] = useState(false);
   const [assetLinkForm, setAssetLinkForm] = useState({
@@ -51,21 +75,169 @@ export function AssetsView({
     mimeType: "image/png",
   });
 
-  const filterTypes = [
-    { label: "全部", value: "all" },
-    { label: "图片", value: "image" },
-    { label: "视频", value: "video" },
-    { label: "PDF/文档", value: "document" },
-    { label: "其他", value: "other" }
-  ];
-
   const filteredAssets = useMemo(() => {
     if (filterType === "all") return assets;
+    if (filterType === "text") return assets.filter(isTextAsset);
     if (filterType === "document") {
-      return assets.filter(a => a.asset_type === "pdf" || a.asset_type === "document");
+      return assets.filter((asset) =>
+        (asset.asset_type === "pdf" || asset.asset_type === "document") && !isTextAsset(asset)
+      );
+    }
+    if (filterType === "other") {
+      return assets.filter((asset) =>
+        !isTextAsset(asset) && !["image", "video", "pdf", "document"].includes(asset.asset_type)
+      );
     }
     return assets.filter((a) => a.asset_type === filterType);
   }, [assets, filterType]);
+
+  const sessionLookup = useMemo(() => {
+    const byAssetId = new Map<string, { id: string; title: string }>();
+    const titleById = new Map<string, string>();
+    if (typeof window === "undefined" || !selectedProject?.id) {
+      return { byAssetId, titleById };
+    }
+
+    try {
+      const raw = localStorage.getItem(`reveria_sessions_${selectedProject.id}`);
+      const sessions = raw ? JSON.parse(raw) as AISession[] : [];
+      sessions.forEach((session) => {
+        if (!session?.id || !Array.isArray(session.assetIds)) return;
+        titleById.set(session.id, session.title || "AI 对话");
+        session.assetIds.forEach((assetId) => byAssetId.set(assetId, {
+          id: session.id,
+          title: session.title || "AI 对话",
+        }));
+      });
+    } catch {
+      // 本地旧会话损坏时回退为单轮文本卡片。
+    }
+    return { byAssetId, titleById };
+  }, [selectedProject?.id, assets]);
+
+  const gridItems = useMemo<AssetGridItem[]>(() => {
+    const items: AssetGridItem[] = [];
+    const conversations = new Map<string, TextConversation>();
+
+    filteredAssets.forEach((asset) => {
+      if (!isTextAsset(asset)) {
+        items.push({ id: asset.id, kind: "asset", asset });
+        return;
+      }
+
+      const meta = getAssetMetadata(asset);
+      const storedSession = sessionLookup.byAssetId.get(asset.id);
+      const metadataConversationId = typeof meta.conversation_id === "string"
+        ? meta.conversation_id.trim()
+        : "";
+      const conversationId = metadataConversationId || storedSession?.id || `legacy:${asset.id}`;
+      let conversation = conversations.get(conversationId);
+      if (!conversation) {
+        conversation = {
+          id: conversationId,
+          title: sessionLookup.titleById.get(conversationId) || storedSession?.title || textAssetTitle(asset),
+          assets: [],
+        };
+        conversations.set(conversationId, conversation);
+        items.push({ id: `conversation:${conversationId}`, kind: "conversation", conversation });
+      }
+      conversation.assets.push(asset);
+    });
+
+    conversations.forEach((conversation) => {
+      conversation.assets.sort((left, right) =>
+        new Date(left.created_at || 0).getTime() - new Date(right.created_at || 0).getTime()
+      );
+      if (!sessionLookup.titleById.has(conversation.id) && conversation.id.startsWith("legacy:") === false) {
+        conversation.title = textAssetTitle(conversation.assets[0]);
+      }
+    });
+    return items;
+  }, [filteredAssets, sessionLookup]);
+
+  const filterTypes = useMemo(() => {
+    const textConversationIds = new Set<string>();
+    assets.filter(isTextAsset).forEach((asset) => {
+      const meta = getAssetMetadata(asset);
+      const metadataConversationId = typeof meta.conversation_id === "string" ? meta.conversation_id.trim() : "";
+      textConversationIds.add(metadataConversationId || sessionLookup.byAssetId.get(asset.id)?.id || asset.id);
+    });
+    const count = (value: string) => {
+      if (value === "all") return assets.length;
+      if (value === "text") return textConversationIds.size;
+      if (value === "document") {
+        return assets.filter((asset) =>
+          (asset.asset_type === "pdf" || asset.asset_type === "document") && !isTextAsset(asset)
+        ).length;
+      }
+      if (value === "other") {
+        return assets.filter((asset) =>
+          !isTextAsset(asset) && !["image", "video", "pdf", "document"].includes(asset.asset_type)
+        ).length;
+      }
+      return assets.filter((asset) => asset.asset_type === value).length;
+    };
+
+    return [
+      { label: "全部", value: "all", count: count("all") },
+      { label: "对话", value: "text", count: count("text") },
+      { label: "图片", value: "image", count: count("image") },
+      { label: "视频", value: "video", count: count("video") },
+      { label: "文档", value: "document", count: count("document") },
+      { label: "其他", value: "other", count: count("other") },
+    ];
+  }, [assets, sessionLookup]);
+
+  async function handleCopyConversation(conversation: TextConversation) {
+    const content = conversation.assets.flatMap((asset) => {
+      const meta = getAssetMetadata(asset);
+      const prompt = typeof meta.prompt === "string" ? meta.prompt.trim() : "";
+      const output = assetTextContent(asset);
+      return [prompt ? `用户：${prompt}` : "", output ? `AI：${output}` : ""].filter(Boolean);
+    }).join("\n\n");
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedAssetId(conversation.id);
+      window.setTimeout(() => setCopiedAssetId(""), 1600);
+    } catch (err) {
+      alert(`复制文本失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function deleteConversationAssets(conversation: TextConversation) {
+    setDeletingConversationId(conversation.id);
+    try {
+      for (const asset of conversation.assets) {
+        await deleteAsset(asset.id);
+      }
+    } finally {
+      setDeletingConversationId("");
+    }
+  }
+
+  async function confirmDeleteConversation(conversation: TextConversation) {
+    const label = conversation.assets.length > 1 ? `及其中 ${conversation.assets.length} 轮内容` : "";
+    if (!window.confirm(`确定删除这段对话${label}吗？`)) return;
+    await deleteConversationAssets(conversation);
+  }
+
+  function formatAssetTime(value?: string) {
+    if (!value) return "";
+    return new Date(value).toLocaleString("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  function sourceLabel(source: string) {
+    if (source === "generated" || source === "ai" || source === "workflow") return "AI 生成";
+    if (source === "link") return "外链";
+    return "本地";
+  }
 
   const handleRemoveSelectedFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
@@ -168,7 +340,22 @@ export function AssetsView({
     }
   }
 
-  function renderAssetPreview(asset: AssetSummary) {
+  function renderAssetPreview(asset: AssetSummary, turnCount = 1) {
+    if (isTextAsset(asset)) {
+      const meta = getAssetMetadata(asset);
+      const model = typeof meta.model === "string" ? meta.model : "AI 文本";
+      return (
+        <div className="text-asset-preview">
+          <div className="text-asset-preview-header">
+            <span className="text-asset-kind">
+              <Bot size={14} />{turnCount > 1 ? `${turnCount} 轮对话` : "AI 对话"}
+            </span>
+            <span className="text-asset-model">{model}</span>
+          </div>
+          <p>{assetTextContent(asset) || "暂无文本内容"}</p>
+        </div>
+      );
+    }
     const title = assetTitle(asset);
     const sourceUrl = asset.thumbnail_url ?? asset.file_url;
     if (asset.asset_type === "image" && sourceUrl) {
@@ -332,81 +519,136 @@ export function AssetsView({
 
         {/* 右栏：项目资产展示面板 */}
         <div className="assets-content-panel">
-          <div className="assets-filter-bar">
+          <div className="library-assets-filter-bar">
             {filterTypes.map((t) => (
               <button
-                className={`assets-filter-btn ${filterType === t.value ? "active" : ""}`}
+                className={`library-assets-filter-btn ${filterType === t.value ? "active" : ""}`}
                 key={t.value}
                 onClick={() => setFilterType(t.value)}
                 type="button"
               >
                 {t.label}
+                <span>{t.count}</span>
               </button>
             ))}
           </div>
 
-          {filteredAssets.length > 0 ? (
-            <div className="assets-modern-grid">
-              {filteredAssets.map((asset) => {
-                const title = assetTitle(asset);
-                const isLocal = asset.source !== "link";
+          {gridItems.length > 0 ? (
+            <div className="library-assets-grid">
+              {gridItems.map((item) => {
+                const conversation = item.kind === "conversation" ? item.conversation : null;
+                const asset = item.kind === "conversation"
+                  ? item.conversation.assets[item.conversation.assets.length - 1]
+                  : item.asset;
+                const textAsset = Boolean(conversation);
+                const title = conversation?.title || assetTitle(asset);
                 const meta = getAssetMetadata(asset);
+                const source = sourceLabel(asset.source);
+                const createdAt = formatAssetTime(asset.created_at);
 
                 return (
-                  <div className="asset-card-modern" key={asset.id}>
-                    {/* 悬停操作浮层 */}
-                    <div className="asset-overlay-hover">
-                      <button
-                        className="asset-overlay-btn"
-                        onClick={() => setPreviewAsset(asset)}
-                        title="查看大图预览"
-                        type="button"
-                      >
-                        <Eye size={15} />
-                      </button>
-                      
-                      {asset.file_url && (
-                        <a
-                          className="asset-overlay-btn"
-                          href={assetUrl(asset.file_url)}
-                          rel="noreferrer"
-                          target="_blank"
-                          title="在新窗口下载/打开"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
+                  <article className={`library-asset-card ${textAsset ? "text-asset-card" : ""}`} key={item.id}>
+                    <div
+                      className={`library-asset-preview ${textAsset ? "text-preview-container" : ""}`}
+                      onClick={conversation ? () => setSelectedConversation(conversation) : undefined}
+                    >
+                      {renderAssetPreview(asset, conversation?.assets.length)}
+                      {!textAsset && (
+                        <div className="library-asset-overlay">
+                          <button
+                            className="library-asset-overlay-btn"
+                            onClick={() => setPreviewAsset(asset)}
+                            title="预览素材"
+                            type="button"
+                          >
+                            <Eye size={15} />
+                          </button>
+
+                          {asset.file_url && (
+                            <a
+                              className="library-asset-overlay-btn"
+                              href={assetUrl(asset.file_url)}
+                              rel="noreferrer"
+                              target="_blank"
+                              title="在新窗口打开"
+                            >
+                              <ExternalLink size={14} />
+                            </a>
+                          )}
+
+                          <button
+                            className="library-asset-overlay-btn btn-delete"
+                            disabled={deletingAssetId === asset.id}
+                            onClick={() => void deleteAsset(asset.id)}
+                            title="删除素材"
+                            type="button"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       )}
-
-                      <button
-                        className="asset-overlay-btn btn-delete"
-                        disabled={deletingAssetId === asset.id}
-                        onClick={() => void deleteAsset(asset.id)}
-                        title="删除素材"
-                        type="button"
-                      >
-                        <Trash2 size={15} />
-                      </button>
                     </div>
 
-                    {/* 卡片预览容器 */}
-                    <div className="asset-preview-container">
-                      {renderAssetPreview(asset)}
-                    </div>
-
-                    {/* 卡片描述栏 */}
-                    <div className="asset-card-info">
+                    <div className="library-asset-card-info">
                       <strong className="name" title={title}>{title}</strong>
                       <div className="meta-row">
-                        <span>
-                          {assetMimeType(asset)}
-                          {typeof meta.size === "number" && ` · ${formatFileSize(meta.size)}`}
+                        <span className="asset-meta-primary">
+                          {textAsset ? (
+                            <><Clock3 size={11} />{createdAt || "生成时间未知"}</>
+                          ) : (
+                            <>
+                              {assetMimeType(asset)}
+                              {typeof meta.size === "number" && ` · ${formatFileSize(meta.size)}`}
+                            </>
+                          )}
                         </span>
-                        <span className={`tag-source ${isLocal ? "local" : "link"}`}>
-                          {isLocal ? "本地" : "外链"}
+                        <span className={`library-tag-source ${asset.source === "link" ? "link" : asset.source === "generated" || asset.source === "ai" || asset.source === "workflow" ? "generated" : "local"}`}>
+                          {source}
                         </span>
                       </div>
+                      {textAsset && (
+                        <div className="library-card-actions text-card-actions">
+                          <button type="button" onClick={() => conversation && setSelectedConversation(conversation)}>
+                            <Eye size={13} />查看对话
+                          </button>
+                          <button type="button" onClick={() => conversation && void handleCopyConversation(conversation)}>
+                            {copiedAssetId === conversation?.id ? <Check size={13} /> : <Copy size={13} />}
+                            {copiedAssetId === conversation?.id ? "已复制" : "复制"}
+                          </button>
+                          <button
+                            className="delete"
+                            disabled={deletingConversationId === conversation?.id}
+                            onClick={() => conversation && void confirmDeleteConversation(conversation)}
+                            title="删除对话"
+                            type="button"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
+                      {!textAsset && (
+                        <div className="library-card-actions media-card-actions">
+                          <button type="button" onClick={() => setPreviewAsset(asset)} title="预览素材">
+                            <Eye size={13} />预览
+                          </button>
+                          {asset.file_url && (
+                            <a href={assetUrl(asset.file_url)} rel="noreferrer" target="_blank" title="在新窗口打开">
+                              <ExternalLink size={13} />打开
+                            </a>
+                          )}
+                          <button
+                            className="delete"
+                            disabled={deletingAssetId === asset.id}
+                            onClick={() => void deleteAsset(asset.id)}
+                            title="删除素材"
+                            type="button"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
@@ -430,6 +672,13 @@ export function AssetsView({
           )}
         </div>
       </div>
+      {selectedConversation ? (
+        <TextConversationDialog
+          conversation={selectedConversation}
+          onClose={() => setSelectedConversation(null)}
+          onDelete={deleteConversationAssets}
+        />
+      ) : null}
     </section>
   );
 }

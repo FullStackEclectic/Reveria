@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/jpeg"
 	_ "image/png" // 支持 PNG 解码
@@ -19,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/image/draw"
+	"gorm.io/gorm"
 )
 
 // UploadAsset 上传资产素材 (POST /assets/upload)
@@ -266,7 +268,16 @@ func DeleteAsset(c *gin.Context) {
 
 	var asset model.Asset
 	if err := database.DB.Where("id = ?", assetID).First(&asset).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "未找到指定资产"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{
+				"success":  true,
+				"deleted":  false,
+				"asset_id": assetID,
+				"message":  "资产已不存在",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "查询资产失败: " + err.Error()})
 		return
 	}
 
@@ -294,7 +305,12 @@ func DeleteAsset(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "资产删除完成"})
+	c.JSON(http.StatusOK, gin.H{
+		"success":  true,
+		"deleted":  true,
+		"asset_id": asset.ID,
+		"message":  "资产删除完成",
+	})
 }
 
 // ServeFile 静态文件伺服处理 (GET /api/files/:file_name)

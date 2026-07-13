@@ -121,11 +121,11 @@ func RunBrandStyleExtract(c *gin.Context) {
 			"task_type": "brand_style_extract",
 		},
 		"output": gin.H{
-			"brand_name":       req.BrandName,
-			"tone_of_voice":    responseMsg,
-			"colors":           []string{"#1A1A1A", "#FFFFFF", "#C5A880"},
-			"visual_keywords":  []string{"现代", "极简", "轻奢", "自然"},
-			"style_prompt":     "Minimalist elegant luxury aesthetics, high contrast, clean product shot.",
+			"brand_name":      req.BrandName,
+			"tone_of_voice":   responseMsg,
+			"colors":          []string{"#1A1A1A", "#FFFFFF", "#C5A880"},
+			"visual_keywords": []string{"现代", "极简", "轻奢", "自然"},
+			"style_prompt":    "Minimalist elegant luxury aesthetics, high contrast, clean product shot.",
 		},
 	})
 }
@@ -222,8 +222,17 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 	})
 }
 
+type upstreamChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // callUpstreamLLM 发包调用 12ZX-AI 大语言模型，返回生成文本及 token 消耗状况 (content, promptTokens, completionTokens)
 func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSettings) (string, int, int) {
+	return callUpstreamLLMWithMessages([]upstreamChatMessage{{Role: "user", Content: prompt}}, targetModel, settings)
+}
+
+func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel string, settings model.ClientSettings) (string, int, int) {
 	var apiURL string
 	modelName := "deepseek-chat"
 
@@ -257,13 +266,8 @@ func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSet
 	}
 
 	reqBody := map[string]any{
-		"model": modelName,
-		"messages": []map[string]string{
-			{
-				"role":    "user",
-				"content": prompt,
-			},
-		},
+		"model":       modelName,
+		"messages":    messages,
 		"temperature": 0.7,
 	}
 
@@ -317,11 +321,11 @@ func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSet
 
 // XiaohongshuCoverBatchRequest 小红书封面请求结构
 type XiaohongshuCoverBatchRequest struct {
-	WorkspaceID  uuid.UUID `json:"workspace_id" binding:"required"`
-	ProjectID    uuid.UUID `json:"project_id" binding:"required"`
-	Brief        string    `json:"brief" binding:"required"`
-	StylePrompt  *string   `json:"style_prompt"`
-	Count        *int      `json:"count"`
+	WorkspaceID uuid.UUID `json:"workspace_id" binding:"required"`
+	ProjectID   uuid.UUID `json:"project_id" binding:"required"`
+	Brief       string    `json:"brief" binding:"required"`
+	StylePrompt *string   `json:"style_prompt"`
+	Count       *int      `json:"count"`
 }
 
 // RunXiaohongshuCoverBatch 小红书封面大纲生成 (POST /workflows/xiaohongshu-cover-batch)
@@ -522,7 +526,7 @@ func RunMagicAction(c *gin.Context) {
 		newH := bounds.Dy() * 2
 		newRect := image.Rect(0, 0, newW, newH)
 		rgba := image.NewRGBA(newRect)
-		
+
 		xdraw.CatmullRom.Scale(rgba, newRect, srcImg, bounds, xdraw.Over, nil)
 		destImg = rgba
 		targetExt = ".jpg"

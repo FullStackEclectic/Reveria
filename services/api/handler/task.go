@@ -26,11 +26,12 @@ type TaskEstimateRequest struct {
 
 // CreateTaskRequest 发起 AI 任务请求
 type CreateTaskRequest struct {
-	WorkspaceID   uuid.UUID       `json:"workspace_id" binding:"required"`
-	ProjectID     uuid.UUID       `json:"project_id" binding:"required"`
-	TaskType      string          `json:"task_type" binding:"required"` // image_generation / video_generation / text
-	SelectedModel string          `json:"selected_model"`
-	InputPayload  json.RawMessage `json:"input_payload" binding:"required"`
+	WorkspaceID    uuid.UUID       `json:"workspace_id" binding:"required"`
+	ProjectID      uuid.UUID       `json:"project_id" binding:"required"`
+	TaskType       string          `json:"task_type" binding:"required"` // image_generation / video_generation / text
+	SelectedModel  string          `json:"selected_model"`
+	ConversationID string          `json:"conversation_id" binding:"max=120"`
+	InputPayload   json.RawMessage `json:"input_payload" binding:"required"`
 }
 
 type CompatCreateTaskRequest struct {
@@ -101,7 +102,7 @@ func CreateTask(c *gin.Context) {
 			req.ProjectID = compatReq.ProjectID
 			req.TaskType = "image_generation"
 			req.SelectedModel = compatReq.Model
-			
+
 			// 组装 input_payload
 			inputMap := map[string]any{
 				"prompt":        compatReq.Prompt,
@@ -166,7 +167,7 @@ func CreateTask(c *gin.Context) {
 			} else {
 				fallbackModel = settings.BridgeImageModel
 			}
-			
+
 			if fallbackModel != "" {
 				parts := strings.Split(fallbackModel, ",")
 				req.SelectedModel = strings.TrimSpace(parts[0])
@@ -177,11 +178,16 @@ func CreateTask(c *gin.Context) {
 	// 准备 GenerationTask 记录
 	taskID := uuid.New()
 	inputStr := string(req.InputPayload)
+	var conversationID *string
+	if normalized := strings.TrimSpace(req.ConversationID); normalized != "" {
+		conversationID = &normalized
+	}
 	task := model.GenerationTask{
 		ID:               taskID,
 		WorkspaceID:      req.WorkspaceID,
 		ProjectID:        req.ProjectID,
 		UserID:           &actorID,
+		ConversationID:   conversationID,
 		TaskType:         req.TaskType,
 		InputPayload:     inputStr,
 		SelectedModel:    &req.SelectedModel,
@@ -455,12 +461,21 @@ func RetryTask(c *gin.Context) {
 	}
 
 	// 构造新的 CreateTaskRequest 并直接重入 CreateTask 逻辑
+	selectedModel := ""
+	if task.SelectedModel != nil {
+		selectedModel = *task.SelectedModel
+	}
+	conversationID := ""
+	if task.ConversationID != nil {
+		conversationID = *task.ConversationID
+	}
 	reqBody := CreateTaskRequest{
-		WorkspaceID:   task.WorkspaceID,
-		ProjectID:     task.ProjectID,
-		TaskType:      task.TaskType,
-		SelectedModel: *task.SelectedModel,
-		InputPayload:  json.RawMessage(task.InputPayload),
+		WorkspaceID:    task.WorkspaceID,
+		ProjectID:      task.ProjectID,
+		TaskType:       task.TaskType,
+		SelectedModel:  selectedModel,
+		ConversationID: conversationID,
+		InputPayload:   json.RawMessage(task.InputPayload),
 	}
 
 	bodyBytes, _ := json.Marshal(reqBody)

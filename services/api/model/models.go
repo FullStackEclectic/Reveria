@@ -123,6 +123,7 @@ type GenerationTask struct {
 	WorkspaceID           uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
 	ProjectID             uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
 	UserID                *uuid.UUID `gorm:"type:uuid" json:"user_id"`
+	ConversationID        *string    `gorm:"type:varchar(120);index" json:"conversation_id"`
 	TaskType              string     `gorm:"type:varchar(64);not null" json:"task_type"`
 	InputPayload          string     `gorm:"type:jsonb;not null" json:"input_payload"`
 	OutputPayload         *string    `gorm:"type:jsonb" json:"output_payload"`
@@ -341,22 +342,23 @@ type TemplateCategory struct {
 
 // PromptTemplate 提示词模板表
 type PromptTemplate struct {
-	ID             uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	CategoryID     uuid.UUID      `gorm:"type:uuid;index" json:"category_id"`
-	Title          string         `gorm:"type:varchar(160);not null" json:"title"`
-	Content        string         `gorm:"type:text;not null" json:"content"`
-	DefaultWidth   int            `gorm:"default:300" json:"default_width"`
-	DefaultHeight  int            `gorm:"default:200" json:"default_height"`
-	WorkflowType   string         `gorm:"type:varchar(60);default:'image-generation'" json:"workflow_type"`
-	NeedImage      int            `gorm:"default:0" json:"need_image"`
-	ShowRatio      bool           `gorm:"default:true" json:"show_ratio"`
-	NegativePrompt string         `gorm:"type:text" json:"negative_prompt"`
-	PreviewUrl     string         `gorm:"type:varchar(255)" json:"preview_url"`
-	ModelID        string         `gorm:"type:varchar(60)" json:"model_id"`
-	AdvancedParams string         `gorm:"type:text" json:"advanced_params"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	CategoryID      uuid.UUID      `gorm:"type:uuid;index" json:"category_id"`
+	Title           string         `gorm:"type:varchar(160);not null" json:"title"`
+	Content         string         `gorm:"type:text;not null" json:"content"`
+	DefaultWidth    int            `gorm:"default:300" json:"default_width"`
+	DefaultHeight   int            `gorm:"default:200" json:"default_height"`
+	WorkflowType    string         `gorm:"type:varchar(60);default:'image-generation'" json:"workflow_type"`
+	NeedImage       int            `gorm:"default:0" json:"need_image"`
+	ShowRatio       bool           `gorm:"default:true" json:"show_ratio"`
+	NegativePrompt  string         `gorm:"type:text" json:"negative_prompt"`
+	PreviewUrl      string         `gorm:"type:varchar(255)" json:"preview_url"`
+	ModelID         string         `gorm:"type:varchar(60)" json:"model_id"`
+	AdvancedParams  string         `gorm:"type:text" json:"advanced_params"`
+	ExecutionConfig string         `gorm:"type:text" json:"execution_config"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // AssetRetouchSettings 资产修图参数表

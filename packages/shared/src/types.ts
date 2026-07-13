@@ -310,6 +310,7 @@ export type WorkflowResult = {
 
 export type GenerationTaskSummary = {
   id: string;
+  conversation_id?: string | null;
   task_type: string;
   status: string;
   estimated_credits: number;
@@ -429,6 +430,34 @@ export interface TemplateCategory {
   updated_at?: string;
 }
 
+export type ImageTemplateOperation = "text-to-image" | "image-to-image" | "image-edit";
+export type TemplateOutputMode = "single" | "scenes" | "variants";
+export type TemplateReferenceMode = "none" | "optional" | "required";
+
+export interface TemplateScene {
+  id: string;
+  title: string;
+  prompt: string;
+}
+
+export interface TemplateExecutionConfig {
+  version: 1;
+  operation: ImageTemplateOperation;
+  output_mode: TemplateOutputMode;
+  reference_mode: TemplateReferenceMode;
+  max_outputs: number;
+  scenes: TemplateScene[];
+}
+
+export interface TemplateGenerationPayload {
+  prompt: string;
+  negative_prompt: string;
+  ratio: string;
+  ref_image_url: string | null;
+  execution_config: TemplateExecutionConfig;
+  scenes: TemplateScene[];
+}
+
 export interface PromptTemplate {
   id: string;
   category_id: string;
@@ -443,6 +472,7 @@ export interface PromptTemplate {
   preview_url?: string;
   model_id?: string;
   advanced_params?: string;
+  execution_config?: string;
   created_at?: string;
   updated_at?: string;
 }

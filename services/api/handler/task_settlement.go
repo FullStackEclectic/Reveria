@@ -29,6 +29,9 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 
 	var metaStr string
 	var lastMetaStr string
+	var inputPayload map[string]any
+	_ = json.Unmarshal([]byte(task.InputPayload), &inputPayload)
+	scenes := parseGenerationScenes(inputPayload)
 
 	totalCount := len(upstreamURLs)
 	// 循环下载每一个生成的图片，落地并存入资产库
@@ -92,8 +95,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		var quality string
 		var modelName string
 
-		var inputPayload map[string]any
-		if json.Unmarshal([]byte(task.InputPayload), &inputPayload) == nil {
+		if inputPayload != nil {
 			prompt, _ = inputPayload["prompt"].(string)
 			paramSize, _ = inputPayload["size"].(string)
 			quality, _ = inputPayload["quality"].(string)
@@ -101,13 +103,18 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 
 		if task.SelectedModel != nil {
 			var dbModel model.Model
-			if database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error == nil {
+			modelIdentifier := strings.TrimSpace(*task.SelectedModel)
+			lookupErr := database.DB.Where("id = ?", modelIdentifier).First(&dbModel).Error
+			if lookupErr != nil {
+				lookupErr = database.DB.Where("name = ? AND enabled = true", modelIdentifier).First(&dbModel).Error
+			}
+			if lookupErr == nil {
 				modelName = dbModel.DisplayName
 				if modelName == "" {
 					modelName = dbModel.Name
 				}
 			} else {
-				modelName = *task.SelectedModel
+				modelName = modelIdentifier
 			}
 		}
 
@@ -131,6 +138,19 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			"quality":       quality,
 			"model":         modelName,
 			"ref_image_url": refImgURL,
+		}
+		if idx < len(scenes) {
+			metaMap["scene_id"] = scenes[idx].ID
+			metaMap["scene_title"] = scenes[idx].Title
+			metaMap["scene_prompt"] = scenes[idx].Prompt
+			metaMap["prompt"] = buildScenePrompt(prompt, scenes[idx])
+			title := scenes[idx].Title
+			if title != "" {
+				metaMap["title"] = title
+			}
+		}
+		if task.ConversationID != nil {
+			metaMap["conversation_id"] = *task.ConversationID
 		}
 		metaBytes, _ := json.Marshal(metaMap)
 		metaStr = string(metaBytes)

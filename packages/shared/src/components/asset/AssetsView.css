@@ -1,12 +1,15 @@
 /* 胶囊过滤器样式 */
-.assets-filter-bar {
+.library-assets-filter-bar {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
 
-.assets-filter-btn {
+.library-assets-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
   border-radius: 20px;
   font-size: 13px;
@@ -18,14 +21,30 @@
   transition: all 0.15s ease;
 }
 
-.assets-filter-btn:hover {
+.library-assets-filter-btn > span {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(28, 25, 23, 0.05);
+  color: #78716c;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.library-assets-filter-btn:hover {
   background: #f5f5f4;
   color: #1c1917;
 }
 
-.assets-filter-btn.active {
-  background: rgba(99, 102, 241, 0.08);
-  color: #6366f1;
+.library-assets-filter-btn.active {
+  background: rgba(15, 118, 110, 0.09);
+  color: #0f766e;
+}
+
+.library-assets-filter-btn.active > span {
+  background: rgba(15, 118, 110, 0.11);
+  color: #0f766e;
 }
 
 .assets-workspace {
@@ -209,19 +228,22 @@
   overflow: hidden;
 }
 
-.assets-modern-grid {
+.library-assets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  align-items: start;
   gap: 16px;
   flex: 1;
   overflow-y: auto;
   padding-right: 4px;
 }
 
-.asset-card-modern {
+.library-asset-card {
   border: 1px solid #e7e5e4;
   border-radius: 8px;
-  background: #fafaf9;
+  background: #ffffff;
   overflow: hidden;
   position: relative;
   box-shadow: none;
@@ -230,14 +252,14 @@
   flex-direction: column;
 }
 
-.asset-card-modern:hover {
+.library-asset-card:hover {
   transform: none;
   border-color: #6366f1;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.05);
   background: #ffffff;
 }
 
-.asset-preview-container {
+.library-asset-preview {
   aspect-ratio: 4 / 3;
   width: 100%;
   background: #fafaf9;
@@ -249,15 +271,78 @@
   border-bottom: 1px solid #f5f5f4;
 }
 
-.asset-preview-container img,
-.asset-preview-container video {
+.library-asset-preview.text-preview-container {
+  min-height: 176px;
+  aspect-ratio: auto;
+  align-items: stretch;
+  justify-content: stretch;
+  background: #f7faf9;
+  cursor: pointer;
+}
+
+.text-asset-preview {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: #f7faf9;
+}
+
+.text-asset-preview-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.text-asset-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.text-asset-model {
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  color: #78716c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-asset-preview p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #292524;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.text-asset-card:hover .text-asset-preview {
+  background: #f3f8f6;
+}
+
+.library-asset-preview img,
+.library-asset-preview video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 0.3s ease;
 }
 
-.asset-card-modern:hover .asset-preview-container img {
+.library-asset-card:hover .library-asset-preview img {
   transform: scale(1.03);
 }
 
@@ -285,14 +370,14 @@
   background: #f0fdfa;
 }
 
-.asset-card-info {
+.library-asset-card-info {
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.asset-card-info .name {
+.library-asset-card-info .name {
   font-size: 12px;
   font-weight: 700;
   color: #1c1917;
@@ -301,7 +386,7 @@
   white-space: nowrap;
 }
 
-.asset-card-info .meta-row {
+.library-asset-card-info .meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -309,25 +394,86 @@
   color: #78716c;
 }
 
-.tag-source {
+.asset-meta-primary {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-tag-source {
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 9px;
   font-weight: 800;
 }
 
-.tag-source.local {
-  background: rgba(99, 102, 241, 0.08);
-  color: #6366f1;
+.library-tag-source.local {
+  background: rgba(87, 83, 78, 0.08);
+  color: #57534e;
 }
 
-.tag-source.link {
+.library-tag-source.link {
   background: rgba(249, 115, 22, 0.08);
   color: #f97316;
 }
 
+.library-tag-source.generated {
+  background: rgba(15, 118, 110, 0.09);
+  color: #0f766e;
+}
+
+.library-card-actions {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  padding-top: 8px;
+  border-top: 1px solid #f0efed;
+}
+
+.library-card-actions button,
+.library-card-actions a {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #57534e;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.library-card-actions button:hover,
+.library-card-actions a:hover {
+  background: #f5f5f4;
+  color: #0f766e;
+}
+
+.library-card-actions .delete {
+  width: 26px;
+  margin-left: auto;
+  padding: 0;
+  color: #a8a29e;
+}
+
+.library-card-actions .delete:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
 /* 悬停操作面板 */
-.asset-overlay-hover {
+.library-asset-overlay {
   position: absolute;
   inset: 0;
   background: rgba(15, 23, 42, 0.3);
@@ -342,11 +488,15 @@
   transition: opacity 0.2s ease;
 }
 
-.asset-card-modern:hover .asset-overlay-hover {
+.library-asset-card:hover .library-asset-overlay {
   opacity: 1;
 }
 
-.asset-overlay-btn {
+.library-asset-card:focus-within .library-asset-overlay {
+  opacity: 1;
+}
+
+.library-asset-overlay-btn {
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -361,13 +511,13 @@
   transition: all 0.15s ease;
 }
 
-.asset-overlay-btn:hover {
+.library-asset-overlay-btn:hover {
   transform: scale(1.1);
   background: #ffffff;
   color: #6366f1;
 }
 
-.asset-overlay-btn.btn-delete:hover {
+.library-asset-overlay-btn.btn-delete:hover {
   color: #ef4444;
 }
 
@@ -406,6 +556,47 @@
   overflow: hidden;
   border-radius: 12px;
   background: #fafaf9;
+}
+
+@media (max-width: 960px) {
+  .assets-modern-container {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .library-assets-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .assets-workspace {
+    height: calc(100vh - 56px) !important;
+    overflow-y: auto;
+  }
+
+  .assets-modern-container {
+    display: block;
+    height: auto !important;
+  }
+
+  .assets-left-panel {
+    height: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid #e7e5e4 !important;
+    padding: 18px !important;
+  }
+
+  .assets-content-panel {
+    height: auto !important;
+    min-height: 520px;
+    padding: 18px !important;
+    overflow: visible;
+  }
+
+  .library-assets-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    overflow: visible;
+  }
 }
 
 .assets-empty-state {

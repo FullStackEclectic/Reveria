@@ -1,7 +1,6 @@
 import React from "react";
 import { AssetSummary, ProjectSummary } from "../../types";
 import { PageFrame } from "../common/PageFrame";
-import { assetUrl } from "../../utils"; // 核心：引入静态资源全路径转换函数
 import "./HistoryView.css";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { Check, Image, MessageCircle, Video } from "lucide-react";
@@ -35,24 +34,26 @@ export function HistoryView({
 
   // 2. 解析资产元数据
   const parsedItems = React.useMemo(() => {
-    return assets.map(asset => {
-      const meta = typeof asset.metadata === "string"
-        ? (() => {
-            try {
-              return JSON.parse(asset.metadata);
-            } catch {
-              return {};
-            }
-          })()
-        : asset.metadata || {};
-      
-      const taskType = meta.task_type || asset.asset_type || "";
-      return {
-        ...asset,
-        meta,
-        taskType,
-      };
-    });
+    return assets
+      .filter((asset) => asset.source === "generated" || asset.source === "workflow")
+      .map(asset => {
+        const meta = typeof asset.metadata === "string"
+          ? (() => {
+              try {
+                return JSON.parse(asset.metadata);
+              } catch {
+                return {};
+              }
+            })()
+          : asset.metadata || {};
+
+        const taskType = meta.task_type || asset.asset_type || "";
+        return {
+          ...asset,
+          meta,
+          taskType,
+        };
+      });
   }, [assets]);
 
   // 3. 核心体验革命：时间滑动窗口聚类算法
@@ -73,6 +74,12 @@ export function HistoryView({
 
     const TIME_THRESHOLD_MS = 10 * 60 * 1000; 
 
+    const itemModelLabel = (item: (typeof parsedItems)[number]) => {
+      const model = typeof item.meta.model === "string" ? item.meta.model.trim() : "";
+      if (model) return model;
+      return item.source === "workflow" ? "工作流处理" : "未记录模型";
+    };
+
     sortedItems.forEach(item => {
       const itemTime = new Date(item.created_at || Date.now()).getTime();
       const promptText = item.meta.prompt || (item as any).reason || "AI 创意工作流运行";
@@ -88,8 +95,9 @@ export function HistoryView({
         if (promptText && !matchedGroup.prompts.includes(promptText)) {
           matchedGroup.prompts.push(promptText);
         }
-        if (item.meta.model && item.meta.model !== "GPT-4o") {
-          matchedGroup.model = item.meta.model;
+        const modelLabel = itemModelLabel(item);
+        if (modelLabel !== "未记录模型") {
+          matchedGroup.model = modelLabel;
         }
       } else {
         groups.push({
@@ -98,7 +106,7 @@ export function HistoryView({
           createdAt: item.created_at || new Date().toISOString(),
           lastActiveAt: item.created_at || new Date().toISOString(),
           prompts: [promptText],
-          model: item.meta.model || "GPT-4o",
+          model: itemModelLabel(item),
           assets: [item]
         });
       }
@@ -193,7 +201,7 @@ export function HistoryView({
   return (
     <PageFrame
       title="项目生成记录"
-      status={`${assets.length} 条资产已智能归集成 ${taskGroups.length} 组连续对话`}
+      status={`${parsedItems.length} 条生成资产已智能归集成 ${taskGroups.length} 组连续对话`}
       action={
         <div className="topbar-actions">
           <button
@@ -528,7 +536,6 @@ export function HistoryView({
       <TaskDetailModal
         selectedTaskGroup={selectedTaskGroup}
         onClose={() => setSelectedTaskGroup(null)}
-        previewImageUrl={previewImageUrl}
         setPreviewImageUrl={setPreviewImageUrl}
       />
     </PageFrame>

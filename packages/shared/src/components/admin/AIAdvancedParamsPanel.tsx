@@ -2,6 +2,7 @@ import React from "react";
 import { Plus, Trash2, HelpCircle } from "lucide-react";
 
 export interface AIAdvancedParams {
+  image_count?: number;
   vae?: string;
   loras?: { name: string; weight: number }[];
   embeddings?: { name: string; weight: number }[];

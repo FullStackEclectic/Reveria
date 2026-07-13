@@ -510,10 +510,11 @@ export function AppCore() {
   async function deleteAsset(assetId: string) {
     setDeletingAssetId(assetId);
     try {
-      const result = await deleteJson<DeleteAssetResponse>(`/api/assets/${assetId}`);
-      if (result.deleted) {
-        setAssets((current) => current.filter((asset) => asset.id !== result.asset_id));
-      }
+      await deleteJson<DeleteAssetResponse>(`/api/assets/${assetId}`);
+      setAssets((current) => current.filter((asset) => asset.id !== assetId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      alert(`删除素材失败：${message}`);
     } finally {
       setDeletingAssetId("");
     }

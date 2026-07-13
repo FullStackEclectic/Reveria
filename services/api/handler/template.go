@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"reveria/services/api/database"
@@ -214,18 +217,102 @@ func ListPromptTemplates(c *gin.Context) {
 
 // UpsertPromptTemplateRequest 提示词模板参数载荷
 type UpsertPromptTemplateRequest struct {
-	CategoryID     uuid.UUID `json:"category_id" binding:"required"`
-	Title          string    `json:"title" binding:"required"`
-	Content        string    `json:"content" binding:"required"`
-	DefaultWidth   int       `json:"default_width"`
-	DefaultHeight  int       `json:"default_height"`
-	WorkflowType   string    `json:"workflow_type"`
-	NeedImage      int       `json:"need_image"`
-	ShowRatio      *bool     `json:"show_ratio"`
-	NegativePrompt string    `json:"negative_prompt"`
-	PreviewUrl     string    `json:"preview_url"`
-	ModelID        string    `json:"model_id"`
-	AdvancedParams string    `json:"advanced_params"`
+	CategoryID      uuid.UUID `json:"category_id" binding:"required"`
+	Title           string    `json:"title" binding:"required"`
+	Content         string    `json:"content" binding:"required"`
+	DefaultWidth    int       `json:"default_width"`
+	DefaultHeight   int       `json:"default_height"`
+	WorkflowType    string    `json:"workflow_type"`
+	NeedImage       int       `json:"need_image"`
+	ShowRatio       *bool     `json:"show_ratio"`
+	NegativePrompt  string    `json:"negative_prompt"`
+	PreviewUrl      string    `json:"preview_url"`
+	ModelID         string    `json:"model_id"`
+	AdvancedParams  string    `json:"advanced_params"`
+	ExecutionConfig string    `json:"execution_config"`
+}
+
+type templateSceneConfig struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Prompt string `json:"prompt"`
+}
+
+type templateExecutionConfig struct {
+	Version       int                   `json:"version"`
+	Operation     string                `json:"operation"`
+	OutputMode    string                `json:"output_mode"`
+	ReferenceMode string                `json:"reference_mode"`
+	MaxOutputs    int                   `json:"max_outputs"`
+	Scenes        []templateSceneConfig `json:"scenes"`
+}
+
+func normalizeTemplateExecutionConfig(raw string, workflowType string, needImage int) (string, int, error) {
+	if workflowType != "image-generation" && workflowType != "image-to-image" {
+		return raw, needImage, nil
+	}
+
+	config := templateExecutionConfig{
+		Version:       1,
+		Operation:     "text-to-image",
+		OutputMode:    "single",
+		ReferenceMode: "none",
+		MaxOutputs:    12,
+		Scenes:        []templateSceneConfig{},
+	}
+	if needImage > 0 {
+		config.Operation = "image-to-image"
+		config.ReferenceMode = "required"
+	}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &config); err != nil {
+			return "", needImage, err
+		}
+	}
+
+	validOperations := map[string]bool{"text-to-image": true, "image-to-image": true, "image-edit": true}
+	validOutputModes := map[string]bool{"single": true, "scenes": true, "variants": true}
+	validReferenceModes := map[string]bool{"none": true, "optional": true, "required": true}
+	if !validOperations[config.Operation] || !validOutputModes[config.OutputMode] || !validReferenceModes[config.ReferenceMode] {
+		return "", needImage, errors.New("invalid template execution config")
+	}
+	if (config.Operation == "image-to-image" || config.Operation == "image-edit") && config.ReferenceMode != "required" {
+		return "", needImage, errors.New("image input operation requires a reference image")
+	}
+
+	config.Version = 1
+	if config.MaxOutputs < 1 {
+		config.MaxOutputs = 1
+	}
+	if config.MaxOutputs > 16 {
+		config.MaxOutputs = 16
+	}
+	if config.OutputMode == "scenes" {
+		if len(config.Scenes) == 0 || len(config.Scenes) > config.MaxOutputs {
+			return "", needImage, errors.New("invalid scene count")
+		}
+		for index := range config.Scenes {
+			config.Scenes[index].ID = strings.TrimSpace(config.Scenes[index].ID)
+			config.Scenes[index].Title = strings.TrimSpace(config.Scenes[index].Title)
+			config.Scenes[index].Prompt = strings.TrimSpace(config.Scenes[index].Prompt)
+			if config.Scenes[index].ID == "" {
+				config.Scenes[index].ID = uuid.NewString()
+			}
+			if config.Scenes[index].Title == "" || config.Scenes[index].Prompt == "" {
+				return "", needImage, errors.New("invalid scene")
+			}
+		}
+	} else {
+		config.Scenes = []templateSceneConfig{}
+	}
+
+	if config.ReferenceMode == "required" {
+		needImage = 1
+	} else {
+		needImage = 0
+	}
+	encoded, err := json.Marshal(config)
+	return string(encoded), needImage, err
 }
 
 // CreatePromptTemplate (POST /api/admin/prompt-templates)
@@ -263,23 +350,29 @@ func CreatePromptTemplate(c *gin.Context) {
 	if req.ShowRatio != nil {
 		sr = *req.ShowRatio
 	}
+	executionConfig, needImage, err := normalizeTemplateExecutionConfig(req.ExecutionConfig, wt, req.NeedImage)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "模板执行配置不合法"})
+		return
+	}
 
 	template := model.PromptTemplate{
-		ID:             uuid.New(),
-		CategoryID:     req.CategoryID,
-		Title:          req.Title,
-		Content:        req.Content,
-		DefaultWidth:   dw,
-		DefaultHeight:  dh,
-		WorkflowType:   wt,
-		NeedImage:      req.NeedImage,
-		ShowRatio:      sr,
-		NegativePrompt: req.NegativePrompt,
-		PreviewUrl:     req.PreviewUrl,
-		ModelID:        req.ModelID,
-		AdvancedParams: req.AdvancedParams,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		ID:              uuid.New(),
+		CategoryID:      req.CategoryID,
+		Title:           req.Title,
+		Content:         req.Content,
+		DefaultWidth:    dw,
+		DefaultHeight:   dh,
+		WorkflowType:    wt,
+		NeedImage:       needImage,
+		ShowRatio:       sr,
+		NegativePrompt:  req.NegativePrompt,
+		PreviewUrl:      req.PreviewUrl,
+		ModelID:         req.ModelID,
+		AdvancedParams:  req.AdvancedParams,
+		ExecutionConfig: executionConfig,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := database.DB.Create(&template).Error; err != nil {
@@ -335,8 +428,17 @@ func UpdatePromptTemplate(c *gin.Context) {
 	template.Content = req.Content
 	template.DefaultWidth = dw
 	template.DefaultHeight = dh
-	template.WorkflowType = req.WorkflowType
-	template.NeedImage = req.NeedImage
+	wt := req.WorkflowType
+	if wt == "" {
+		wt = "image-generation"
+	}
+	executionConfig, needImage, err := normalizeTemplateExecutionConfig(req.ExecutionConfig, wt, req.NeedImage)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "模板执行配置不合法"})
+		return
+	}
+	template.WorkflowType = wt
+	template.NeedImage = needImage
 	if req.ShowRatio != nil {
 		template.ShowRatio = *req.ShowRatio
 	}
@@ -344,6 +446,7 @@ func UpdatePromptTemplate(c *gin.Context) {
 	template.PreviewUrl = req.PreviewUrl
 	template.ModelID = req.ModelID
 	template.AdvancedParams = req.AdvancedParams
+	template.ExecutionConfig = executionConfig
 	template.UpdatedAt = time.Now()
 
 	if err := database.DB.Save(&template).Error; err != nil {

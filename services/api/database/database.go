@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"reveria/services/api/model"
 
-	"gorm.io/driver/postgres"
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -141,27 +142,56 @@ func SeedTemplates() {
 	}
 
 	// 2. 确保“高端饰品一图生多图”模板存在
+	sceneConfig := map[string]any{
+		"version":        1,
+		"operation":      "image-to-image",
+		"output_mode":    "scenes",
+		"reference_mode": "required",
+		"max_outputs":    12,
+		"scenes": []map[string]string{
+			{"id": "product-main", "title": "产品主图", "prompt": "以精美的产品特写展示卖点与工艺品质"},
+			{"id": "product-wearing", "title": "模特佩戴图", "prompt": "由单个模特佩戴，展示实际佩戴效果与时尚氛围"},
+			{"id": "product-detail", "title": "产品细节图", "prompt": "近距离展示产品的精细纹路、材质工艺与细节"},
+			{"id": "product-white", "title": "产品白底图", "prompt": "在纯白背景上展示产品的真实结构与本色"},
+			{"id": "product-selling-point", "title": "材质卖点图", "prompt": "突出材质、工艺和核心卖点，体现精致做工"},
+			{"id": "product-gift", "title": "礼物氛围图", "prompt": "在精美礼品包装场景中展示产品与送礼氛围"},
+		},
+	}
+	executionConfigBytes, _ := json.Marshal(sceneConfig)
+	executionConfig := string(executionConfigBytes)
+	globalPrompt := "这个款有金色银色，戒指尺码6 7 8 9 10。你作为高端饰品摄影师，记住产品的外形特征并锁定外观结构，分析产品卖点、构图与打光。产品占画面约80%，用于跨境电商平台，每张图为1200*1200的单张画面，不可拼图。"
 	var tpl model.PromptTemplate
 	err = DB.Where("title = ?", "高端饰品一图生多图").First(&tpl).Error
 	if err != nil {
 		tpl = model.PromptTemplate{
-			ID:            uuid.New(),
-			CategoryID:    category.ID,
-			Title:         "高端饰品一图生多图",
-			Content:       "这个款有金色银色，戒指尺码6 7 8 9 10，你作为一个高端饰品摄影师，首先记住这款产品的外型特征，锁定产品外观结构，然后需要你帮我分析这款产品的卖点，应该来怎么拍摄，构图，以及产品打光，产品需要占画面的百分之80，拍摄用于电商主图，跨境平台temu使用，需要一张产品主图展示产品的卖点，一张产品配戴图展示产品配戴效果，一张产品细节图，一张产品白底图，一张材质/卖点图，一张场景/礼物氛围图，每张图片尺寸1200*1200，不可以拼图。",
-			DefaultWidth:  1200,
-			DefaultHeight: 1200,
-			WorkflowType:  "image-generation",
-			NeedImage:     1,
-			ShowRatio:     true,
-			NegativePrompt: "low quality, blurry, deformed, bad hands, distorted fingers, low resolution, multiple rings, collage",
-			PreviewUrl:     "ring_template_preview.png",
-			ModelID:        "gpt-image-2",
+			ID:              uuid.New(),
+			CategoryID:      category.ID,
+			Title:           "高端饰品一图生多图",
+			Content:         globalPrompt,
+			DefaultWidth:    1200,
+			DefaultHeight:   1200,
+			WorkflowType:    "image-generation",
+			NeedImage:       1,
+			ShowRatio:       true,
+			NegativePrompt:  "low quality, blurry, deformed, bad hands, distorted fingers, low resolution, multiple rings, collage",
+			PreviewUrl:      "ring_template_preview.png",
+			ModelID:         "gpt-image-2",
+			ExecutionConfig: executionConfig,
 		}
 		if err := DB.Create(&tpl).Error; err != nil {
 			log.Printf("创建高端饰品一图生多图模板失败: %v", err)
 		} else {
 			log.Println("已成功创建内置模板：高端饰品一图生多图")
+		}
+	} else if strings.TrimSpace(tpl.ExecutionConfig) == "" {
+		if err := DB.Model(&tpl).Updates(map[string]any{
+			"content":          globalPrompt,
+			"execution_config": executionConfig,
+			"need_image":       1,
+		}).Error; err != nil {
+			log.Printf("迁移内置多场景模板失败: %v", err)
+		} else {
+			log.Println("已将内置六图模板迁移为结构化场景模式")
 		}
 	}
 }

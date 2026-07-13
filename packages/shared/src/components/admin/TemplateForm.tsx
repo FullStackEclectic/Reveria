@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { FileText, Save, Settings2, X, Upload, Sparkles } from "lucide-react";
-import { PromptTemplate, ModelSummary } from "../../types";
+import { PromptTemplate, ModelSummary, TemplateExecutionConfig } from "../../types";
 import { uploadAsset, assetUrl } from "../../utils";
+import { parseTemplateExecutionConfig, serializeTemplateExecutionConfig } from "../../templateExecution";
+import { TemplateSceneEditor } from "../common/TemplateSceneEditor";
 import { AIAdvancedParamsPanel, AIAdvancedParams } from "./AIAdvancedParamsPanel";
 
 interface TemplateFormProps {
@@ -23,11 +25,11 @@ export function TemplateForm({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [workflowType, setWorkflowType] = useState("image-generation");
-  const [needImage, setNeedImage] = useState(0);
   const [showRatio, setShowRatio] = useState(true);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [modelId, setModelId] = useState("");
+  const [executionConfig, setExecutionConfig] = useState<TemplateExecutionConfig>(() => parseTemplateExecutionConfig({}));
   
   // 高级参数状态 (托管给 AIAdvancedParams)
   const [advParams, setAdvParams] = useState<AIAdvancedParams>({});
@@ -41,11 +43,11 @@ export function TemplateForm({
       setTitle(initialData.title || "");
       setContent(initialData.content || "");
       setWorkflowType(initialData.workflow_type || "image-generation");
-      setNeedImage(initialData.need_image ?? 0);
       setShowRatio(initialData.show_ratio !== false);
       setNegativePrompt(initialData.negative_prompt || "");
       setPreviewUrl(initialData.preview_url || "");
       setModelId(initialData.model_id || "");
+      setExecutionConfig(parseTemplateExecutionConfig(initialData));
 
       let parsed: AIAdvancedParams = {};
       try {
@@ -61,11 +63,11 @@ export function TemplateForm({
       setTitle("");
       setContent("");
       setWorkflowType("image-generation");
-      setNeedImage(0);
       setShowRatio(true);
       setNegativePrompt("");
       setPreviewUrl("");
       setModelId("");
+      setExecutionConfig(parseTemplateExecutionConfig({}));
       setAdvParams({
         vae: "automatic",
         loras: [],
@@ -117,6 +119,12 @@ export function TemplateForm({
       setErrorMsg("模板预设正向提示词内容不能为空");
       return;
     }
+    if (workflowType === "image-generation" && executionConfig.output_mode === "scenes") {
+      if (executionConfig.scenes.length === 0 || executionConfig.scenes.some((scene) => !scene.title.trim() || !scene.prompt.trim())) {
+        setErrorMsg("多场景模板的场景名称和提示词不能为空");
+        return;
+      }
+    }
 
     // 回传数据
     onSubmit({
@@ -124,12 +132,13 @@ export function TemplateForm({
       title: title.trim(),
       content: content.trim(),
       workflow_type: workflowType,
-      need_image: needImage,
+      need_image: executionConfig.reference_mode === "required" ? 1 : 0,
       show_ratio: showRatio,
       negative_prompt: negativePrompt.trim(),
       preview_url: previewUrl,
       model_id: modelId,
       advanced_params: JSON.stringify(advParams),
+      execution_config: serializeTemplateExecutionConfig(executionConfig),
       default_width: advParams.width || 768,
       default_height: advParams.height || 1152
     });
@@ -209,6 +218,69 @@ export function TemplateForm({
           </select>
         </div>
 
+        {workflowType === "image-generation" && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>生成方式</span>
+              <select
+                value={executionConfig.operation}
+                onChange={(event) => {
+                  const operation = event.target.value as TemplateExecutionConfig["operation"];
+                  setExecutionConfig((current) => ({
+                    ...current,
+                    operation,
+                    reference_mode: operation === "text-to-image" ? (current.reference_mode === "required" ? "none" : current.reference_mode) : "required",
+                  }));
+                }}
+                style={{ background: "#ffffff", border: "1px solid var(--rv-color-border-thin)", color: "var(--rv-color-text-main)", borderRadius: "var(--rv-radius-xs)", padding: "8px 12px", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}
+              >
+                <option value="text-to-image">文生图</option>
+                <option value="image-to-image">图生图</option>
+                <option value="image-edit">图改图</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>输出模式</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "3px", gap: "3px", background: "var(--rv-color-bg-sidebar)", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)" }}>
+                {([
+                  { value: "single", label: "单图" },
+                  { value: "scenes", label: "多场景" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setExecutionConfig((current) => ({
+                      ...current,
+                      output_mode: option.value,
+                      scenes: option.value === "scenes" && current.scenes.length === 0
+                        ? parseTemplateExecutionConfig({ title: "多图" }).scenes
+                        : current.scenes,
+                    }))}
+                    style={{ minHeight: "30px", border: 0, borderRadius: "4px", background: executionConfig.output_mode === option.value ? "#ffffff" : "transparent", color: executionConfig.output_mode === option.value ? "var(--rv-color-primary)" : "var(--rv-color-text-muted)", boxShadow: executionConfig.output_mode === option.value ? "0 1px 3px rgba(0,0,0,0.08)" : "none", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {executionConfig.output_mode === "scenes" && (
+              <label style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px", color: "var(--rv-color-text-muted)", fontWeight: 600 }}>
+                客户最多可添加场景数
+                <input
+                  type="number"
+                  min={executionConfig.scenes.length}
+                  max={16}
+                  value={executionConfig.max_outputs}
+                  onChange={(event) => setExecutionConfig((current) => ({ ...current, max_outputs: Math.max(current.scenes.length, Math.min(Number(event.target.value) || 1, 16)) }))}
+                  style={{ height: "34px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", padding: "0 10px", fontSize: "12px", outline: "none" }}
+                />
+              </label>
+            )}
+          </>
+        )}
+
         {/* 推荐模型 */}
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>推荐大模型</span>
@@ -230,13 +302,17 @@ export function TemplateForm({
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)", fontWeight: "600" }}>参考图片需求</span>
           <select
-            value={needImage}
-            onChange={(e) => setNeedImage(Number(e.target.value))}
+            value={executionConfig.reference_mode}
+            disabled={executionConfig.operation !== "text-to-image"}
+            onChange={(event) => {
+              const referenceMode = event.target.value as TemplateExecutionConfig["reference_mode"];
+              setExecutionConfig((current) => ({ ...current, reference_mode: referenceMode }));
+            }}
             style={{ background: "#ffffff", border: "1px solid var(--rv-color-border-thin)", color: "var(--rv-color-text-main)", borderRadius: "var(--rv-radius-xs)", padding: "8px 12px", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}
           >
-            <option value={0}>不需要参考图片</option>
-            <option value={1}>需要 1 张参考图片</option>
-            <option value={2}>需要多张参考图片</option>
+            <option value="none">不需要参考图片</option>
+            <option value="optional">可选 1 张参考图片</option>
+            <option value="required">必须 1 张参考图片</option>
           </select>
         </div>
 
@@ -291,6 +367,14 @@ export function TemplateForm({
             style={{ flex: 1, height: "100%", minHeight: "150px", background: "#ffffff", border: "1px solid var(--rv-color-border-thin)", color: "var(--rv-color-text-main)", borderRadius: "var(--rv-radius-xs)", padding: "12px 14px", fontSize: "12px", fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace", lineHeight: "1.6", outline: "none", resize: "vertical" }}
           />
         </div>
+
+        {workflowType === "image-generation" && executionConfig.output_mode === "scenes" && (
+          <TemplateSceneEditor
+            scenes={executionConfig.scenes}
+            maxScenes={executionConfig.max_outputs}
+            onChange={(scenes) => setExecutionConfig((current) => ({ ...current, scenes }))}
+          />
+        )}
 
         {/* 反向提示词 */}
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>

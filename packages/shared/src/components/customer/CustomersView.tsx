@@ -1,11 +1,12 @@
 import React, { FormEvent, useState } from "react";
 import { Loader2, Save, Plus, Trash2, Edit, ArrowLeft, Search, Briefcase, FileText } from "lucide-react";
-import { CustomerSummary, ProjectSummary, BrandKitSummary } from "../../types";
+import { CustomerSummary, ProjectSummary, BrandKitSummary, WorkspaceSummary } from "../../types";
 import { postJson, putJson, deleteJson } from "../../utils";
 import "./CustomersView.css";
 
 
 interface CustomersViewProps {
+  activeWorkspace?: WorkspaceSummary;
   customers: CustomerSummary[];
   setCustomers: React.Dispatch<React.SetStateAction<CustomerSummary[]>>;
   selectedCustomer: CustomerSummary | undefined;
@@ -43,6 +44,7 @@ function getFirstChar(name: string) {
 }
 
 export function CustomersView({
+  activeWorkspace,
   customers,
   setCustomers,
   selectedCustomer,
@@ -130,9 +132,13 @@ export function CustomersView({
   async function handleCreateCustomerInline(e: FormEvent) {
     e.preventDefault();
     if (!newCustomerName.trim()) return;
+    const workspaceId = activeWorkspace?.id;
+    if (!workspaceId) {
+      alert("创建客户失败：请先连接 API 并创建工作区");
+      return;
+    }
     setIsCreatingCustomer(true);
     try {
-      const workspaceId = customers[0]?.workspace_id || "00000000-0000-0000-0000-000000000000";
       const created = await postJson<CustomerSummary>("/api/customers", {
         workspace_id: workspaceId,
         name: newCustomerName.trim(),

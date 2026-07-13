@@ -157,6 +157,38 @@ export function assetMimeType(asset: AssetSummary) {
     : asset.asset_type;
 }
 
+export function isTextAsset(asset: AssetSummary) {
+  const meta = getAssetMetadata(asset);
+  const taskType = typeof meta.task_type === "string" ? meta.task_type.toLowerCase() : "";
+  const hasGeneratedText =
+    typeof meta.output === "string" || typeof meta.summary === "string";
+
+  return asset.asset_type === "text" || taskType === "text" || (
+    asset.asset_type === "document" &&
+    asset.source === "generated" &&
+    hasGeneratedText
+  );
+}
+
+export function assetTextContent(asset: AssetSummary) {
+  const meta = getAssetMetadata(asset);
+  const content = typeof meta.output === "string" ? meta.output : meta.summary;
+  return typeof content === "string" ? content.trim() : "";
+}
+
+export function textAssetTitle(asset: AssetSummary) {
+  const meta = getAssetMetadata(asset);
+  const title = typeof meta.title === "string" ? meta.title.trim() : "";
+  const prompt = typeof meta.prompt === "string" ? meta.prompt.trim() : "";
+  const candidate = title && title !== "AI 文本生成结果" ? title : prompt;
+  const normalized = candidate.replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return "AI 文本生成结果";
+  }
+  return normalized.length > 42 ? `${normalized.slice(0, 42)}...` : normalized;
+}
+
 export function routeModelCount(route: unknown) {
   if (!route || typeof route !== "object" || !("text_model_ids" in route)) {
     return 0;

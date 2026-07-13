@@ -1,8 +1,9 @@
 import React from "react";
 import { Sparkles, LayoutTemplate, Upload, Image as ImageIcon, X } from "lucide-react";
-import { PromptTemplate, AssetSummary } from "../../types";
+import { PromptTemplate, AssetSummary, TemplateExecutionConfig } from "../../types";
 import { assetUrl, assetTitle } from "../../utils";
 import { AIAdvancedParamsPanel, AIAdvancedParams } from "../admin/AIAdvancedParamsPanel";
+import { TemplateSceneEditor } from "../common/TemplateSceneEditor";
 
 interface TemplateConfigViewProps {
   activeTemplate: PromptTemplate;
@@ -17,6 +18,8 @@ interface TemplateConfigViewProps {
   handleUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
   advParams: AIAdvancedParams;
   setAdvParams: (val: AIAdvancedParams) => void;
+  executionConfig: TemplateExecutionConfig;
+  setExecutionConfig: React.Dispatch<React.SetStateAction<TemplateExecutionConfig>>;
   handleStartGeneration: () => void;
   projectAssets: AssetSummary[];
   selectedModelId: string;
@@ -37,6 +40,8 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
   handleUploadImage,
   advParams,
   setAdvParams,
+  executionConfig,
+  setExecutionConfig,
   handleStartGeneration,
   projectAssets,
   selectedModelId,
@@ -44,6 +49,8 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
   availableModels
 }) => {
   const [isRefSelectorOpen, setIsRefSelectorOpen] = React.useState(false);
+  const isReferenceRequired = executionConfig.reference_mode === "required";
+  const showReferenceUpload = executionConfig.reference_mode !== "none";
 
   return (
     <div
@@ -109,6 +116,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
             })()}
           </span>
         </div>
+
       </div>
 
       {/* 右栏：参数配置与立即生成 */}
@@ -171,6 +179,28 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
           />
         </div>
 
+        {activeTemplate.workflow_type === "image-generation" && executionConfig.output_mode === "scenes" && (
+          <TemplateSceneEditor
+            scenes={executionConfig.scenes}
+            maxScenes={executionConfig.max_outputs}
+            onChange={(scenes) => setExecutionConfig((current) => ({ ...current, scenes }))}
+          />
+        )}
+
+        {activeTemplate.workflow_type === "image-generation" && executionConfig.output_mode === "variants" && (
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", minHeight: "42px", padding: "0 12px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "var(--rv-radius-xs)", fontSize: "12px", fontWeight: 700, color: "var(--rv-color-text-main)" }}>
+            生成变体数量
+            <input
+              type="number"
+              min={1}
+              max={executionConfig.max_outputs}
+              value={advParams.image_count ?? 2}
+              onChange={(event) => setAdvParams({ ...advParams, image_count: Math.max(1, Math.min(Number(event.target.value) || 1, executionConfig.max_outputs)) })}
+              style={{ width: "72px", height: "30px", border: "1px solid var(--rv-color-border-thin)", borderRadius: "4px", padding: "0 8px", fontSize: "12px" }}
+            />
+          </label>
+        )}
+
         {/* 生图模式展示反向提示词 */}
         {(activeTemplate.workflow_type === "image-generation" || activeTemplate.workflow_type === "video-generation") && (
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -199,14 +229,14 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
         )}
 
         {/* 参考图上传区 */}
-        {activeTemplate.need_image && activeTemplate.need_image > 0 ? (() => {
+        {showReferenceUpload ? (() => {
           const boxWidth = 150;
           const boxHeight = 150;
 
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--rv-color-text-main)" }}>
-                参考照片 (需要 {activeTemplate.need_image} 张)
+                参考照片（{isReferenceRequired ? "必填" : "可选"}）
               </span>
               <div 
                 style={{ 
@@ -386,7 +416,7 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
           <button
             type="button"
             onClick={handleStartGeneration}
-            disabled={isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)}
+            disabled={isUploading || (isReferenceRequired && uploadedImages.length === 0)}
             style={{
               width: "100%",
               minHeight: "42px",
@@ -400,26 +430,26 @@ export const TemplateConfigView: React.FC<TemplateConfigViewProps> = ({
               alignItems: "center",
               justifyContent: "center",
               gap: "8px",
-              cursor: (isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) ? "not-allowed" : "pointer",
-              opacity: (isUploading || ((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) ? 0.6 : 1,
+              cursor: (isUploading || (isReferenceRequired && uploadedImages.length === 0)) ? "not-allowed" : "pointer",
+              opacity: (isUploading || (isReferenceRequired && uploadedImages.length === 0)) ? 0.6 : 1,
               transition: "all 0.2s",
               boxShadow: "var(--rv-shadow-md)"
             }}
             onMouseEnter={(e) => {
-              if (!isUploading && !((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) {
+              if (!isUploading && !(isReferenceRequired && uploadedImages.length === 0)) {
                 e.currentTarget.style.background = "hsl(170, 80%, 20%)";
               }
             }}
             onMouseLeave={(e) => {
-              if (!isUploading && !((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0)) {
+              if (!isUploading && !(isReferenceRequired && uploadedImages.length === 0)) {
                 e.currentTarget.style.background = "var(--rv-color-primary)";
               }
             }}
           >
             <Sparkles size={16} />
-            立即在画布生成
+            {executionConfig.output_mode === "scenes" ? `生成 ${executionConfig.scenes.length} 个场景` : "立即在画布生成"}
           </button>
-          {((activeTemplate.need_image ?? 0) > 0 && uploadedImages.length === 0) && (
+          {(isReferenceRequired && uploadedImages.length === 0) && (
             <p style={{ margin: "6px 0 0", fontSize: "10px", color: "#ef4444", textAlign: "center" }}>
               请先上传参考照片以激活生成
             </p>

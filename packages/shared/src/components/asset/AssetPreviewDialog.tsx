@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { ExternalLink, Download, Wand2, X } from "lucide-react";
+import { ExternalLink, Download, Wand2, X, Copy, Check, Bot } from "lucide-react";
 import { AssetSummary } from "../../types";
-import { assetTitle, assetUrl, assetMimeType, formatFileSize } from "../../utils";
+import {
+  assetTitle,
+  assetUrl,
+  assetMimeType,
+  formatFileSize,
+  isTextAsset,
+  assetTextContent,
+  textAssetTitle,
+  getAssetMetadata,
+} from "../../utils";
 
 async function downloadImage(url: string, filename: string) {
   try {
@@ -34,7 +43,11 @@ export function AssetPreviewDialog({
   onEnterEditor,
 }: AssetPreviewDialogProps) {
   const [resolution, setResolution] = useState<string>("");
-  const title = assetTitle(asset);
+  const [copied, setCopied] = useState(false);
+  const textAsset = isTextAsset(asset);
+  const textContent = assetTextContent(asset);
+  const meta = getAssetMetadata(asset);
+  const title = textAsset ? textAssetTitle(asset) : assetTitle(asset);
   const sourceUrl = asset.file_url ?? asset.thumbnail_url ?? "";
 
   useEffect(() => {
@@ -62,6 +75,21 @@ export function AssetPreviewDialog({
       setResolution(`${img.naturalWidth} x ${img.naturalHeight}`);
     };
   }, [asset.id, sourceUrl]);
+
+  useEffect(() => {
+    setCopied(false);
+  }, [asset.id]);
+
+  async function copyText() {
+    if (!textContent) return;
+    try {
+      await navigator.clipboard.writeText(textContent);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (error) {
+      alert(`复制文本失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   function renderAssetPreview(asset: AssetSummary) {
     const sourceUrl = asset.file_url ?? asset.thumbnail_url;
@@ -92,7 +120,7 @@ export function AssetPreviewDialog({
         <div className="asset-preview-dialog-header">
           <div>
             <h3>{title}</h3>
-            <span>{asset.source} · {asset.asset_type}</span>
+            <span>{textAsset ? "AI 生成 · 文本内容" : `${asset.source} · ${asset.asset_type}`}</span>
           </div>
           <button
             type="button"
@@ -103,15 +131,23 @@ export function AssetPreviewDialog({
             <X size={16} />
           </button>
         </div>
-        <div className="asset-dialog-preview">
-          {asset.asset_type === "image" && sourceUrl ? (
+        <div className={`asset-dialog-preview ${textAsset ? "text-asset-dialog-preview" : ""}`}>
+          {textAsset ? (
+            <article className="text-asset-full-content">
+              <div className="text-asset-full-label"><Bot size={15} />生成内容</div>
+              <div>{textContent || "暂无文本内容"}</div>
+            </article>
+          ) : asset.asset_type === "image" && sourceUrl ? (
             <img alt={title} src={assetUrl(sourceUrl)} />
           ) : (
             renderAssetPreview(asset)
           )}
         </div>
         <div className="asset-dialog-meta">
-          <span>{assetMimeType(asset)}</span>
+          <span>{textAsset ? "AI 文本" : assetMimeType(asset)}</span>
+          {textAsset && typeof meta.model === "string" ? <span>{meta.model}</span> : null}
+          {textAsset && typeof meta.total_tokens === "number" ? <span>{meta.total_tokens} Tokens</span> : null}
+          {asset.created_at ? <span>{new Date(asset.created_at).toLocaleString("zh-CN", { hour12: false })}</span> : null}
           {resolution ? (
             <span>{resolution}</span>
           ) : null}
@@ -120,6 +156,12 @@ export function AssetPreviewDialog({
           ) : null}
         </div>
         <div className="asset-preview-dialog-actions">
+          {textAsset ? (
+            <button className="secondary-button" type="button" onClick={() => void copyText()} disabled={!textContent}>
+              {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+              {copied ? "已复制" : "复制全文"}
+            </button>
+          ) : null}
           {sourceUrl ? (
             <>
               {asset.asset_type === "image" && onEnterEditor && (
@@ -140,12 +182,14 @@ export function AssetPreviewDialog({
                 type="button"
                 onClick={() => {
                   const url = assetUrl(sourceUrl);
-                  const filename = `${title || "download"}.png`;
+                  const filename = typeof asset.metadata.file_name === "string"
+                    ? asset.metadata.file_name
+                    : title || "download";
                   downloadImage(url, filename);
                 }}
               >
                 <Download size={16} aria-hidden="true" />
-                下载图片
+                {asset.asset_type === "image" ? "下载图片" : "下载文件"}
               </button>
               <a
                 className="secondary-button"
