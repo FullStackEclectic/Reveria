@@ -5,21 +5,18 @@ import { getJson, postJson } from "../utils";
 interface UseOrderFlowProps {
   currentUser: any;
   activeWorkspace: any;
-  setTransactions: any;
   setAdminMessage: (msg: string) => void;
 }
 
 export function useOrderFlow({
   currentUser,
   activeWorkspace,
-  setTransactions,
   setAdminMessage,
 }: UseOrderFlowProps) {
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [rechargeRecords, setRechargeRecords] = useState<RechargeRecordSummary[]>([]);
   const [pendingOrder, setPendingOrder] = useState<OrderSummary | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [isPayingOrder, setIsPayingOrder] = useState(false);
   const [creditsTab, setCreditsTab] = useState<"transactions" | "recharges">("transactions");
 
   // 初始化加载商业套餐列表和账单流水
@@ -115,46 +112,6 @@ export function useOrderFlow({
     }
   }
 
-  // 模拟支付
-  async function handleMockPay() {
-    if (!pendingOrder) return;
-    setIsPayingOrder(true);
-    try {
-      const res = await postJson<{
-        success: boolean;
-        message: string;
-        data: OrderSummary;
-      }>(
-        `/api/billing/orders/${pendingOrder.id}/mock-pay`,
-        {}
-      );
-      if (res.success && res.data.status === "paid") {
-        setPendingOrder(null);
-        setAdminMessage("订单模拟付款成功！算力额度与套餐已即时到账。");
-        
-        // 刷新充值记录和流水
-        const workspaceId = activeWorkspace?.id;
-        if (workspaceId) {
-          const recharges = await getJson<RechargeRecordSummary[]>(
-            `/api/credits/${workspaceId}/recharges`
-          );
-          setRechargeRecords(recharges);
-          
-          const txs = await getJson<any[]>(
-            `/api/credits/${workspaceId}/transactions`
-          );
-          setTransactions(txs);
-        }
-      } else {
-        alert("付款失败，订单状态异常");
-      }
-    } catch (err: any) {
-      alert("支付失败: " + (err.message || err));
-    } finally {
-      setIsPayingOrder(false);
-    }
-  }
-
   return {
     plans,
     setPlans,
@@ -163,10 +120,8 @@ export function useOrderFlow({
     pendingOrder,
     setPendingOrder,
     isCreatingOrder,
-    isPayingOrder,
     creditsTab,
     setCreditsTab,
     handleCreateOrder,
-    handleMockPay,
   };
 }

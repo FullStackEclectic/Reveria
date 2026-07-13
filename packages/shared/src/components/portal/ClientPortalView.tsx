@@ -91,6 +91,14 @@ export function ClientPortalView({
     }
   }
 
+  function previewPortalAsset(asset: AssetSummary) {
+    setPreviewAsset({
+      ...asset,
+      file_url: assetUrl(asset.file_url ?? "", shareToken),
+      thumbnail_url: asset.thumbnail_url ? assetUrl(asset.thumbnail_url, shareToken) : asset.thumbnail_url,
+    });
+  }
+
   if (portalLoading) {
     return (
       <div className="portal-loading">
@@ -220,8 +228,8 @@ export function ClientPortalView({
                             {asset.thumbnail_url || asset.file_url ? (
                               <img
                                 alt=""
-                                src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")}
-                                onClick={() => setPreviewAsset(asset)}
+                                src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "", shareToken)}
+                                onClick={() => previewPortalAsset(asset)}
                               />
                             ) : (
                               <div className="canvas-item-fallback">{asset.asset_type}</div>
@@ -257,8 +265,8 @@ export function ClientPortalView({
                       {asset.thumbnail_url || asset.file_url ? (
                         <img
                           alt={asset.metadata.title || "资产图片"}
-                          src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "")}
-                          onClick={() => setPreviewAsset(asset)}
+                          src={assetUrl(asset.thumbnail_url ?? asset.file_url ?? "", shareToken)}
+                          onClick={() => previewPortalAsset(asset)}
                         />
                       ) : (
                         <div className="fallback">{asset.asset_type}</div>
@@ -269,7 +277,7 @@ export function ClientPortalView({
                       <div className="actions">
                         {asset.file_url && (
                           <a
-                            href={assetUrl(asset.file_url)}
+                            href={assetUrl(asset.file_url, shareToken)}
                             download
                             target="_blank"
                             rel="noreferrer"

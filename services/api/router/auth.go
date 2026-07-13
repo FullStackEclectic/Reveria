@@ -1,6 +1,8 @@
 package router
 
 import (
+	"os"
+
 	"reveria/services/api/handler"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +12,9 @@ import (
 func registerAuthPublicRoutes(api *gin.RouterGroup) {
 	api.POST("/auth/register", handler.RegisterUser)
 	api.POST("/auth/login", handler.LoginUser)
-	api.POST("/auth/dev-login", handler.DevLogin)
+	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" {
+		api.POST("/auth/dev-login", handler.DevLogin)
+	}
 	api.GET("/version", handler.GetBuildVersion)
 }
 

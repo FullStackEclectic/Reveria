@@ -156,7 +156,7 @@ export function TemplateSelectModal({
 
         // 加载可用算力模型列表
         const modelRes = await getJson<{ success: boolean; data: any[] }>(
-          "/api/admin/models"
+          "/api/models"
         );
         if (modelRes.success) {
           setModels(modelRes.data);

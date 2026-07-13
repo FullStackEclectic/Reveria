@@ -43,13 +43,37 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 验证用户存在性
 		var user model.User
-		if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		if err := database.DB.Where("id = ? AND status = ?", userID, "active").First(&user).Error; err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户不存在"})
 			c.Abort()
 			return
 		}
 
 		c.Set("user_id", userID)
+		c.Next()
+	}
+}
+
+// PlatformAdminMiddleware 统一保护平台级管理接口，避免各 Handler 分散鉴权产生遗漏。
+func PlatformAdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID, exists := c.Get("user_id")
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录或登录已失效"})
+			return
+		}
+
+		userID, ok := actorID.(uuid.UUID)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "message": "无效的用户凭证"})
+			return
+		}
+
+		var actor model.User
+		if err := database.DB.Select("id", "is_platform_admin").Where("id = ?", userID).First(&actor).Error; err != nil || !actor.IsPlatformAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "仅平台超级管理员可执行此操作"})
+			return
+		}
 		c.Next()
 	}
 }
@@ -78,6 +102,47 @@ func hasWorkspaceRole(workspaceID uuid.UUID, userID uuid.UUID, allowedRoles []st
 	}
 
 	return false
+}
+
+func requireProjectInWorkspace(c *gin.Context, projectID, workspaceID uuid.UUID) bool {
+	if projectID == uuid.Nil || workspaceID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "项目和工作区不能为空"})
+		return false
+	}
+	var count int64
+	if err := database.DB.Model(&model.Project{}).Where("id = ? AND workspace_id = ?", projectID, workspaceID).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "校验项目归属失败"})
+		return false
+	}
+	if count == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "项目不属于指定工作区"})
+		return false
+	}
+	return true
+}
+
+func requireCustomerInWorkspace(c *gin.Context, customerID *uuid.UUID, workspaceID uuid.UUID) bool {
+	if customerID == nil {
+		return true
+	}
+	var count int64
+	if err := database.DB.Model(&model.Customer{}).Where("id = ? AND workspace_id = ?", *customerID, workspaceID).Count(&count).Error; err != nil || count == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "客户不属于指定工作区"})
+		return false
+	}
+	return true
+}
+
+func requireBrandKitInWorkspace(c *gin.Context, brandKitID *uuid.UUID, workspaceID uuid.UUID) bool {
+	if brandKitID == nil {
+		return true
+	}
+	var count int64
+	if err := database.DB.Model(&model.BrandKit{}).Where("id = ? AND workspace_id = ?", *brandKitID, workspaceID).Count(&count).Error; err != nil || count == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "品牌库不属于指定工作区"})
+		return false
+	}
+	return true
 }
 
 func ptrString(s string) *string {

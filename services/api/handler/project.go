@@ -102,6 +102,9 @@ func CreateProject(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限操作此工作区"})
 		return
 	}
+	if !requireCustomerInWorkspace(c, req.CustomerID, req.WorkspaceID) || !requireBrandKitInWorkspace(c, req.BrandKitID, req.WorkspaceID) {
+		return
+	}
 
 	// 如果设置预算额度，只有 owner 或 admin 能操作
 	if req.BudgetCredits != nil {
@@ -266,8 +269,8 @@ func DeleteProject(c *gin.Context) {
 		return
 	}
 
-	// 仅工作区管理员或成员可删除项目
-	if !hasWorkspaceRole(project.WorkspaceID, actorID, []string{"owner", "admin", "member"}) {
+	// 删除项目会影响画布和资产，仅工作区管理员或所有者可执行。
+	if !hasWorkspaceRole(project.WorkspaceID, actorID, []string{"owner", "admin"}) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限删除此项目"})
 		return
 	}

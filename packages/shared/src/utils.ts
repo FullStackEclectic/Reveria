@@ -428,7 +428,7 @@ export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
   return (await response.json()) as AssetSummary;
 }
 
-export function assetUrl(url: string) {
+export function assetUrl(url: string, shareToken?: string) {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
     return url;
@@ -445,7 +445,11 @@ export function assetUrl(url: string) {
   }
 
   const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
-  return `${base}${formattedUrl}`;
+  const resolved = `${base}${formattedUrl}`;
+  const token = shareToken || (typeof window !== "undefined" ? localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) : null);
+  if (!token || !formattedUrl.includes("/api/files/")) return resolved;
+  const separator = resolved.includes("?") ? "&" : "?";
+  return `${resolved}${separator}${shareToken ? "share_token" : "access_token"}=${encodeURIComponent(token)}`;
 }
 
 export function formatCredits(amount?: number) {
@@ -508,7 +512,11 @@ export async function fetchDashboardData(workspaceIdOverride?: string) {
   const workspaceId = workspaceIdOverride ?? workspaceData[0]?.id;
   if (workspaceId) {
     transactionData = await getJson<CreditTransactionSummary[]>(`/api/credits/${workspaceId}/transactions`);
-    memberData = await getJson<WorkspaceMemberSummary[]>(`/api/admin/workspace-members?workspace_id=${workspaceId}`);
+    try {
+      memberData = await getJson<WorkspaceMemberSummary[]>(`/api/admin/workspace-members?workspace_id=${workspaceId}`);
+    } catch {
+      memberData = [];
+    }
     try {
       rechargeData = await getJson<RechargeRecordSummary[]>(`/api/credits/${workspaceId}/recharges`);
     } catch (err) {

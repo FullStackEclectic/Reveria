@@ -6,63 +6,57 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerSettingsRoutes 注册站长本地网关配置路由（公开，不需要 Token 鉴权）
-func registerSettingsRoutes(api *gin.RouterGroup) {
-	adminSettings := api.Group("/admin")
-	{
-		adminSettings.GET("/settings", handler.GetClientSettings)
-		adminSettings.POST("/settings", handler.UpdateClientSettings)
-	}
-}
-
 // registerAdminRoutes 注册管理员特权路由
 func registerAdminRoutes(auth *gin.RouterGroup) {
-	// 分站管理员特权及财务对账接口
-	auth.GET("/admin/users", handler.ListAdminUsers)
-	auth.POST("/admin/users/:user_id/platform-admin", handler.UpdatePlatformAdmin)
+	// 工作区成员管理沿用原接口路径，但权限由工作区 owner/admin 控制。
 	auth.GET("/admin/workspace-members", handler.ListWorkspaceMembers)
 	auth.POST("/admin/workspace-members", handler.UpsertWorkspaceMember)
 	auth.DELETE("/admin/workspace-members", handler.DeleteWorkspaceMember)
-	auth.POST("/admin/credits/adjust", handler.AdjustCredits)
-	auth.GET("/admin/plans", handler.ListAdminPlans)
-	auth.PUT("/admin/plans/:id", handler.UpdateAdminPlan)
-	auth.GET("/admin/reports/costs", handler.GetCostReport)
-	auth.POST("/billing/orders/:order_id/mock-pay", handler.MockPayOrder)
+
+	admin := auth.Group("/admin")
+	admin.Use(handler.PlatformAdminMiddleware())
+
+	admin.GET("/settings", handler.GetClientSettings)
+	admin.POST("/settings", handler.UpdateClientSettings)
+
+	// 分站管理员特权及财务对账接口
+	admin.GET("/users", handler.ListAdminUsers)
+	admin.POST("/users/:user_id/platform-admin", handler.UpdatePlatformAdmin)
+	admin.POST("/credits/adjust", handler.AdjustCredits)
+	admin.GET("/plans", handler.ListAdminPlans)
+	admin.PUT("/plans/:id", handler.UpdateAdminPlan)
+	admin.GET("/reports/costs", handler.GetCostReport)
 
 	// 后台服务商接入与算力模型大盘
-	auth.GET("/admin/providers", handler.ListProviders)
-	auth.POST("/admin/providers", handler.CreateProvider)
-	auth.POST("/admin/providers/:id/enabled", handler.EnableProvider)
-	auth.DELETE("/admin/providers/:id", handler.DeleteProvider)
-	auth.POST("/admin/providers/fetch-upstream-models", handler.FetchUpstreamModels)
+	admin.GET("/providers", handler.ListProviders)
+	admin.POST("/providers", handler.CreateProvider)
+	admin.POST("/providers/:id/enabled", handler.EnableProvider)
+	admin.DELETE("/providers/:id", handler.DeleteProvider)
+	admin.POST("/providers/fetch-upstream-models", handler.FetchUpstreamModels)
 
-	auth.GET("/admin/models", handler.ListModels)
-	auth.POST("/admin/models", handler.CreateModel)
-	auth.POST("/admin/models/:id/enabled", handler.EnableModel)
-	auth.DELETE("/admin/models/:id", handler.DeleteModel)
-	auth.POST("/admin/models/batch-import", handler.BatchImportModels)
-	auth.GET("/admin/pricing-rules", handler.MockListPricingRules)
-	auth.POST("/admin/pricing-rules", handler.MockCreatePricingRule)
-	auth.GET("/admin/workflow-templates", handler.MockListWorkflowTemplates)
-	auth.POST("/admin/workflow-templates", handler.MockCreateWorkflowTemplate)
-	auth.POST("/admin/workflow-templates/:id/enabled", handler.MockEnableWorkflowTemplate)
-	auth.POST("/admin/workflow-templates/:id/publish", handler.MockPublishWorkflowTemplate)
-	auth.POST("/admin/models/test-text", handler.MockTestTextModel)
-	auth.POST("/admin/models/test-image", handler.MockTestImageModel)
+	admin.GET("/models", handler.ListModels)
+	admin.POST("/models", handler.CreateModel)
+	admin.POST("/models/:id/enabled", handler.EnableModel)
+	admin.DELETE("/models/:id", handler.DeleteModel)
+	admin.POST("/models/batch-import", handler.BatchImportModels)
+	admin.GET("/pricing-rules", handler.ListPricingRules)
+	admin.POST("/pricing-rules", handler.CreatePricingRule)
+	admin.GET("/workflow-templates", handler.ListWorkflowTemplates)
+	admin.POST("/workflow-templates", handler.CreateWorkflowTemplate)
+	admin.POST("/workflow-templates/:id/enabled", handler.SetWorkflowTemplateEnabled)
+	admin.POST("/workflow-templates/:id/publish", handler.PublishWorkflowTemplate)
+	admin.POST("/models/test-text", handler.TestTextModel)
+	admin.POST("/models/test-image", handler.TestImageModel)
 
 	// 模板分类管理 (Admin CRUD)
-	auth.GET("/admin/template-categories", handler.ListTemplateCategories)
-	auth.POST("/admin/template-categories", handler.CreateTemplateCategory)
-	auth.PUT("/admin/template-categories/:id", handler.UpdateTemplateCategory)
-	auth.DELETE("/admin/template-categories/:id", handler.DeleteTemplateCategory)
+	admin.GET("/template-categories", handler.ListTemplateCategories)
+	admin.POST("/template-categories", handler.CreateTemplateCategory)
+	admin.PUT("/template-categories/:id", handler.UpdateTemplateCategory)
+	admin.DELETE("/template-categories/:id", handler.DeleteTemplateCategory)
 
 	// 提示词模板管理 (Admin CRUD)
-	auth.GET("/admin/prompt-templates", handler.ListPromptTemplates)
-	auth.POST("/admin/prompt-templates", handler.CreatePromptTemplate)
-	auth.PUT("/admin/prompt-templates/:id", handler.UpdatePromptTemplate)
-	auth.DELETE("/admin/prompt-templates/:id", handler.DeletePromptTemplate)
-
-	// 前台公开获取接口
-	auth.GET("/template-categories", handler.ListTemplateCategoriesPublic)
-	auth.GET("/prompt-templates", handler.ListPromptTemplatesPublic)
+	admin.GET("/prompt-templates", handler.ListPromptTemplates)
+	admin.POST("/prompt-templates", handler.CreatePromptTemplate)
+	admin.PUT("/prompt-templates/:id", handler.UpdatePromptTemplate)
+	admin.DELETE("/prompt-templates/:id", handler.DeletePromptTemplate)
 }

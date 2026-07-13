@@ -1,11 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 
 	"reveria/services/api/database"
+	"reveria/services/api/handler"
 	"reveria/services/api/model"
 	"reveria/services/api/router"
 
@@ -21,6 +28,12 @@ func main() {
 
 	// 2. 初始化默认设置（如果不存在）
 	initDefaultSettings()
+	if err := database.EncryptStoredSecrets(); err != nil {
+		log.Fatalf("加密持久化密钥失败: %v", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	handler.StartTaskWorker(ctx)
 
 	// 3. 开启 Gin 服务
 	r := gin.Default()
@@ -50,20 +63,51 @@ func main() {
 	if port == "" {
 		port = "4100"
 	}
-	log.Printf("Reveria Go API 正在监听端口 :%s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+	server := &http.Server{
+		Addr: ":" + port, Handler: r,
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: 20 * time.Minute, IdleTimeout: 60 * time.Second,
+	}
+	go func() {
+		log.Printf("Reveria Go API 正在监听端口 :%s", port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("服务启动失败: %v", err)
+		}
+	}()
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("服务优雅关闭失败: %v", err)
 	}
 }
 
 // corsMiddleware 简单的 CORS 跨域请求处理
 func corsMiddleware() gin.HandlerFunc {
+	configuredOrigins := strings.Split(os.Getenv("REVERIA_ALLOWED_ORIGINS"), ",")
+	allowedOrigins := map[string]bool{
+		"http://localhost:3000": true, "http://127.0.0.1:3000": true,
+		"http://localhost:1420": true, "http://127.0.0.1:1420": true,
+		"wails://wails": true,
+	}
+	for _, origin := range configuredOrigins {
+		if normalized := strings.TrimSpace(origin); normalized != "" {
+			allowedOrigins[normalized] = true
+		}
+	}
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := c.GetHeader("Origin")
+		if origin != "" && allowedOrigins[origin] {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Vary", "Origin")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
 
+		if c.Request.Method == "OPTIONS" && origin != "" && !allowedOrigins[origin] {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

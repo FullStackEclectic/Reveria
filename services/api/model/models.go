@@ -32,6 +32,7 @@ type Workspace struct {
 	GiftBalance     int64          `gorm:"default:0;not null" json:"gift_balance"`
 	RefundBalance   int64          `gorm:"default:0;not null" json:"refund_balance"`
 	StorageQuota    int64          `gorm:"default:0;not null" json:"storage_quota"`
+	StorageUsed     int64          `gorm:"default:0;not null" json:"storage_used"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
@@ -105,6 +106,9 @@ type Asset struct {
 	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
 	WorkspaceID     uuid.UUID  `gorm:"type:uuid;index" json:"workspace_id"`
 	ProjectID       uuid.UUID  `gorm:"type:uuid;index" json:"project_id"`
+	TaskID          *uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_asset_task_output" json:"task_id,omitempty"`
+	OutputIndex     int        `gorm:"default:0;uniqueIndex:idx_asset_task_output" json:"output_index"`
+	SizeBytes       int64      `gorm:"default:0;not null" json:"size_bytes"`
 	CustomerID      *uuid.UUID `gorm:"type:uuid" json:"customer_id"`
 	AssetType       string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
 	Source          string     `gorm:"type:varchar(32);not null" json:"source"`
@@ -326,6 +330,33 @@ type Model struct {
 	CreditsCost   float64   `gorm:"type:decimal(10,4);default:0.0" json:"credits_cost"` // 调用定价扣点
 	Tags          string    `gorm:"-" json:"tags,omitempty"`                            // 虚拟字段：主站标签资源池
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type PricingRule struct {
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name       string    `gorm:"type:varchar(160);not null" json:"name"`
+	TaskType   *string   `gorm:"type:varchar(64);index" json:"task_type"`
+	ModelID    *string   `gorm:"type:varchar(160);index" json:"model_id"`
+	Unit       *string   `gorm:"type:varchar(64)" json:"unit"`
+	MinCredits *int64    `json:"min_credits"`
+	MaxCredits *int64    `json:"max_credits"`
+	Enabled    bool      `gorm:"not null" json:"enabled"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type WorkflowTemplate struct {
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name              string    `gorm:"type:varchar(160);not null" json:"name"`
+	TaskType          string    `gorm:"type:varchar(64);not null;uniqueIndex:idx_workflow_type_version" json:"task_type"`
+	Version           int       `gorm:"default:1;not null;uniqueIndex:idx_workflow_type_version" json:"version"`
+	Enabled           bool      `gorm:"default:false;not null" json:"enabled"`
+	InputSchema       string    `gorm:"type:text;not null" json:"-"`
+	OutputSchema      string    `gorm:"type:text;not null" json:"-"`
+	WorkflowSteps     string    `gorm:"type:text;not null" json:"-"`
+	DefaultModelRoute string    `gorm:"type:text;not null" json:"-"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // TemplateCategory 模板分类表

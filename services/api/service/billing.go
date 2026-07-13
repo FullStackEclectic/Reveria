@@ -16,6 +16,9 @@ type BillingService interface {
 
 	// RefundCredits 释放或退还用户额度
 	RefundCredits(userID uuid.UUID, workspaceID uuid.UUID, amount int64, reason string, task *model.GenerationTask) error
+
+	// SettleCredits 将任务预冻结额度原子结转为实际消费，并退回未使用部分。
+	SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error
 }
 
 // GetBillingService 根据系统当前的配置获取合适的计费服务实例

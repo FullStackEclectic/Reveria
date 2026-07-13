@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Sparkles, Wand2, UploadCloud, Image as ImageIcon, 
-  Settings2, Activity, Palette, Zap, CheckCircle2, FolderOpen,
-  Cpu, Play, Camera, Link2, Compass, Layers, Check
+  Settings2, Activity, Zap, CheckCircle2, FolderOpen,
+  Play, Compass, Layers, Check
 } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl, uploadAsset } from "../../utils";
@@ -12,7 +12,7 @@ interface RetouchViewProps {
   assets: AssetSummary[];
   onEnterEditor: (asset: AssetSummary, initialSettings?: any) => void;
   onUploadAndEdit?: (file: File) => Promise<void>;
-  onMockAddAsset?: (asset: AssetSummary) => void; // 模拟相机拍照时把新资产推给主状态
+  onAssetAdded?: (asset: AssetSummary) => void;
   workspaceId?: string;
   projectId?: string;
 }
@@ -56,19 +56,11 @@ const PRESETS = [
   }
 ];
 
-// 天空置换库
-const SKIES = [
-  { id: "none", name: "原图天空", color: "transparent" },
-  { id: "sunset", name: "唯美晚霞", color: "linear-gradient(to bottom, #fdba74, #f43f5e)" },
-  { id: "starry", name: "梦幻星空", color: "linear-gradient(to bottom, #1e1b4b, #311042)" },
-  { id: "aurora", name: "极光之夜", color: "linear-gradient(to bottom, #064e3b, #111827)" },
-];
-
 export function RetouchView({
   assets,
   onEnterEditor,
   onUploadAndEdit,
-  onMockAddAsset,
+  onAssetAdded,
   workspaceId,
   projectId,
 }: RetouchViewProps) {
@@ -79,21 +71,6 @@ export function RetouchView({
   const [sliderPos, setSliderPos] = useState(50);
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
   const sliderContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // 联机拍摄状态
-  const [tetheredConnected, setTetheredConnected] = useState(false);
-  const [isTethering, setIsTethering] = useState(false); // 是否在等待相机快门传输
-  
-  // 天空置换状态
-  const [activeSky, setActiveSky] = useState("none");
-
-  // 追色样片上传状态
-  const [colorTransferImg, setColorTransferImg] = useState<string>("");
-  const [isColorMatching, setIsColorMatching] = useState(false);
-
-  // 本地算力模拟监控状态
-  const [engineLoad, setEngineLoad] = useState(8);
-  const [allocatedMemory, setAllocatedMemory] = useState(13.4);
 
   // 导入文件进度状态
   const [uploadStatus, setUploadStatus] = useState<{
@@ -121,15 +98,6 @@ export function RetouchView({
     return () => {
       window.removeEventListener("recentExportsUpdated", handleUpdate);
     };
-  }, []);
-
-  // 模拟计算负载心跳波动
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setEngineLoad(Math.floor(Math.random() * 10) + 6); // 6% ~ 16%
-      setAllocatedMemory(parseFloat((Math.random() * 0.8 + 13.1).toFixed(1)));
-    }, 2000);
-    return () => clearInterval(timer);
   }, []);
 
   // 批量/多选文件导入处理
@@ -163,8 +131,8 @@ export function RetouchView({
         formData.append("project_id", projectId);
         formData.append("asset_type", "image");
         const asset = await uploadAsset(formData);
-        if (onMockAddAsset) {
-          onMockAddAsset(asset);
+        if (onAssetAdded) {
+          onAssetAdded(asset);
         }
       }
     } catch (err: any) {
@@ -220,68 +188,9 @@ export function RetouchView({
     onEnterEditor(images[0], preset.settings);
   };
 
-  // 模拟相机按下快门联机导入
-  const handleSimulateShutter = () => {
-    if (!tetheredConnected) {
-      alert("请先开启相机联机监听状态！");
-      return;
-    }
-    setIsTethering(true);
-
-    // 模拟 1.2 秒的高清 RAW 传输延时
-    setTimeout(() => {
-      setIsTethering(false);
-      // 创建一张具有真实测试数据的 Asset 并推送到主状态中
-      const mockAsset: AssetSummary = {
-        id: "mock-shot-" + Date.now(),
-        workspace_id: assets[0]?.workspace_id || "workspace-demo",
-        project_id: assets[0]?.project_id || "project-demo",
-        asset_type: "image",
-        source: "tethered",
-        file_url: compareImageSrc || "/api/files/demo-portrait.jpg", // 复用对比图
-        metadata: {
-          title: "Tethered_Shot_" + new Date().toLocaleTimeString().replace(/:/g, "") + ".jpg",
-          file_name: "Tethered_Shot.jpg",
-          mime_type: "image/jpeg",
-          size: 1458922,
-          camera_model: "Sony ILCE-7RM5",
-          lens: "FE 85mm F1.4 GM",
-          exposure_settings: "1/160s, f/1.8, ISO 100",
-        }
-      };
-
-      if (onMockAddAsset) {
-        onMockAddAsset(mockAsset);
-      }
-      
-      // 自动套用唯美婚礼预设并打开修图工作台！
-      onEnterEditor(mockAsset, PRESETS[0].settings);
-    }, 1200);
-  };
-
-  // 模拟样片追色处理
-  const handleColorTransferUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setColorTransferImg(event.target.result as string);
-          setIsColorMatching(true);
-          // 模拟算法追色分析
-          setTimeout(() => {
-            setIsColorMatching(false);
-            alert("样片追色分析成功！已提取色调曲线与 Master ICC 分布，点击左侧资产即可直接套用精修。");
-          }, 1500);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const compareImageSrc = images.length > 0 ? assetUrl(images[0].file_url ?? images[0].thumbnail_url ?? "") : "";
 
-  if (images.length === 0 && !tetheredConnected) {
+  if (images.length === 0) {
     return (
       <div className="retouch-import-empty-screen">
         {uploadStatus.uploading && (
@@ -343,13 +252,6 @@ export function RetouchView({
           </div>
         </div>
 
-        <button 
-          type="button" 
-          className="enter-tethered-link"
-          onClick={() => setTetheredConnected(true)}
-        >
-          进入联机拍摄
-        </button>
       </div>
     );
   }
@@ -423,28 +325,18 @@ export function RetouchView({
                 <div className="label-tag before-tag">原图 CAMERA RAW</div>
               </div>
               
-              {/* Overlay (After - 滤镜精修图 & 天空置换层) */}
+              {/* Overlay (After) */}
               <div 
                 className="slider-layer after-layer"
                 style={{ clipPath: `polygon(${sliderPos}% 0, 100% 0, 100% 100%, ${sliderPos}% 100%)` }}
               >
-                {/* 动态天空置换模拟层 */}
-                {activeSky !== "none" && (
-                  <div 
-                    className="sky-overlay-blend" 
-                    style={{ background: SKIES.find(s => s.id === activeSky)?.color }}
-                  ></div>
-                )}
-                
                 <img 
                   src={compareImageSrc} 
                   alt="After" 
-                  className={`retouched-filter-preview sky-${activeSky}`} 
+                  className="retouched-filter-preview"
                   draggable="false" 
                 />
-                <div className="label-tag after-tag">
-                  AI {activeSky !== "none" ? SKIES.find(s => s.id === activeSky)?.name : ""}精修后
-                </div>
+                <div className="label-tag after-tag">精修后</div>
               </div>
 
               {/* 滑块拖拽中线 */}
@@ -527,157 +419,9 @@ export function RetouchView({
           </section>
         </div>
 
-        {/* 右侧：联机控制台、天空库、追色中心、性能面板、预设、历史 */}
+        {/* 右侧：真实可用的预设与导出历史 */}
         <div className="layout-right-sidebar">
-
-          {/* 1. AI 联机拍摄监视控制台 */}
-          <div className="sidebar-card status-panel tethered-panel">
-            <div className="panel-header-row">
-              <div className="title-with-icon">
-                <Camera size={16} style={{ color: "#6366f1" }} />
-                <h3>AI 联机拍摄控制台</h3>
-              </div>
-              <button 
-                type="button"
-                className={`tethered-toggle-btn ${tetheredConnected ? "connected" : ""}`}
-                onClick={() => {
-                  setTetheredConnected(!tetheredConnected);
-                  if (!tetheredConnected) {
-                    alert("开启联机拍摄监听。请使用数据线将 Sony/Canon 等单反相机连接至此电脑，快门拍摄的新照片将会自动流转同步到此大厅中进行智能套版精修。");
-                  }
-                }}
-              >
-                {tetheredConnected ? "已连接" : "未连接"}
-              </button>
-            </div>
-
-            {tetheredConnected ? (
-              <div className="tethered-active-info">
-                <div className="camera-details">
-                  <span className="name">Sony Alpha 7R V</span>
-                  <span className="lens">FE 85mm F1.4 GM</span>
-                </div>
-                <div className="lens-parameters">
-                  <span className="badge">1/160s</span>
-                  <span className="badge">f/1.8</span>
-                  <span className="badge">ISO 100</span>
-                </div>
-                
-                <button 
-                  type="button" 
-                  className={`simulate-shutter-btn ${isTethering ? "tethering" : ""}`}
-                  onClick={handleSimulateShutter}
-                  disabled={isTethering}
-                >
-                  <Play size={12} fill="#fff" />
-                  <span>{isTethering ? "正在传输高清大片..." : "模拟相机按下快门拍摄"}</span>
-                </button>
-              </div>
-            ) : (
-              <div className="tethered-placeholder">
-                <Link2 size={24} className="icon-link" />
-                <p>开启联机监听，棚拍大片将无损实时传输进入精修工作流</p>
-              </div>
-            )}
-          </div>
-
-          {/* 2. AI 智能追色样片提取 */}
-          <div className="sidebar-card">
-            <h3>AI 智能样片追色 (Color Transfer)</h3>
-            <div className="color-transfer-area">
-              <input 
-                type="file" 
-                id="color-transfer-file" 
-                accept="image/*" 
-                onChange={handleColorTransferUpload}
-                style={{ display: "none" }}
-              />
-              {colorTransferImg ? (
-                <div className="transfer-preview-box">
-                  <img src={colorTransferImg} alt="Reference" />
-                  <div className="transfer-overlay">
-                    <label htmlFor="color-transfer-file" className="change-btn">重新选择样片</label>
-                  </div>
-                  {isColorMatching && <div className="matching-spinner"><span>AI 正在匹配色彩曲线...</span></div>}
-                </div>
-              ) : (
-                <label htmlFor="color-transfer-file" className="transfer-placeholder-label">
-                  <Palette size={28} className="palette-icon" />
-                  <span>拖入或上传调色风格大师样片</span>
-                  <span className="sub">系统将自动提取其 ICC 与 LUT 色彩映射</span>
-                </label>
-              )}
-            </div>
-          </div>
-
-          {/* 3. AI 智能天空置换天空选择库 */}
-          <div className="sidebar-card">
-            <h3>AI 智能换天空 (Sky Swap)</h3>
-            <div className="sky-options-grid">
-              {SKIES.map((sky) => (
-                <button
-                  key={sky.id}
-                  type="button"
-                  className={`sky-item-btn ${activeSky === sky.id ? "active" : ""}`}
-                  onClick={() => {
-                    setActiveSky(sky.id);
-                    if (images.length === 0) {
-                      alert("请先上传底图以在上方 Banner 实时体验天空置换色彩对比！");
-                    }
-                  }}
-                >
-                  {sky.id !== "none" && (
-                    <span 
-                      className="sky-preview-circle" 
-                      style={{ background: sky.color }}
-                    ></span>
-                  )}
-                  <span>{sky.name}</span>
-                  {activeSky === sky.id && <Check size={10} className="check-icon" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 4. 本地算法负载监控面板 */}
-          <div className="sidebar-card status-panel">
-            <div className="panel-header-row">
-              <div className="title-with-icon">
-                <Cpu size={16} />
-                <h3>本地算法算力监控</h3>
-              </div>
-              <span className="engine-status-tag green">RUNNING</span>
-            </div>
-            
-            <div className="monitor-stats-grid">
-              <div className="stat-box">
-                <div className="stat-icon-wrapper"><Cpu size={16} /></div>
-                <div className="stat-meta">
-                  <span className="label">本地并发核心</span>
-                  <span className="value">0 / 4 (有界)</span>
-                </div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-icon-wrapper"><Activity size={16} /></div>
-                <div className="stat-meta">
-                  <span className="label">C-Heap 分配</span>
-                  <span className="value">{allocatedMemory} MB</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="load-bar-section">
-              <div className="load-bar-label">
-                <span>Rust DLL 核心调度负载</span>
-                <span>{engineLoad}%</span>
-              </div>
-              <div className="load-progress-track">
-                <div className="load-progress-fill" style={{ width: `${engineLoad}%` }}></div>
-              </div>
-            </div>
-          </div>
-
-          {/* 5. 一键风格预设应用 */}
+          {/* 一键风格预设应用 */}
           <div className="sidebar-card">
             <h3>一键风格预设应用</h3>
             <div className="presets-list">

@@ -41,7 +41,7 @@ func InitDatabase() {
 		if dbURL == "" {
 			dbURL = "host=localhost user=postgres password=postgres dbname=reveria port=5432 sslmode=disable"
 		}
-		log.Printf("连接 Postgres 数据库: %s", dbURL)
+		log.Println("正在连接 Postgres 数据库")
 		dialector = postgres.Open(dbURL)
 	} else {
 		// SQLite
@@ -108,13 +108,18 @@ func AutoMigrate() {
 		&model.ProjectShare{},
 		&model.Provider{},
 		&model.Model{},
+		&model.PricingRule{},
+		&model.WorkflowTemplate{},
 		&model.TemplateCategory{},
 		&model.PromptTemplate{},
 	}
 	for _, m := range modelsToMigrate {
 		if err := DB.AutoMigrate(m); err != nil {
-			log.Printf("自动迁移表模型遇到警告（跳过并继续）: %v", err)
+			log.Fatalf("自动迁移表模型失败: %v", err)
 		}
+	}
+	if err := RunVersionedMigrations(); err != nil {
+		log.Fatalf("执行版本化数据库迁移失败: %v", err)
 	}
 	log.Println("数据库自动表迁移完成。")
 	SeedTemplates()
@@ -194,4 +199,30 @@ func SeedTemplates() {
 			log.Println("已将内置六图模板迁移为结构化场景模式")
 		}
 	}
+}
+
+// EncryptStoredSecrets 会在每次启动时收敛历史明文密钥，兼容先开发后配置生产密钥的数据库。
+func EncryptStoredSecrets() error {
+	if !model.SecretEncryptionConfigured() {
+		return nil
+	}
+	var providers []model.Provider
+	if err := DB.Find(&providers).Error; err != nil {
+		return err
+	}
+	for index := range providers {
+		if err := DB.Save(&providers[index]).Error; err != nil {
+			return err
+		}
+	}
+	var settings []model.ClientSettings
+	if err := DB.Find(&settings).Error; err != nil {
+		return err
+	}
+	for index := range settings {
+		if err := DB.Save(&settings[index]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

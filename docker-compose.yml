@@ -32,6 +32,9 @@ services:
       - PORT=4100
       - DATABASE_TYPE=postgres
       - DATABASE_URL=host=reveria-postgres user=reveria password=reveria dbname=reveria port=5432 sslmode=disable
+      - REVERIA_ENV=production
+      - JWT_SECRET=${REVERIA_SECRET_KEY:?REVERIA_SECRET_KEY must be set}
+      - REVERIA_ALLOWED_ORIGINS=${REVERIA_ALLOWED_ORIGINS:-http://127.0.0.1:14200}
     ports:
       - "127.0.0.1:14100:4100"
     volumes:
@@ -45,6 +48,8 @@ services:
       dockerfile: apps/web-next/Dockerfile
     container_name: reveria-web
     restart: unless-stopped
+    environment:
+      - API_INTERNAL_URL=http://reveria-api:4100
     ports:
       - "127.0.0.1:14200:3000"
     networks:

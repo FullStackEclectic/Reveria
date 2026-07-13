@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -436,6 +437,10 @@ func LoginUser(c *gin.Context) {
 
 // DevLogin 开发模式快捷登录 (POST /auth/dev-login)
 func DevLogin(c *gin.Context) {
+	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") != "true" {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "开发登录未启用"})
+		return
+	}
 	var req DevLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数不合法"})
@@ -537,6 +542,7 @@ func CurrentUser(c *gin.Context) {
 		},
 	})
 }
+
 // LogoutUser 用户登出 (POST /auth/logout)
 func LogoutUser(c *gin.Context) {
 	// JWT 是无状态的，登出只需前端销毁 Token 即可

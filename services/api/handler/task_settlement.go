@@ -16,10 +16,17 @@ import (
 	"reveria/services/api/service"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // handleTaskSuccess 任务成功，下载素材并退还剩余积分
 func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
+	claimedTask, claimed := claimTaskForSettlement(task.ID)
+	if !claimed {
+		log.Printf("[TaskSucceeded] 忽略任务 %s 的重复成功回调", task.ID)
+		return
+	}
+	task = claimedTask
 	log.Printf("[TaskSucceeded] 任务 %s 生成成功，开始本地化下载...", task.ID)
 
 	downloadClient := &http.Client{
@@ -34,9 +41,14 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	scenes := parseGenerationScenes(inputPayload)
 
 	totalCount := len(upstreamURLs)
+	createdAssetCount := 0
 	// 循环下载每一个生成的图片，落地并存入资产库
 	for idx, url := range upstreamURLs {
 		if url == "" {
+			continue
+		}
+		if !isSafeRemoteURL(url) {
+			log.Printf("[TaskSucceeded] 拒绝下载不安全的结果 URL")
 			continue
 		}
 
@@ -57,9 +69,17 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			continue
 		}
 
-		fileBytes, err := io.ReadAll(resp.Body)
+		fileBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
 		resp.Body.Close()
 		if err != nil {
+			continue
+		}
+		if int64(len(fileBytes)) > maxUploadBytes() {
+			log.Printf("[TaskSucceeded] 结果文件超过允许大小")
+			continue
+		}
+		if !reserveStorage(task.WorkspaceID, int64(len(fileBytes))) {
+			log.Printf("[TaskSucceeded] 工作区存储空间不足，跳过结果 %d/%d", idx+1, totalCount)
 			continue
 		}
 
@@ -72,7 +92,10 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		}
 		storedName := uuid.New().String() + ext
 		storagePath := filepath.Join(storageDir, storedName)
-		_ = os.WriteFile(storagePath, fileBytes, 0644)
+		if err := os.WriteFile(storagePath, fileBytes, 0644); err != nil {
+			releaseStorage(task.WorkspaceID, int64(len(fileBytes)))
+			continue
+		}
 
 		localURL := "/api/files/" + storedName
 
@@ -161,6 +184,9 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			ID:           uuid.New(),
 			WorkspaceID:  task.WorkspaceID,
 			ProjectID:    task.ProjectID,
+			TaskID:       &task.ID,
+			OutputIndex:  idx,
+			SizeBytes:    int64(len(fileBytes)),
 			AssetType:    assetTypeFromExt(ext),
 			Source:       "generated",
 			FileURL:      localURL,
@@ -169,21 +195,23 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			CreatedAt:    time.Now(),
 		}
 		if err := database.DB.Create(&asset).Error; err != nil {
+			releaseStorage(task.WorkspaceID, int64(len(fileBytes)))
+			_ = os.Remove(storagePath)
 			log.Printf("[TaskSucceeded] 创建资产记录失败: %v, ID: %s, file: %s", err, asset.ID, localURL)
 		} else {
+			createdAssetCount++
 			log.Printf("[TaskSucceeded] 成功创建资产记录: %s, file: %s", asset.ID, localURL)
 		}
 	}
+	if createdAssetCount == 0 {
+		failClaimedTask(task, "ASSET_PERSIST_FAILED", "生成结果未能保存到工作区存储")
+		return
+	}
 
 	// 4. 积分正式扣减结算事务
-	tx := database.DB.Begin()
-
 	task.Status = "succeeded"
 	task.OutputPayload = &lastMetaStr
 	task.CompletedAt = ptrTime(time.Now())
-
-	// 扣减结算
-	tx.Save(&task)
 
 	// 将预扣积分从 workspace 的冻结状态标记为已消费，这里释放冻结字段
 	task.ActualCredits = task.EstimatedCredits
@@ -191,27 +219,27 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	task.FrozenGiftCredits = 0
 	task.FrozenRefundCredits = 0
 	task.FrozenRechargeCredits = 0
-	tx.Save(&task)
-
 	// 记录正式消费流水
 	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
-	var ws model.Workspace
-	tx.Where("id = ?", task.WorkspaceID).First(&ws)
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     task.WorkspaceID,
-		UserID:          task.UserID,
-		ProjectID:       &task.ProjectID,
-		TaskID:          &task.ID,
-		TransactionType: "consume",
-		Amount:          task.ActualCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &consumeReason,
-		CreatedAt:       time.Now(),
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&task).Error; err != nil {
+			return err
+		}
+		var ws model.Workspace
+		if err := tx.Where("id = ?", task.WorkspaceID).First(&ws).Error; err != nil {
+			return err
+		}
+		transaction := model.CreditTransaction{
+			ID: uuid.New(), WorkspaceID: task.WorkspaceID, UserID: task.UserID,
+			ProjectID: &task.ProjectID, TaskID: &task.ID, TransactionType: "consume",
+			Amount: task.ActualCredits, BalanceAfter: ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
+			Reason: &consumeReason, CreatedAt: time.Now(),
+		}
+		return tx.Create(&transaction).Error
+	}); err != nil {
+		log.Printf("[TaskSucceeded] 任务 %s 结算事务失败: %v", task.ID, err)
+		return
 	}
-	tx.Create(&transaction)
-
-	tx.Commit()
 	log.Printf("[TaskSucceeded] 任务 %s 结算完成，已归档资产。", task.ID)
 }
 
@@ -219,14 +247,15 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 func handleTaskFailure(taskID uuid.UUID, errorCode string, errorMsg string) {
 	log.Printf("[TaskFailed] 任务 %s 失败: [%s] %s，正在执行退款...", taskID, errorCode, errorMsg)
 
-	var task model.GenerationTask
-	if err := database.DB.Where("id = ?", taskID).First(&task).Error; err != nil {
+	task, claimed := claimTaskForSettlement(taskID)
+	if !claimed {
 		return
 	}
+	failClaimedTask(task, errorCode, errorMsg)
+}
 
-	if task.Status != "running" && task.Status != "pending" {
-		return // 防止重复结算
-	}
+func failClaimedTask(task model.GenerationTask, errorCode string, errorMsg string) {
+	cleanupTaskAssets(task.ID)
 
 	// 统一账务接口进行退额/退款
 	billingSvc := service.GetBillingService()
@@ -235,7 +264,7 @@ func handleTaskFailure(taskID uuid.UUID, errorCode string, errorMsg string) {
 		actorID = *task.UserID
 	}
 
-	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", taskID.String())
+	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", task.ID.String())
 	err := billingSvc.RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, refundReason, &task)
 	if err != nil {
 		log.Printf("[TaskFailed] 积分退回失败: %v", err)
@@ -248,7 +277,30 @@ func handleTaskFailure(taskID uuid.UUID, errorCode string, errorMsg string) {
 	task.CompletedAt = ptrTime(time.Now())
 	database.DB.Save(&task)
 
-	log.Printf("[TaskFailed] 任务 %s 退款流程闭环完成。", taskID)
+	log.Printf("[TaskFailed] 任务 %s 退款流程闭环完成。", task.ID)
+}
+
+func cleanupTaskAssets(taskID uuid.UUID) {
+	var assets []model.Asset
+	if err := database.DB.Where("task_id = ?", taskID).Find(&assets).Error; err != nil {
+		return
+	}
+	for _, asset := range assets {
+		if err := database.DB.Delete(&asset).Error; err != nil {
+			continue
+		}
+		fileURLs := []string{asset.FileURL}
+		if asset.ThumbnailURL != nil {
+			fileURLs = append(fileURLs, *asset.ThumbnailURL)
+		}
+		for _, fileURL := range fileURLs {
+			name := strings.TrimPrefix(fileURL, "/api/files/")
+			if name != "" && !strings.ContainsAny(name, `/\\`) && !strings.Contains(name, "..") {
+				_ = os.Remove(filepath.Join(getStorageDir(), name))
+			}
+		}
+		releaseStorage(asset.WorkspaceID, asset.SizeBytes)
+	}
 }
 
 func assetTypeFromExt(ext string) string {

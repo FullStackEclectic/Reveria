@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AdminConsole, UserSummary, readCachedUser, ACCESS_TOKEN_STORAGE_KEY } from "@reveria/shared";
+import { UserSummary, readCachedUser, ACCESS_TOKEN_STORAGE_KEY } from "@reveria/shared";
+import { AdminConsole } from "@reveria/shared/src/components/admin/AdminConsole";
 import "@reveria/shared/src/styles.css";
 
 export default function AdminPage() {

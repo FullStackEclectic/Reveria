@@ -22,7 +22,11 @@ func ListProviders(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取服务商列表失败"})
 		return
 	}
-	c.JSON(http.StatusOK, list)
+	response := make([]gin.H, 0, len(list))
+	for _, provider := range list {
+		response = append(response, sanitizedProvider(provider))
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // CreateProvider 创建或更新服务商 (POST /api/admin/providers)
@@ -50,7 +54,9 @@ func CreateProvider(c *gin.Context) {
 		// 更新
 		existing.Name = req.Name
 		existing.ApiURL = req.ApiURL
-		existing.ApiKey = req.ApiKey
+		if strings.TrimSpace(req.ApiKey) != "" {
+			existing.ApiKey = strings.TrimSpace(req.ApiKey)
+		}
 		existing.ProviderType = req.ProviderType
 		existing.Enabled = req.Enabled
 		if err := database.DB.Save(&existing).Error; err != nil {
@@ -60,7 +66,7 @@ func CreateProvider(c *gin.Context) {
 		req = existing
 	}
 
-	c.JSON(http.StatusOK, req)
+	c.JSON(http.StatusOK, sanitizedProvider(req))
 }
 
 // EnableProvider 启用/禁用服务商 (POST /api/admin/providers/:id/enabled)
@@ -108,6 +114,14 @@ type UpstreamModelItem struct {
 // UpstreamModelsResponse 上游模型响应
 type UpstreamModelsResponse struct {
 	Data []UpstreamModelItem `json:"data"`
+}
+
+func sanitizedProvider(provider model.Provider) gin.H {
+	return gin.H{
+		"id": provider.ID, "name": provider.Name, "api_url": provider.ApiURL,
+		"api_key": "", "api_key_configured": strings.TrimSpace(provider.ApiKey) != "",
+		"provider_type": provider.ProviderType, "enabled": provider.Enabled, "created_at": provider.CreatedAt,
+	}
 }
 
 // FetchUpstreamModels 代理拉取上游服务商模型 (POST /api/admin/providers/fetch-upstream-models)

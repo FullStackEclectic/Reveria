@@ -62,7 +62,7 @@ export const FS_SOURCE = `
     // 3. 饱和度调节
     rgb = adjustSaturation(rgb, 1.0 + u_saturation);
 
-    // 4. 双边滤波人像磨皮 (Bilateral Filter 模拟)
+    // 4. 双边滤波人像磨皮近似实现
     if (u_blur > 0.0) {
       float stepX = 1.0 / 1024.0;
       float stepY = 1.0 / 1024.0;

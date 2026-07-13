@@ -23,7 +23,7 @@ WORKDIR /app
 COPY --from=builder /build/reveria-api /app/reveria-api
 
 # 创建保存数据的目录
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/storage/uploads
 
 EXPOSE 4100
 ENTRYPOINT ["/app/reveria-api"]

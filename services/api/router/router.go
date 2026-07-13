@@ -19,10 +19,7 @@ func RegisterRoutes(r *gin.Engine) {
 		// 2. 外部客户免登交付预览 Portal 接口
 		registerPortalRoutes(api)
 
-		// 3. 站长本地网关配置
-		registerSettingsRoutes(api)
-
-		// 4. 需要用户鉴权的路由组
+		// 3. 需要用户鉴权的路由组
 		auth := api.Group("")
 		auth.Use(handler.AuthMiddleware())
 		{
@@ -31,6 +28,9 @@ func RegisterRoutes(r *gin.Engine) {
 			registerTaskRoutes(auth)
 			registerCreditRoutes(auth)
 			registerAdminRoutes(auth)
+			auth.GET("/models", handler.ListModels)
+			auth.GET("/template-categories", handler.ListTemplateCategoriesPublic)
+			auth.GET("/prompt-templates", handler.ListPromptTemplatesPublic)
 		}
 	}
 }

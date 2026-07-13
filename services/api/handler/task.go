@@ -31,6 +31,7 @@ type CreateTaskRequest struct {
 	TaskType       string          `json:"task_type" binding:"required"` // image_generation / video_generation / text
 	SelectedModel  string          `json:"selected_model"`
 	ConversationID string          `json:"conversation_id" binding:"max=120"`
+	IdempotencyKey string          `json:"idempotency_key" binding:"max=120"`
 	InputPayload   json.RawMessage `json:"input_payload" binding:"required"`
 }
 
@@ -102,6 +103,7 @@ func CreateTask(c *gin.Context) {
 			req.ProjectID = compatReq.ProjectID
 			req.TaskType = "image_generation"
 			req.SelectedModel = compatReq.Model
+			req.IdempotencyKey = compatReq.IdempotencyKey
 
 			// 组装 input_payload
 			inputMap := map[string]any{
@@ -131,6 +133,18 @@ func CreateTask(c *gin.Context) {
 	if !hasWorkspaceRole(req.WorkspaceID, actorID, []string{"owner", "admin", "member"}) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限在此工作区操作"})
 		return
+	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
+	var idempotencyKey *string
+	if normalized := strings.TrimSpace(req.IdempotencyKey); normalized != "" {
+		idempotencyKey = &normalized
+		var existing model.GenerationTask
+		if err := database.DB.Where("workspace_id = ? AND user_id = ? AND idempotency_key = ?", req.WorkspaceID, actorID, normalized).First(&existing).Error; err == nil {
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": "已返回相同幂等请求创建的任务", "data": existing})
+			return
+		}
 	}
 
 	// 2. 估算与扣除/冻结积分
@@ -188,32 +202,51 @@ func CreateTask(c *gin.Context) {
 		ProjectID:        req.ProjectID,
 		UserID:           &actorID,
 		ConversationID:   conversationID,
+		IdempotencyKey:   idempotencyKey,
 		TaskType:         req.TaskType,
 		InputPayload:     inputStr,
 		SelectedModel:    &req.SelectedModel,
 		EstimatedCredits: estCredits,
-		Status:           "pending",
+		Status:           "initializing",
 		CreatedAt:        time.Now(),
+	}
+	if err := database.DB.Create(&task).Error; err != nil {
+		if idempotencyKey != nil {
+			var existing model.GenerationTask
+			if database.DB.Where("workspace_id = ? AND user_id = ? AND idempotency_key = ?", req.WorkspaceID, actorID, *idempotencyKey).First(&existing).Error == nil {
+				c.JSON(http.StatusOK, gin.H{"success": true, "message": "已返回相同幂等请求创建的任务", "data": existing})
+				return
+			}
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建本地生成任务失败"})
+		return
 	}
 
 	// 统一账务接口校验与预扣
 	billingSvc := service.GetBillingService()
 	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, estCredits, fmt.Sprintf("AI 生成任务 %s 积分预冻结", req.TaskType), &task)
 	if err != nil {
+		database.DB.Delete(&task)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算失败: " + err.Error()})
 		return
 	}
 
 	if !success {
+		database.DB.Delete(&task)
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区积分余额不足，请联系管理员充值"})
 		return
 	}
 
-	// 创建本地生成任务
-	if err := database.DB.Create(&task).Error; err != nil {
-		// 如果扣费成功了但任务建表失败，原路退回！
+	task.Status = "pending"
+	transition := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "initializing").Updates(map[string]any{
+		"status": task.Status, "frozen_credits": task.FrozenCredits,
+		"frozen_gift_credits": task.FrozenGiftCredits, "frozen_refund_credits": task.FrozenRefundCredits,
+		"frozen_recharge_credits": task.FrozenRechargeCredits,
+	})
+	if transition.Error != nil || transition.RowsAffected != 1 {
+		task.Status = "failed"
 		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, estCredits, "创建本地任务记录失败，触发自动退款", &task)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建本地生成任务失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交生成任务失败"})
 		return
 	}
 
@@ -258,7 +291,7 @@ func CreateTask(c *gin.Context) {
 		}
 	} else {
 		// 标准异步生图任务直接放入后台并返回任务 ID 凭证
-		go callUpstreamGateway(task, settings)
+		EnqueueTask(task.ID)
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -374,66 +407,46 @@ func CancelTask(c *gin.Context) {
 
 	actorID := c.MustGet("user_id").(uuid.UUID)
 
-	tx := database.DB.Begin()
-
 	var task model.GenerationTask
-	if err := forUpdate(tx).Where("id = ?", taskID).First(&task).Error; err != nil {
-		tx.Rollback()
+	if err := database.DB.Where("id = ?", taskID).First(&task).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "生成任务不存在"})
 		return
 	}
 
 	// 校验工作区 owner 或 admin 权限
 	if !hasWorkspaceRole(task.WorkspaceID, actorID, []string{"owner", "admin"}) {
-		tx.Rollback()
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限取消此任务"})
 		return
 	}
 
-	// 仅限 pending 或 running 状态的任务可以取消
-	if task.Status != "pending" && task.Status != "running" {
-		tx.Rollback()
+	if task.Status != "pending" && task.Status != "dispatching" && task.Status != "running" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "当前任务状态不允许取消"})
 		return
 	}
-
-	// 退回冻结的 workspace 积分
-	var ws model.Workspace
-	forUpdate(tx).Where("id = ?", task.WorkspaceID).First(&ws)
-	ws.GiftBalance += task.FrozenGiftCredits
-	ws.RefundBalance += task.FrozenRefundCredits
-	ws.RechargeBalance += task.FrozenRechargeCredits
-	tx.Save(&ws)
-
-	// 更新状态为 cancelled
-	task.Status = "cancelled"
-	task.FrozenCredits = 0
-	task.FrozenGiftCredits = 0
-	task.FrozenRefundCredits = 0
-	task.FrozenRechargeCredits = 0
-	task.CompletedAt = ptrTime(time.Now())
-	tx.Save(&task)
-
-	// 写入退还/释放额度流水记录
-	releaseReason := fmt.Sprintf("任务 %s 取消成功，原路退回冻结积分", taskID.String())
-	transaction := model.CreditTransaction{
-		ID:              uuid.New(),
-		WorkspaceID:     task.WorkspaceID,
-		UserID:          task.UserID,
-		ProjectID:       &task.ProjectID,
-		TaskID:          &task.ID,
-		TransactionType: "release",
-		Amount:          task.EstimatedCredits,
-		GiftAmount:      task.FrozenGiftCredits,
-		RefundAmount:    task.FrozenRefundCredits,
-		RechargeAmount:  task.FrozenRechargeCredits,
-		BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-		Reason:          &releaseReason,
-		CreatedAt:       time.Now(),
+	originalStatus := task.Status
+	claimed := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, originalStatus).Update("status", "settling")
+	if claimed.Error != nil || claimed.RowsAffected != 1 {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "任务状态已变化，请刷新后重试"})
+		return
 	}
-	tx.Create(&transaction)
-
-	tx.Commit()
+	task.Status = "settling"
+	creatorID := actorID
+	if task.UserID != nil {
+		creatorID = *task.UserID
+	}
+	billingSvc := service.GetBillingService()
+	releaseReason := fmt.Sprintf("任务 %s 取消，原路退回冻结积分", taskID.String())
+	if err := billingSvc.RefundCredits(creatorID, task.WorkspaceID, task.EstimatedCredits, releaseReason, &task); err != nil {
+		database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Update("status", originalStatus)
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "任务取消退款失败: " + err.Error()})
+		return
+	}
+	task.Status = "cancelled"
+	task.CompletedAt = ptrTime(time.Now())
+	if err := database.DB.Save(&task).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "任务取消状态保存失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "任务取消及退额成功", "data": task})
 }
 

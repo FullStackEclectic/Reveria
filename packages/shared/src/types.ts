@@ -244,6 +244,7 @@ export type ProviderSummary = {
   provider_type: string;
   api_url?: string;
   api_key?: string;
+  api_key_configured?: boolean;
   enabled: boolean;
 };
 

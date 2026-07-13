@@ -1,26 +1,7 @@
 import React from "react";
 import { Plus, Trash2, HelpCircle } from "lucide-react";
-
-export interface AIAdvancedParams {
-  image_count?: number;
-  vae?: string;
-  loras?: { name: string; weight: number }[];
-  embeddings?: { name: string; weight: number }[];
-  controlnets?: { model: string; weight: number; control_mode?: string }[];
-  denoising_strength?: number;
-  aspect_ratio?: string; // "portrait" (768x1152), "landscape" (1152x768), "square" (1024x1024), "custom"
-  width?: number;
-  height?: number;
-  sampler?: string;
-  scheduler?: string;
-  steps?: number;
-  cfg_scale?: number;
-  seed?: number; // -1 代表随机
-  clip_skip?: number;
-  ensd?: number;
-  detail_enhancement?: boolean;
-  negative_prompt?: string;
-}
+import { AIAdvancedParams } from "./aiAdvancedParams";
+export type { AIAdvancedParams } from "./aiAdvancedParams";
 
 interface AIAdvancedParamsPanelProps {
   value: AIAdvancedParams;

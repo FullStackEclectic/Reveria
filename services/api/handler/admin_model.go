@@ -25,6 +25,7 @@ type BridgeModelMeta struct {
 
 // ListModels 获取模型列表 (GET /api/admin/models)
 func ListModels(c *gin.Context) {
+	adminRequest := strings.HasPrefix(c.FullPath(), "/api/admin/")
 	var settings model.ClientSettings
 	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
 		// 桥接模式下实时拉取主站模型数据
@@ -66,7 +67,7 @@ func ListModels(c *gin.Context) {
 		}
 
 		// 校验过滤：只有当非 all 参数且站长配置过至少一个模型时，我们才做前台列表过滤
-		all := c.Query("all") == "true"
+		all := adminRequest && c.Query("all") == "true"
 		var filteredList []model.Model
 
 		allowedModels := make(map[string]bool)
@@ -144,7 +145,11 @@ func ListModels(c *gin.Context) {
 
 	// 独立模式走本地数据库查询
 	var list []model.Model
-	if err := database.DB.Order("created_at desc").Find(&list).Error; err != nil {
+	query := database.DB.Order("created_at desc")
+	if !adminRequest {
+		query = query.Where("enabled = true")
+	}
+	if err := query.Find(&list).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取模型列表失败"})
 		return
 	}

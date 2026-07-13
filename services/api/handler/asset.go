@@ -25,6 +25,7 @@ import (
 
 // UploadAsset 上传资产素材 (POST /assets/upload)
 func UploadAsset(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBytes())
 	// 1. 获取 multipart/form-data 参数
 	workspaceIDStr := c.PostForm("workspace_id")
 	projectIDStr := c.PostForm("project_id")
@@ -44,6 +45,26 @@ func UploadAsset(c *gin.Context) {
 		return
 	}
 
+	var projectID uuid.UUID
+	if projectIDStr != "" {
+		projectID, err = uuid.Parse(projectIDStr)
+		if err != nil || !requireProjectInWorkspace(c, projectID, workspaceID) {
+			return
+		}
+	}
+	var customerID *uuid.UUID
+	if customerIDStr != "" {
+		parsedCustomerID, parseErr := uuid.Parse(customerIDStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "客户 ID 格式有误"})
+			return
+		}
+		customerID = &parsedCustomerID
+	}
+	if !requireCustomerInWorkspace(c, customerID, workspaceID) {
+		return
+	}
+
 	// 3. 读取上传的文件
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -53,15 +74,33 @@ func UploadAsset(c *gin.Context) {
 	defer file.Close()
 
 	// 读取文件字节
-	fileBytes, err := io.ReadAll(file)
+	fileBytes, err := io.ReadAll(io.LimitReader(file, maxUploadBytes()+1))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取文件失败"})
 		return
 	}
+	if int64(len(fileBytes)) > maxUploadBytes() {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "上传文件超过大小限制"})
+		return
+	}
 
 	// 4. 判定资产类型 (通过 content-type)
-	contentType := header.Header.Get("Content-Type")
+	contentType := http.DetectContentType(fileBytes)
 	assetType := assetTypeFromMime(contentType)
+	if assetType == "text" && !strings.HasPrefix(contentType, "text/") {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"success": false, "message": "不支持的文件类型"})
+		return
+	}
+	if !reserveStorage(workspaceID, int64(len(fileBytes))) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "工作区存储空间不足"})
+		return
+	}
+	storageReserved := true
+	defer func() {
+		if storageReserved {
+			releaseStorage(workspaceID, int64(len(fileBytes)))
+		}
+	}()
 
 	// 5. 存储文件
 	storageDir := getStorageDir()
@@ -108,19 +147,6 @@ func UploadAsset(c *gin.Context) {
 	metaBytes, _ := json.Marshal(metaMap)
 	metaStr := string(metaBytes)
 
-	// 解析可选的关联 ID
-	var projectID uuid.UUID
-	if projectIDStr != "" {
-		projectID, _ = uuid.Parse(projectIDStr)
-	}
-	var customerID *uuid.UUID
-	if customerIDStr != "" {
-		cID, err := uuid.Parse(customerIDStr)
-		if err == nil {
-			customerID = &cID
-		}
-	}
-
 	fileURL := "/api/files/" + storedName
 	asset := model.Asset{
 		ID:           uuid.New(),
@@ -132,14 +158,17 @@ func UploadAsset(c *gin.Context) {
 		FileURL:      fileURL,
 		ThumbnailURL: thumbnailURL,
 		Metadata:     &metaStr,
+		SizeBytes:    int64(len(fileBytes)),
 		CreatedBy:    &actorID,
 		CreatedAt:    time.Now(),
 	}
 
 	if err := database.DB.Create(&asset).Error; err != nil {
+		_ = os.Remove(storagePath)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "资产记录保存失败: " + err.Error()})
 		return
 	}
+	storageReserved = false
 
 	c.JSON(http.StatusOK, asset)
 }
@@ -232,6 +261,9 @@ func CreateAsset(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限在此工作区上报资产"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) || !requireCustomerInWorkspace(c, req.CustomerID, req.WorkspaceID) {
+		return
+	}
 
 	asset := model.Asset{
 		ID:           uuid.New(),
@@ -287,7 +319,12 @@ func DeleteAsset(c *gin.Context) {
 		return
 	}
 
-	// 物理删除磁盘文件（原图与缩略图）
+	// 先删除数据库记录，再清理磁盘；数据库失败时不会留下指向已删除文件的记录。
+	if err := database.DB.Delete(&asset).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "数据库记录删除失败: " + err.Error()})
+		return
+	}
+
 	storedName := strings.TrimPrefix(asset.FileURL, "/api/files/")
 	if storedName != "" && !strings.Contains(storedName, "..") {
 		_ = os.Remove(filepath.Join(getStorageDir(), storedName))
@@ -299,11 +336,7 @@ func DeleteAsset(c *gin.Context) {
 		}
 	}
 
-	// 从数据库删除记录
-	if err := database.DB.Delete(&asset).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "数据库记录删除失败: " + err.Error()})
-		return
-	}
+	releaseStorage(asset.WorkspaceID, asset.SizeBytes)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":  true,
@@ -323,12 +356,54 @@ func ServeFile(c *gin.Context) {
 	}
 
 	filePath := filepath.Join(getStorageDir(), fileName)
+	publicAssets := map[string]bool{
+		"model_anime.png": true, "model_cg_car.png": true, "model_cyberpunk.png": true,
+		"model_portrait.png": true, "ring_template_preview.png": true,
+	}
+	if publicAssets[fileName] {
+		c.File(filePath)
+		return
+	}
+	fileURL := "/api/files/" + fileName
+	var asset model.Asset
+	if err := database.DB.Where("file_url = ? OR thumbnail_url = ?", fileURL, fileURL).First(&asset).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "文件记录不存在"})
+		return
+	}
+	if !canAccessStoredAsset(c, asset) {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问该文件"})
+		return
+	}
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "文件不存在"})
 		return
 	}
 
 	c.File(filePath)
+}
+
+func canAccessStoredAsset(c *gin.Context, asset model.Asset) bool {
+	token := strings.TrimSpace(c.Query("access_token"))
+	if token == "" {
+		auth := strings.TrimSpace(c.GetHeader("Authorization"))
+		if strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		}
+	}
+	if token != "" {
+		if userID, err := ParseAccessToken(token); err == nil && hasWorkspaceRole(asset.WorkspaceID, userID, []string{"owner", "admin", "member"}) {
+			return true
+		}
+	}
+
+	shareToken := strings.TrimSpace(c.Query("share_token"))
+	if shareToken == "" {
+		return false
+	}
+	var count int64
+	return database.DB.Model(&model.ProjectShare{}).
+		Where("token = ? AND project_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", shareToken, asset.ProjectID, time.Now()).
+		Count(&count).Error == nil && count > 0
 }
 
 // 辅助方法: 通过 MIME 类型判定资产类型

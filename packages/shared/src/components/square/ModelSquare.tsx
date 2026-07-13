@@ -95,7 +95,7 @@ export function ModelSquare({
       try {
         const [tempsRes, modelsRes] = await Promise.all([
           getJson<any>("/api/prompt-templates"),
-          getJson<any[]>("/api/admin/models")
+          getJson<any[]>("/api/models")
         ]);
 
         if (tempsRes && tempsRes.success) {
@@ -272,7 +272,7 @@ export function ModelSquare({
     },
     {
       title: "Seedance 2.0 智能视频",
-      desc: "全新 4K 极清视频通道发布，动态平滑防波动，突破时空局限。点击体验首帧高精度模拟。",
+      desc: "全新 4K 极清视频通道发布，动态平滑防波动，突破时空局限。点击查看首帧效果预览。",
       tag: "重磅发布",
       image: `${API_BASE}/api/files/banner_seedance.png`
     }

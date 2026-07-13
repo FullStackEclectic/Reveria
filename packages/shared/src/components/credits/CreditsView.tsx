@@ -18,11 +18,9 @@ interface CreditsViewProps {
   transactions: CreditTransactionSummary[];
   rechargeRecords: RechargeRecordSummary[];
   pendingOrder: OrderSummary | null;
-  isPayingOrder: boolean;
   isCreatingOrder: boolean;
   creditsTab: "transactions" | "recharges";
   setCreditsTab: (tab: "transactions" | "recharges") => void;
-  handleMockPay: () => Promise<void>;
   handleCreateOrder: (planId: string) => Promise<void>;
   formattedCredits: string;
   formattedRecharge: string;
@@ -36,11 +34,9 @@ export function CreditsView({
   transactions,
   rechargeRecords,
   pendingOrder,
-  isPayingOrder,
   isCreatingOrder,
   creditsTab,
   setCreditsTab,
-  handleMockPay,
   handleCreateOrder,
   formattedCredits,
   formattedRecharge,
@@ -164,15 +160,6 @@ export function CreditsView({
                 金额: ¥{(pendingOrder.amount_cents / 100).toFixed(2)} 元
               </p>
             </div>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={isPayingOrder}
-              onClick={() => void handleMockPay()}
-              style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", border: "none", color: "#ffffff", borderRadius: "8px", padding: "8px 16px", fontWeight: "600", cursor: "pointer", fontSize: "13px" }}
-            >
-              {isPayingOrder ? "正在支付..." : "模拟付款成功"}
-            </button>
           </div>
         </div>
       )}

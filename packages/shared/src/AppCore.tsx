@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import {
   AppView,
   WorkspaceSummary,
@@ -123,15 +123,12 @@ export function AppCore() {
     setRechargeRecords,
     pendingOrder,
     isCreatingOrder,
-    isPayingOrder,
     creditsTab,
     setCreditsTab,
     handleCreateOrder,
-    handleMockPay,
   } = useOrderFlow({
     currentUser,
     activeWorkspace,
-    setTransactions,
     setAdminMessage,
   });
   useEffect(() => {
@@ -434,7 +431,7 @@ export function AppCore() {
   }
   async function loadActiveModels() {
     try {
-      const activeModels = await getJson<ModelSummary[]>("/api/admin/models");
+      const activeModels = await getJson<ModelSummary[]>("/api/models");
       setModels(activeModels.filter((m) => m.enabled));
     } catch (err) {
       console.error("Failed to load active models:", err);
@@ -585,6 +582,7 @@ export function AppCore() {
             setSelectedWorkflowType={setSelectedWorkflowType}
           />
         )}
+        <Suspense fallback={<div className="app-route-loading" aria-busy="true" /> }>
         <MainRouter
           activeView={activeView}
           currentUser={currentUser}
@@ -602,7 +600,6 @@ export function AppCore() {
           handleExportRetouchImage={handleExportRetouchImage}
           handleSaveCustomer={handleSaveCustomer}
           deleteAsset={deleteAsset}
-          handleMockPay={handleMockPay}
           handleCreateOrder={handleCreateOrder}
           loadActiveModels={loadActiveModels}
           activeWorkspace={activeWorkspace}
@@ -639,7 +636,6 @@ export function AppCore() {
           plans={plans}
           rechargeRecords={rechargeRecords}
           pendingOrder={pendingOrder}
-          isPayingOrder={isPayingOrder}
           isCreatingOrder={isCreatingOrder}
           creditsTab={creditsTab}
           setCreditsTab={setCreditsTab}
@@ -658,6 +654,7 @@ export function AppCore() {
           setSelectedSubCategoryId={setSelectedSubCategoryId}
           tasks={tasks}
         />
+        </Suspense>
         {previewAsset ? (
           <AssetPreviewDialog
             asset={previewAsset}

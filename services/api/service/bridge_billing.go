@@ -13,6 +13,7 @@ import (
 	"reveria/services/api/model"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // BridgeBilling 桥接互通计费模式实现 (连接主站 12ZX-AI)
@@ -168,6 +169,13 @@ func (b *BridgeBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 		task.FrozenGiftCredits = 0
 		task.FrozenRefundCredits = 0
 		task.FrozenRechargeCredits = 0
+		if err := database.DB.Model(&model.GenerationTask{}).Where("id = ?", task.ID).Update("frozen_credits", amount).Error; err != nil {
+			refundErr := b.RefundCredits(userID, workspaceID, amount, "本地冻结记录失败，自动退回主站额度", task)
+			if refundErr != nil {
+				return false, fmt.Errorf("保存本地冻结记录失败: %v；主站退款也失败: %w", err, refundErr)
+			}
+			return false, err
+		}
 	}
 
 	return result.Success, nil
@@ -207,4 +215,28 @@ func (b *BridgeBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 	}
 
 	return nil
+}
+
+func (b *BridgeBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error {
+	if task == nil {
+		return errors.New("任务结算缺少任务记录")
+	}
+	// 主站在预扣时已经完成额度扣减。桥接协议当前不支持原子差额结算，
+	// 因此本地以预扣额作为最终消费，避免退款与再次扣款之间出现分布式不一致。
+	task.ActualCredits = task.EstimatedCredits
+	task.FrozenCredits = 0
+	task.FrozenGiftCredits = 0
+	task.FrozenRefundCredits = 0
+	task.FrozenRechargeCredits = 0
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(task).Error; err != nil {
+			return err
+		}
+		transaction := model.CreditTransaction{
+			ID: uuid.New(), WorkspaceID: workspaceID, UserID: &userID,
+			ProjectID: &task.ProjectID, TaskID: &task.ID, TransactionType: "consume",
+			Amount: task.ActualCredits, BalanceAfter: 0, Reason: &reason, CreatedAt: time.Now(),
+		}
+		return tx.Create(&transaction).Error
+	})
 }

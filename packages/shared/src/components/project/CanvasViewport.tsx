@@ -3,6 +3,8 @@ import { Sparkles } from "lucide-react";
 import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
 import { CanvasItemCard, getCardColorStyle } from "./CanvasItemCard";
 import { CanvasSelectionOverlay } from "./CanvasSelectionOverlay";
+import { CanvasDiagramLayers } from "./CanvasDiagramLayers";
+import { CanvasSelectionBox } from "./CanvasSelectionBox";
 import { assetUrl } from "../../utils";
 
 export interface CanvasViewportProps {
@@ -31,50 +33,6 @@ export interface CanvasViewportProps {
 
   // 历史撤销回调
   pushToHistory?: (canvas: ProjectCanvasDocument) => void;
-}
-
-// 连线首尾控制点计算函数
-function getConnectionPoints(from: CanvasItem, to: CanvasItem) {
-  const fromCx = from.x + from.w / 2;
-  const fromCy = from.y + from.h / 2;
-  const toCx = to.x + to.w / 2;
-  const toCy = to.y + to.h / 2;
-
-  const dx = toCx - fromCx;
-  const dy = toCy - fromCy;
-
-  let x1 = fromCx;
-  let y1 = fromCy;
-  let x2 = toCx;
-  let y2 = toCy;
-
-  if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 0) {
-      x1 = from.x + from.w;
-      y1 = from.y + from.h / 2;
-      x2 = to.x;
-      y2 = to.y + to.h / 2;
-    } else {
-      x1 = from.x;
-      y1 = from.y + from.h / 2;
-      x2 = to.x + to.w;
-      y2 = to.y + to.h / 2;
-    }
-  } else {
-    if (dy > 0) {
-      x1 = from.x + from.w / 2;
-      y1 = from.y + from.h;
-      x2 = to.x + to.w / 2;
-      y2 = to.y;
-    } else {
-      x1 = from.x + from.w / 2;
-      y1 = from.y;
-      x2 = to.x + to.w / 2;
-      y2 = to.y + to.h;
-    }
-  }
-
-  return { x1, y1, x2, y2, dx, dy };
 }
 
 export function CanvasViewport({
@@ -760,104 +718,7 @@ export function CanvasViewport({
           transformOrigin: "0 0",
         }}
       >
-        {/* 智能连接线绘制层 */}
-        {visibleConnections.length > 0 && (
-          <svg
-            className="canvas-connections-svg"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "10000px",
-              height: "10000px",
-              pointerEvents: "none",
-              zIndex: 1,
-            }}
-          >
-            <defs>
-              <marker
-                id="arrow-marker"
-                viewBox="0 0 10 10"
-                refX="6"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="rgba(15, 118, 110, 0.45)" />
-              </marker>
-            </defs>
-            {visibleConnections.map((conn) => {
-              const fromItem = visibleItems.find((i) => i.id === conn.fromItemId);
-              const toItem = visibleItems.find((i) => i.id === conn.toItemId);
-              if (!fromItem || !toItem) return null;
-
-              const { x1, y1, x2, y2, dx } = getConnectionPoints(fromItem, toItem);
-
-              const controlDistance = Math.min(100, Math.abs(dx) * 0.4);
-              const cx1 = x1 + (dx > 0 ? controlDistance : -controlDistance);
-              const cy1 = y1;
-              const cx2 = x2 - (dx > 0 ? controlDistance : -controlDistance);
-              const cy2 = y2;
-
-              const pathD = `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-
-              return (
-                <path
-                  key={conn.id}
-                  d={pathD}
-                  stroke="rgba(15, 118, 110, 0.45)"
-                  strokeWidth="2.5"
-                  fill="none"
-                  markerEnd="url(#arrow-marker)"
-                  strokeDasharray="4 4"
-                />
-              );
-            })}
-          </svg>
-        )}
-
-        {/* 辅助对齐参考线 */}
-        {activeGuides.length > 0 && (
-          <svg
-            className="canvas-guides-svg"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "10000px",
-              height: "10000px",
-              pointerEvents: "none",
-              zIndex: 20,
-            }}
-          >
-            {activeGuides.map((guide, idx) =>
-              guide.type === "v" ? (
-                <line
-                  key={idx}
-                  x1={guide.value}
-                  y1={-99999}
-                  x2={guide.value}
-                  y2={99999}
-                  stroke="#ef4444"
-                  strokeWidth={1 / zoom}
-                  strokeDasharray="4 4"
-                />
-              ) : (
-                <line
-                  key={idx}
-                  x1={-99999}
-                  y1={guide.value}
-                  x2={99999}
-                  y2={guide.value}
-                  stroke="#ef4444"
-                  strokeWidth={1 / zoom}
-                  strokeDasharray="4 4"
-                />
-              )
-            )}
-          </svg>
-        )}
+        <CanvasDiagramLayers items={visibleItems} connections={visibleConnections} guides={activeGuides} zoom={zoom} />
 
         {visibleItems.length ? (
           visibleItems.map((item) => {
@@ -930,28 +791,7 @@ export function CanvasViewport({
       )}
 
       {/* 框选的虚线外框 */}
-      {selectionBox && (() => {
-        const rect = viewportRef.current?.getBoundingClientRect();
-        const left = rect ? Math.min(selectionBox.startX, selectionBox.curX) - rect.left : 0;
-        const top = rect ? Math.min(selectionBox.startY, selectionBox.curY) - rect.top : 0;
-        const width = Math.abs(selectionBox.startX - selectionBox.curX);
-        const height = Math.abs(selectionBox.startY - selectionBox.curY);
-        return (
-          <div
-            style={{
-              position: "absolute",
-              left: `${left}px`,
-              top: `${top}px`,
-              width: `${width}px`,
-              height: `${height}px`,
-              border: "1.5px dashed var(--rv-color-primary)",
-              background: "rgba(15, 118, 110, 0.08)",
-              pointerEvents: "none",
-              zIndex: 9999
-            }}
-          />
-        );
-      })()}
+      {selectionBox ? <CanvasSelectionBox selection={selectionBox} viewportRect={viewportRef.current?.getBoundingClientRect()} /> : null}
     </div>
   );
 }

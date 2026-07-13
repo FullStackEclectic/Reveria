@@ -2,15 +2,14 @@ import React from "react";
 import { AppView, UserSummary, WorkspaceSummary, ProjectSummary, CustomerSummary, BrandKitSummary, AssetSummary, ProjectCanvasDocument, CreditTransactionSummary, GenerationTaskSummary, PlanSummary, RechargeRecordSummary, OrderSummary, ModelSummary, GenerationTaskDetail } from "../../types";
 import type { RetouchSettings } from "../asset/AssetEditorWorkbench";
 
-// Subview components
-import { ModelSquare } from "../square/ModelSquare";
-import { DashboardView } from "../dashboard/DashboardView";
-import { ProjectsView } from "../project/ProjectsView";
-import { CustomersView } from "../customer/CustomersView";
-import { AssetsView } from "../asset/AssetsView";
-import { HistoryView } from "../history/HistoryView";
-import { CreditsView } from "../credits/CreditsView";
-import { AdminConsole } from "../admin/AdminConsole";
+const ModelSquare = React.lazy(() => import("../square/ModelSquare").then((module) => ({ default: module.ModelSquare })));
+const DashboardView = React.lazy(() => import("../dashboard/DashboardView").then((module) => ({ default: module.DashboardView })));
+const ProjectsView = React.lazy(() => import("../project/ProjectsView").then((module) => ({ default: module.ProjectsView })));
+const CustomersView = React.lazy(() => import("../customer/CustomersView").then((module) => ({ default: module.CustomersView })));
+const AssetsView = React.lazy(() => import("../asset/AssetsView").then((module) => ({ default: module.AssetsView })));
+const HistoryView = React.lazy(() => import("../history/HistoryView").then((module) => ({ default: module.HistoryView })));
+const CreditsView = React.lazy(() => import("../credits/CreditsView").then((module) => ({ default: module.CreditsView })));
+const AdminConsole = React.lazy(() => import("../admin/AdminConsole").then((module) => ({ default: module.AdminConsole })));
 
 interface MainRouterProps {
   activeView: AppView;
@@ -29,7 +28,6 @@ interface MainRouterProps {
   handleExportRetouchImage: (assetId: string, settings: RetouchSettings) => Promise<any>;
   handleSaveCustomer: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteAsset: (assetId: string) => Promise<void>;
-  handleMockPay: () => Promise<void>;
   handleCreateOrder: (planId: string) => Promise<void>;
   loadActiveModels: () => Promise<void>;
 
@@ -69,7 +67,6 @@ interface MainRouterProps {
   plans: PlanSummary[];
   rechargeRecords: RechargeRecordSummary[];
   pendingOrder: OrderSummary | null;
-  isPayingOrder: boolean;
   isCreatingOrder: boolean;
   creditsTab: "transactions" | "recharges";
   setCreditsTab: (tab: "transactions" | "recharges") => void;
@@ -107,7 +104,6 @@ export function MainRouter({
   handleExportRetouchImage,
   handleSaveCustomer,
   deleteAsset,
-  handleMockPay,
   handleCreateOrder,
   loadActiveModels,
 
@@ -147,7 +143,6 @@ export function MainRouter({
   plans,
   rechargeRecords,
   pendingOrder,
-  isPayingOrder,
   isCreatingOrder,
   creditsTab,
   setCreditsTab,
@@ -303,11 +298,9 @@ export function MainRouter({
           transactions={transactions}
           rechargeRecords={rechargeRecords}
           pendingOrder={pendingOrder}
-          isPayingOrder={isPayingOrder}
           isCreatingOrder={isCreatingOrder}
           creditsTab={creditsTab}
           setCreditsTab={setCreditsTab}
-          handleMockPay={handleMockPay}
           handleCreateOrder={handleCreateOrder}
           formattedCredits={formattedCredits}
           formattedRecharge={formattedRecharge}

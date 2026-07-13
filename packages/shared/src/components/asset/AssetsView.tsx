@@ -70,8 +70,8 @@ export function AssetsView({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isImportingAssets, setIsImportingAssets] = useState(false);
   const [assetLinkForm, setAssetLinkForm] = useState({
-    title: "示例封面参考图",
-    url: "https://example.com/demo-cover.png",
+    title: "",
+    url: "",
     mimeType: "image/png",
   });
 

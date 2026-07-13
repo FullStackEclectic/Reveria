@@ -100,6 +100,13 @@ func (s *StandaloneBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUI
 		task.FrozenGiftCredits = frozenGift
 		task.FrozenRefundCredits = frozenRefund
 		task.FrozenRechargeCredits = frozenRecharge
+		if err := tx.Model(&model.GenerationTask{}).Where("id = ?", task.ID).Updates(map[string]any{
+			"frozen_credits": amount, "frozen_gift_credits": frozenGift,
+			"frozen_refund_credits": frozenRefund, "frozen_recharge_credits": frozenRecharge,
+		}).Error; err != nil {
+			tx.Rollback()
+			return false, err
+		}
 	}
 
 	// 记录点数冻结流水
@@ -200,4 +207,76 @@ func (s *StandaloneBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUI
 
 	tx.Commit()
 	return nil
+}
+
+func (s *StandaloneBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error {
+	if task == nil {
+		return errors.New("任务结算缺少任务记录")
+	}
+	if actualAmount < 0 {
+		actualAmount = 0
+	}
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var ws model.Workspace
+		if err := forUpdateSvc(tx).Where("id = ?", workspaceID).First(&ws).Error; err != nil {
+			return err
+		}
+
+		remaining := actualAmount
+		consumeGift := minInt64(task.FrozenGiftCredits, remaining)
+		remaining -= consumeGift
+		consumeRefund := minInt64(task.FrozenRefundCredits, remaining)
+		remaining -= consumeRefund
+		consumeRecharge := minInt64(task.FrozenRechargeCredits, remaining)
+		remaining -= consumeRecharge
+
+		ws.GiftBalance += task.FrozenGiftCredits - consumeGift
+		ws.RefundBalance += task.FrozenRefundCredits - consumeRefund
+		ws.RechargeBalance += task.FrozenRechargeCredits - consumeRecharge
+
+		if remaining > 0 {
+			if !deductAdditionalBalance(&ws, remaining) {
+				return errors.New("实际消费超过预冻结额度且余额不足")
+			}
+		}
+		if err := tx.Save(&ws).Error; err != nil {
+			return err
+		}
+
+		task.ActualCredits = actualAmount
+		task.FrozenCredits = 0
+		task.FrozenGiftCredits = 0
+		task.FrozenRefundCredits = 0
+		task.FrozenRechargeCredits = 0
+		if err := tx.Save(task).Error; err != nil {
+			return err
+		}
+		transaction := model.CreditTransaction{
+			ID: uuid.New(), WorkspaceID: workspaceID, UserID: &userID,
+			ProjectID: &task.ProjectID, TaskID: &task.ID, TransactionType: "consume",
+			Amount: actualAmount, BalanceAfter: ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
+			Reason: &reason, CreatedAt: time.Now(),
+		}
+		return tx.Create(&transaction).Error
+	})
+}
+
+func minInt64(left, right int64) int64 {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func deductAdditionalBalance(ws *model.Workspace, amount int64) bool {
+	remaining := amount
+	for _, balance := range []*int64{&ws.GiftBalance, &ws.RefundBalance, &ws.RechargeBalance} {
+		used := minInt64(*balance, remaining)
+		*balance -= used
+		remaining -= used
+		if remaining == 0 {
+			return true
+		}
+	}
+	return false
 }

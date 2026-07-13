@@ -131,14 +131,14 @@ func AdjustCredits(c *gin.Context) {
 
 	// 记录审计日志
 	auditLog := model.AuditLog{
-		ID:          uuid.New(),
-		WorkspaceID: ws.ID,
-		OperatorID:  &actorID,
-		Action:      "adjust_credits",
-		TargetType:  ptrString("workspace"),
-		TargetID:    &ws.ID,
+		ID:            uuid.New(),
+		WorkspaceID:   ws.ID,
+		OperatorID:    &actorID,
+		Action:        "adjust_credits",
+		TargetType:    ptrString("workspace"),
+		TargetID:      &ws.ID,
 		AfterSnapshot: ptrString(fmt.Sprintf(`{"amount": %d, "reason": "%s"}`, req.Amount, req.Reason)),
-		CreatedAt:   time.Now(),
+		CreatedAt:     time.Now(),
 	}
 	tx.Create(&auditLog)
 
@@ -204,11 +204,11 @@ func ListWorkspaceMembers(c *gin.Context) {
 
 // UpsertWorkspaceMemberRequest 成员额度及角色配置载荷
 type UpsertWorkspaceMemberRequest struct {
-	WorkspaceID        uuid.UUID  `json:"workspace_id" binding:"required"`
-	UserID             uuid.UUID  `json:"user_id" binding:"required"`
-	Role               string     `json:"role" binding:"required"` // owner / admin / manager / creator / viewer
-	DailyCreditLimit   *int64     `json:"daily_credit_limit"`
-	MonthlyCreditLimit *int64     `json:"monthly_credit_limit"`
+	WorkspaceID        uuid.UUID `json:"workspace_id" binding:"required"`
+	UserID             uuid.UUID `json:"user_id" binding:"required"`
+	Role               string    `json:"role" binding:"required"` // owner / admin / manager / creator / viewer
+	DailyCreditLimit   *int64    `json:"daily_credit_limit"`
+	MonthlyCreditLimit *int64    `json:"monthly_credit_limit"`
 }
 
 // UpsertWorkspaceMember 配置和修改工作区成员限额及角色 (POST /admin/workspace-members)
@@ -303,7 +303,6 @@ func DeleteWorkspaceMember(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已成功将成员移出该工作区"})
 }
-
 
 // GetCostReport 获取大盘成本与毛利报表 (GET /admin/reports/costs)
 func GetCostReport(c *gin.Context) {
@@ -418,30 +417,4 @@ func UpdatePlatformAdmin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "用户超级管理员权限更新成功"})
-}
-
-// Mock 辅助存根
-func MockListPricingRules(c *gin.Context) {
-	c.JSON(http.StatusOK, []any{})
-}
-func MockCreatePricingRule(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-func MockListWorkflowTemplates(c *gin.Context) {
-	c.JSON(http.StatusOK, []any{})
-}
-func MockCreateWorkflowTemplate(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-func MockEnableWorkflowTemplate(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-func MockPublishWorkflowTemplate(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
-}
-func MockTestTextModel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "网关文字通道连通性测试通过"})
-}
-func MockTestImageModel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "网关图片通道连通性测试通过"})
 }

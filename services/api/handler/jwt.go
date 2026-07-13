@@ -18,17 +18,26 @@ var jwtSecret []byte
 
 func init() {
 	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = os.Getenv("REVERIA_SECRET_KEY")
+	}
 	if secret != "" {
+		if len(secret) < 24 {
+			log.Fatal("[JWT] 签名密钥长度不能少于 24 字节")
+		}
 		jwtSecret = []byte(secret)
-		log.Println("[JWT] 使用环境变量 JWT_SECRET 作为签名密钥。")
+		log.Println("[JWT] 已加载环境变量中的签名密钥。")
 	} else {
+		if os.Getenv("GIN_MODE") == "release" || os.Getenv("REVERIA_ENV") == "production" {
+			log.Fatal("[JWT] 生产环境必须设置 JWT_SECRET 或 REVERIA_SECRET_KEY")
+		}
 		// 开发模式下自动生成随机密钥
 		randomBytes := make([]byte, 32)
 		if _, err := rand.Read(randomBytes); err != nil {
 			log.Fatalf("[JWT] 生成随机密钥失败: %v", err)
 		}
 		jwtSecret = randomBytes
-		log.Printf("[JWT] ⚠️  未设置 JWT_SECRET 环境变量，已自动生成开发密钥: %s", hex.EncodeToString(randomBytes))
+		log.Printf("[JWT] 未设置签名密钥，已生成临时开发密钥（指纹 %s）", hex.EncodeToString(randomBytes[:4]))
 		log.Println("[JWT] ⚠️  注意：每次重启服务都会生成新密钥，所有已登录用户将被迫重新登录。")
 		log.Println("[JWT] ⚠️  生产环境请务必设置 JWT_SECRET 环境变量！")
 	}

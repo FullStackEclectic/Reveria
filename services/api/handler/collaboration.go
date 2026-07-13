@@ -24,12 +24,12 @@ type CommentSummary struct {
 
 // ShareSummary 分享外链信息
 type ShareSummary struct {
-	ID        uuid.UUID  `json:"id"`
-	ProjectID uuid.UUID  `json:"project_id"`
-	Token     string     `json:"token"`
-	CreatedAt int64      `json:"created_at"`
-	ExpiresAt *int64     `json:"expires_at"`
-	Status    string     `json:"status"`
+	ID        uuid.UUID `json:"id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Token     string    `json:"token"`
+	CreatedAt int64     `json:"created_at"`
+	ExpiresAt *int64    `json:"expires_at"`
+	Status    string    `json:"status"`
 }
 
 // ListProjectComments 获取项目评论列表 (GET /projects/:project_id/comments)
@@ -353,7 +353,7 @@ func CreatePortalComment(c *gin.Context) {
 	token := c.Param("token")
 
 	var share model.ProjectShare
-	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+	if err := database.DB.Where("token = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", token, time.Now()).First(&share).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链无效"})
 		return
 	}
@@ -394,7 +394,7 @@ func ApprovePortalProject(c *gin.Context) {
 	token := c.Param("token")
 
 	var share model.ProjectShare
-	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+	if err := database.DB.Where("token = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", token, time.Now()).First(&share).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链无效"})
 		return
 	}
@@ -592,7 +592,7 @@ func SelectPortalAsset(c *gin.Context) {
 	}
 
 	var share model.ProjectShare
-	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+	if err := database.DB.Where("token = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", token, time.Now()).First(&share).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链失效"})
 		return
 	}
@@ -632,7 +632,7 @@ func CreatePortalAssetComment(c *gin.Context) {
 	}
 
 	var share model.ProjectShare
-	if err := database.DB.Where("token = ? AND status = 'active'", token).First(&share).Error; err != nil {
+	if err := database.DB.Where("token = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", token, time.Now()).First(&share).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "外链失效"})
 		return
 	}

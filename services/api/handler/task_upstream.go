@@ -18,8 +18,6 @@ import (
 	"reveria/services/api/database"
 	"reveria/services/api/model"
 	"reveria/services/api/service"
-
-	"github.com/google/uuid"
 )
 
 // insecureTransport 根据环境变量控制是否跳过 SSL/TLS 证书校验
@@ -105,12 +103,16 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		totalTokens := promptTokens + completionTokens
 
 		// 根据模型指定的计费方式进行计费 (per_token 按 Token 百万折算，per_use 按次固定扣除)
-		actualCost := int64(0)
-		actualCostFloat := 0.0
+		actualCost := int64(2)
+		actualCostFloat := 2.0
 
 		if task.SelectedModel != nil && *task.SelectedModel != "" {
 			var m model.Model
-			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&m).Error; err == nil {
+			lookupErr := database.DB.Where("id = ?", *task.SelectedModel).First(&m).Error
+			if lookupErr != nil {
+				lookupErr = database.DB.Where("name = ? AND enabled = true", *task.SelectedModel).First(&m).Error
+			}
+			if lookupErr == nil {
 				if m.CreditsCost > 0 {
 					if m.BillingMethod == "per_use" {
 						actualCost = int64(m.CreditsCost + 0.5)
@@ -121,10 +123,6 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 					}
 				}
 			}
-		} else {
-			// 兜底文本按次 2 积分
-			actualCost = 2
-			actualCostFloat = 2.0
 		}
 
 		outMap := map[string]any{
@@ -145,90 +143,26 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		}
 		outBytes, _ := json.Marshal(outMap)
 		outStr := string(outBytes)
+		claimedTask, claimed := claimTaskForSettlement(task.ID)
+		if !claimed {
+			return
+		}
+		task = claimedTask
 
-		// 1. 全额释放当初的预冻结额度
 		billingSvc := service.GetBillingService()
-		_ = billingSvc.RefundCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, fmt.Sprintf("任务 %s 成功结算释放原冻结", task.ID.String()), &task)
-
-		// 2. 从用户钱包中，物理扣除实际消耗积分 actualCost
-		tx := database.DB.Begin()
-		var ws model.Workspace
-		if err := forUpdate(tx).Where("id = ?", task.WorkspaceID).First(&ws).Error; err == nil {
-			remaining := actualCost
-
-			// 依次扣减 Recharge -> Gift -> Refund
-			if ws.RechargeBalance >= remaining {
-				ws.RechargeBalance -= remaining
-				remaining = 0
-			} else {
-				remaining -= ws.RechargeBalance
-				ws.RechargeBalance = 0
-			}
-
-			if remaining > 0 {
-				if ws.GiftBalance >= remaining {
-					ws.GiftBalance -= remaining
-					remaining = 0
-				} else {
-					remaining -= ws.GiftBalance
-					ws.GiftBalance = 0
-				}
-			}
-
-			if remaining > 0 {
-				if ws.RefundBalance >= remaining {
-					ws.RefundBalance -= remaining
-					remaining = 0
-				} else {
-					remaining -= ws.RefundBalance
-					ws.RefundBalance = 0
-				}
-			}
-
-			tx.Save(&ws)
-
-			// 3. 记录消费流水记录
-			consumeReason := fmt.Sprintf("AI 文本生成任务完成结算扣费 (Total Tokens: %d, 实际消耗: %f 积分)", totalTokens, actualCostFloat)
-			transaction := model.CreditTransaction{
-				ID:              uuid.New(),
-				WorkspaceID:     task.WorkspaceID,
-				UserID:          task.UserID,
-				ProjectID:       &task.ProjectID,
-				TaskID:          &task.ID,
-				TransactionType: "consume",
-				Amount:          actualCost,
-				BalanceAfter:    ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-				Reason:          &consumeReason,
-				CreatedAt:       time.Now(),
-			}
-			tx.Create(&transaction)
+		if task.UserID == nil {
+			failClaimedTask(task, "TASK_USER_MISSING", "文本任务缺少创建用户")
+			return
 		}
-
-		// 4. 更新 Task 任务本身的状态并写入 Asset 资产
-		var dbTask model.GenerationTask
-		if tx.Where("id = ?", task.ID).First(&dbTask).Error == nil {
-			dbTask.Status = "succeeded"
-			dbTask.OutputPayload = &outStr
-			dbTask.ActualCredits = actualCost
-			dbTask.FrozenCredits = 0
-			dbTask.FrozenGiftCredits = 0
-			dbTask.FrozenRefundCredits = 0
-			dbTask.FrozenRechargeCredits = 0
-			tx.Save(&dbTask)
-
-			asset := model.Asset{
-				ID:          uuid.New(),
-				WorkspaceID: dbTask.WorkspaceID,
-				ProjectID:   dbTask.ProjectID,
-				AssetType:   "document",
-				Source:      "generated",
-				FileURL:     "",
-				Metadata:    &outStr,
-				CreatedAt:   time.Now(),
-			}
-			tx.Create(&asset)
+		task.OutputPayload = &outStr
+		consumeReason := fmt.Sprintf("AI 文本生成任务完成结算 (Total Tokens: %d, 实际消耗: %f 积分)", totalTokens, actualCostFloat)
+		if err := billingSvc.SettleCredits(*task.UserID, task.WorkspaceID, actualCost, consumeReason, &task); err != nil {
+			failClaimedTask(task, "SETTLEMENT_FAILED", err.Error())
+			return
 		}
-		tx.Commit()
+		if err := completeSettledTextTask(task); err != nil {
+			log.Printf("[TextTask] 任务 %s 写入终态失败，将由恢复任务重试: %v", task.ID, err)
+		}
 		return
 	}
 
@@ -271,10 +205,14 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		if refImg != "" {
 			log.Printf("[callUpstreamGateway] ImageToImage (edits): Downloading reference image %s", refImg)
 
-			// 1. 尝试直接从本地磁盘读取
-			lastSlash := strings.LastIndex(refImg, "/")
-			if lastSlash != -1 {
-				fileName := refImg[lastSlash+1:]
+			// 1. 仅允许读取当前工作区已经入库的本地文件。
+			if fileName, local := storedFileNameFromURL(refImg); local {
+				fileURL := "/api/files/" + fileName
+				var count int64
+				if database.DB.Model(&model.Asset{}).Where("workspace_id = ? AND (file_url = ? OR thumbnail_url = ?)", task.WorkspaceID, fileURL, fileURL).Count(&count).Error != nil || count == 0 {
+					handleTaskFailure(task.ID, "REFERENCE_ACCESS_DENIED", "参考图片不属于当前工作区")
+					return
+				}
 				localPath := filepath.Join(getStorageDir(), fileName)
 				imgBytes, err = os.ReadFile(localPath)
 				if err == nil {
@@ -286,15 +224,27 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 
 			// 2. 如果本地读取失败，降级通过 HTTP 网络下载
 			if len(imgBytes) == 0 {
-				respImg, err := http.Get(refImg)
+				if !isSafeRemoteURL(refImg) {
+					handleTaskFailure(task.ID, "UNSAFE_REFERENCE_URL", "参考图片地址不允许访问")
+					return
+				}
+				respImg, err := (&http.Client{Transport: insecureTransport, Timeout: 30 * time.Second}).Get(refImg)
 				if err != nil {
 					handleTaskFailure(task.ID, "DOWNLOAD_REF_IMAGE_FAILED", "下载参考图片失败: "+err.Error())
 					return
 				}
 				defer respImg.Body.Close()
-				imgBytes, err = io.ReadAll(respImg.Body)
+				if respImg.StatusCode != http.StatusOK {
+					handleTaskFailure(task.ID, "DOWNLOAD_REF_IMAGE_FAILED", fmt.Sprintf("参考图片返回状态码 %d", respImg.StatusCode))
+					return
+				}
+				imgBytes, err = io.ReadAll(io.LimitReader(respImg.Body, maxUploadBytes()+1))
 				if err != nil {
 					handleTaskFailure(task.ID, "READ_REF_IMAGE_FAILED", "读取参考图片数据失败: "+err.Error())
+					return
+				}
+				if int64(len(imgBytes)) > maxUploadBytes() {
+					handleTaskFailure(task.ID, "REFERENCE_IMAGE_TOO_LARGE", "参考图片超过大小限制")
 					return
 				}
 				log.Printf("[callUpstreamGateway] ImageToImage (edits): Successfully downloaded image via HTTP: %s", refImg)

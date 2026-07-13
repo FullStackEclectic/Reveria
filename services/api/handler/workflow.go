@@ -46,7 +46,9 @@ func RunBriefAnalysis(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限在此工作区操作"})
 		return
 	}
-
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
 	// 1. 扣减 2 个积分点数
 	var costCredits int64 = 2
 	var settings model.ClientSettings
@@ -67,9 +69,20 @@ func RunBriefAnalysis(c *gin.Context) {
 	}
 
 	// 2. 调用 12ZX-AI 大语言模型进行 Brief 提取
-	prompt := fmt.Sprintf("请作为专业的广告策划大师，分析以下创意大纲，并提炼成简明扼要的摘要、受众定位、三个核心方向、以及一个风险分析提示。内容: %s", req.Brief)
+	prompt := fmt.Sprintf("请分析以下创意大纲，只返回 JSON：{\"summary\":\"\",\"audience\":[],\"directions\":[],\"risks\":[]}。内容: %s", req.Brief)
 
 	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	var output struct {
+		Summary    string   `json:"summary"`
+		Audience   []string `json:"audience"`
+		Directions []string `json:"directions"`
+		Risks      []string `json:"risks"`
+	}
+	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "需求分析失败退回积分", nil)
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的需求分析结构"})
+		return
+	}
 
 	// 构建返回数据结构 (BriefAnalysisOutput)
 	c.JSON(http.StatusOK, gin.H{
@@ -79,12 +92,7 @@ func RunBriefAnalysis(c *gin.Context) {
 			"task_type":  "brief_analysis",
 			"created_at": time.Now().Unix(),
 		},
-		"output": gin.H{
-			"summary":    responseMsg,
-			"audience":   []string{"都市白领", "年轻家庭", "追求品质生活的人群"},
-			"directions": []string{"突出产品天然有机无添加特点", "引发关于生活平衡的共鸣", "倡导健康轻松的生活节奏"},
-			"risks":      []string{"核心受众如果对价格过于敏感，应当在文案中增加性价比解析。"},
-		},
+		"output": output,
 	})
 }
 
@@ -107,12 +115,20 @@ func RunBrandStyleExtract(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限进行操作"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
 
 	var settings model.ClientSettings
 	_ = database.DB.First(&settings)
 
-	prompt := fmt.Sprintf("提取品牌 %s 的设计调性、配色规范、核心口号、风格关键词。描述为: %s", req.BrandName, req.Description)
+	prompt := fmt.Sprintf("提取品牌设计规范，只返回 JSON：{\"brand_name\":%q,\"tone_of_voice\":\"\",\"colors\":[],\"visual_keywords\":[],\"style_prompt\":\"\"}。描述: %s", req.BrandName, req.Description)
 	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	var output map[string]any
+	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的品牌风格结构"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -120,13 +136,7 @@ func RunBrandStyleExtract(c *gin.Context) {
 			"status":    "succeeded",
 			"task_type": "brand_style_extract",
 		},
-		"output": gin.H{
-			"brand_name":      req.BrandName,
-			"tone_of_voice":   responseMsg,
-			"colors":          []string{"#1A1A1A", "#FFFFFF", "#C5A880"},
-			"visual_keywords": []string{"现代", "极简", "轻奢", "自然"},
-			"style_prompt":    "Minimalist elegant luxury aesthetics, high contrast, clean product shot.",
-		},
+		"output": output,
 	})
 }
 
@@ -143,12 +153,20 @@ func RunCreativeDirections(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限在此工作区操作"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
 
 	var settings model.ClientSettings
 	_ = database.DB.First(&settings)
 
-	prompt := fmt.Sprintf("请根据以下信息，生成 3 个小红书广告的创意标题和标签方向: %s", req.Brief)
+	prompt := fmt.Sprintf("根据以下信息生成 3 个广告创意方向，只返回 JSON：{\"directions\":[{\"title\":\"\",\"concept\":\"\",\"visual_idea\":\"\"}]}。内容: %s", req.Brief)
 	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	var output map[string]any
+	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的创意方向结构"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -156,20 +174,7 @@ func RunCreativeDirections(c *gin.Context) {
 			"status":    "succeeded",
 			"task_type": "creative_directions",
 		},
-		"output": gin.H{
-			"directions": []map[string]any{
-				{
-					"title":       "创意方向 A",
-					"concept":     responseMsg,
-					"visual_idea": "用极简的排版和温馨的日常片段对比，传递产品的质感与生活情怀。",
-				},
-				{
-					"title":       "创意方向 B",
-					"concept":     "探索产品背后的科学配方与天然提取过程，做硬核的产品评测与解析。",
-					"visual_idea": "显微镜视角、专业化解说、高清晰度的视觉镜头特写。",
-				},
-			},
-		},
+		"output": output,
 	})
 }
 
@@ -186,12 +191,20 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限操作"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
 
 	var settings model.ClientSettings
 	_ = database.DB.First(&settings)
 
-	prompt := fmt.Sprintf("为以下主题编写 3 个分镜脚本的短视频脚本分镜大纲: %s", req.Brief)
+	prompt := fmt.Sprintf("为以下主题生成短视频分镜，只返回 JSON：{\"script_title\":\"\",\"script_brief\":\"\",\"shots\":[{\"shot_number\":1,\"duration_sec\":0,\"visual\":\"\",\"audio\":\"\",\"prompt\":\"\"}]}。主题: %s", req.Brief)
 	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	var output map[string]any
+	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的分镜结构"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"task": gin.H{
@@ -199,32 +212,26 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 			"status":    "succeeded",
 			"task_type": "short_video_script_storyboard",
 		},
-		"output": gin.H{
-			"script_title": "创意短片 - 默认大纲",
-			"script_brief": responseMsg,
-			"shots": []map[string]any{
-				{
-					"shot_number":  1,
-					"duration_sec": 3.0,
-					"visual":       "特写镜头，展示清晨阳光透过百叶窗，轻抚在木质桌面上。",
-					"audio":        "清晨的鸟叫声，温和舒缓的白噪音钢琴背景乐。",
-					"prompt":       "Close up shot, soft cinematic morning sunlight filtering through wooden blinds.",
-				},
-				{
-					"shot_number":  2,
-					"duration_sec": 5.0,
-					"visual":       "中景镜头，主角微笑着端起温暖的饮品，看向窗外。",
-					"audio":        "旁白: ‘在喧嚣的日常中，留给自己的这五分钟，是最奢侈的享受。’",
-					"prompt":       "Medium shot, a person smiling warmly, holding a steaming mug, cozy atmosphere.",
-				},
-			},
-		},
+		"output": output,
 	})
 }
 
 type upstreamChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+func decodeStructuredResponse(response string, target any) error {
+	trimmed := strings.TrimSpace(response)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start < 0 || end < start {
+		return fmt.Errorf("响应中没有 JSON 对象")
+	}
+	return json.Unmarshal([]byte(trimmed[start:end+1]), target)
 }
 
 // callUpstreamLLM 发包调用 12ZX-AI 大语言模型，返回生成文本及 token 消耗状况 (content, promptTokens, completionTokens)
@@ -342,6 +349,9 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限操作"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
 
 	// 1. 扣除 5 点积分
 	var costCredits int64 = 5
@@ -372,8 +382,14 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 		count = *req.Count
 	}
 
-	prompt := fmt.Sprintf("请根据以下项目需求，批量构思并设计 %d 个不同的小红书爆款封面视觉大纲。风格倾向: %s。内容大纲: %s", count, styleStr, req.Brief)
+	prompt := fmt.Sprintf("根据项目需求设计 %d 个封面，只返回 JSON：{\"covers\":[{\"title\":\"\",\"subtitle\":\"\",\"layout\":\"\",\"visual_prompt\":\"\",\"negative_prompt\":\"\",\"notes\":\"\"}]}。风格: %s。内容: %s", count, styleStr, req.Brief)
 	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	var output map[string]any
+	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "封面分析失败退回积分", nil)
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的封面方案结构"})
+		return
+	}
 
 	// 拼装对齐前端的数据结构
 	c.JSON(http.StatusOK, gin.H{
@@ -383,18 +399,7 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 			"task_type":  "xiaohongshu_cover_batch",
 			"created_at": time.Now().Unix(),
 		},
-		"output": gin.H{
-			"covers": []map[string]any{
-				{
-					"title":           "封面方案 - 精选爆款",
-					"subtitle":        "点击查看大模型创意文案",
-					"layout":          "经典的黄金三分法版式，标题居中偏上，配以引人注目的视觉焦点图。",
-					"visual_prompt":   responseMsg,
-					"negative_prompt": "低清、杂乱、过曝、文字遮挡主体",
-					"notes":           "建议配合 Stable Diffusion 或 Midjourney 发起实际的生图渲染任务。",
-				},
-			},
-		},
+		"output": output,
 	})
 }
 
@@ -421,6 +426,23 @@ func RunMagicAction(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权限进行此操作"})
 		return
 	}
+	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
+	if req.Action != "remove-bg" && req.Action != "upscale" && req.Action != "erase" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "不支持的图像处理动作"})
+		return
+	}
+
+	var asset model.Asset
+	if err := database.DB.Where("id = ? AND project_id = ? AND workspace_id = ?", req.AssetID, req.ProjectID, req.WorkspaceID).First(&asset).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "源素材不存在或不属于当前项目"})
+		return
+	}
+	if !strings.HasPrefix(asset.FileURL, "/api/files/") {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请先将外部素材导入工作区后再处理"})
+		return
+	}
 
 	// 2. 扣减积分 (抠图/超分/擦除统一扣除 2 个积分点数)
 	var costCredits int64 = 2
@@ -440,13 +462,12 @@ func RunMagicAction(c *gin.Context) {
 		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区余额不足，本次操作需要 " + fmt.Sprintf("%d", costCredits) + " 个点数"})
 		return
 	}
-
-	// 3. 查询原始 Asset
-	var asset model.Asset
-	if err := database.DB.Where("id = ?", req.AssetID).First(&asset).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "源素材资产不存在"})
-		return
-	}
+	completed := false
+	defer func() {
+		if !completed {
+			_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "图像处理失败退回积分", nil)
+		}
+	}()
 
 	if asset.FileURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "源素材无有效文件链接"})
@@ -464,20 +485,6 @@ func RunMagicAction(c *gin.Context) {
 	if err == nil {
 		defer file.Close()
 		srcImg, _, decodeErr = image.Decode(file)
-	} else {
-		// 回退：使用 HTTP Get 从链接下载（若配置了外部对象存储）
-		var resp *http.Response
-		var downloadURL string
-		if strings.HasPrefix(asset.FileURL, "http") {
-			downloadURL = asset.FileURL
-		} else {
-			downloadURL = "http://127.0.0.1:4100" + asset.FileURL
-		}
-		resp, err = http.Get(downloadURL)
-		if err == nil {
-			defer resp.Body.Close()
-			srcImg, _, decodeErr = image.Decode(resp.Body)
-		}
 	}
 
 	if decodeErr != nil || srcImg == nil {
@@ -555,41 +562,57 @@ func RunMagicAction(c *gin.Context) {
 		return
 	}
 
-	// 6. 保存新生成的图片文件
+	// 6. 编码输出并在写盘前预占配额
 	newStoredName := uuid.New().String() + "-magic-" + req.Action + targetExt
 	newStoragePath := filepath.Join(getStorageDir(), newStoredName)
-	outFile, err := os.Create(newStoragePath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建输出图像文件失败"})
-		return
-	}
-	defer outFile.Close()
-
+	var encoded bytes.Buffer
 	if targetExt == ".png" {
-		_ = png.Encode(outFile, destImg)
+		err = png.Encode(&encoded, destImg)
 	} else {
-		_ = jpeg.Encode(outFile, destImg, &jpeg.Options{Quality: 95})
+		err = jpeg.Encode(&encoded, destImg, &jpeg.Options{Quality: 95})
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "编码输出图像失败"})
+		return
 	}
 
 	// 7. 生成缩略图 (320px)
 	var thumbnailURL *string
-	newFileBytes, err := os.ReadFile(newStoragePath)
-	if err == nil {
-		thumbBytes, err := resizeImage(newFileBytes, 320)
-		if err == nil {
-			thumbName := uuid.New().String() + "-thumb.jpg"
-			thumbPath := filepath.Join(getStorageDir(), thumbName)
-			if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
-				url := "/api/files/" + thumbName
-				thumbnailURL = &url
-			}
+	var thumbBytes []byte
+	var thumbPath string
+	if resized, resizeErr := resizeImage(encoded.Bytes(), 320); resizeErr == nil {
+		thumbBytes = resized
+		thumbName := uuid.New().String() + "-thumb.jpg"
+		thumbPath = filepath.Join(getStorageDir(), thumbName)
+		url := "/api/files/" + thumbName
+		thumbnailURL = &url
+	}
+	totalSize := int64(encoded.Len() + len(thumbBytes))
+	if !reserveStorage(req.WorkspaceID, totalSize) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "工作区存储空间不足"})
+		return
+	}
+	storageReserved := true
+	defer func() {
+		if storageReserved {
+			releaseStorage(req.WorkspaceID, totalSize)
+		}
+	}()
+	if err := os.WriteFile(newStoragePath, encoded.Bytes(), 0644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存输出图像失败"})
+		return
+	}
+	if len(thumbBytes) > 0 {
+		if err := os.WriteFile(thumbPath, thumbBytes, 0644); err != nil {
+			_ = os.Remove(newStoragePath)
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存缩略图失败"})
+			return
 		}
 	}
 
 	// 8. 写入新 Asset 资产入库
 	newFileURL := "/api/files/" + newStoredName
-	fi, _ := outFile.Stat()
-	fileSize := fi.Size()
+	fileSize := int64(encoded.Len())
 
 	title := asset.Metadata
 	var originTitle = "AI 生成图"
@@ -631,14 +654,21 @@ func RunMagicAction(c *gin.Context) {
 		FileURL:      newFileURL,
 		ThumbnailURL: thumbnailURL,
 		Metadata:     &metaStr,
+		SizeBytes:    totalSize,
 		CreatedBy:    &actorID,
 		CreatedAt:    time.Now(),
 	}
 
 	if err := database.DB.Create(&newAsset).Error; err != nil {
+		_ = os.Remove(newStoragePath)
+		if thumbPath != "" {
+			_ = os.Remove(thumbPath)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "新资产入库失败"})
 		return
 	}
+	storageReserved = false
+	completed = true
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

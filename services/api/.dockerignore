@@ -1,0 +1,6 @@
+.env
+*.db
+*.db-*
+*.sqlite*
+storage/uploads
+*.log
