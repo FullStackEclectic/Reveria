@@ -65,6 +65,11 @@ func (b *BridgeBilling) sendPostRequest(url, secret string, body interface{}) ([
 	if secret != "" {
 		req.Header.Set("X-Internal-Secret", secret)
 	}
+	if payload, ok := body.(map[string]interface{}); ok {
+		if operationID, ok := payload["operation_id"].(string); ok && operationID != "" {
+			req.Header.Set("Idempotency-Key", operationID)
+		}
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -138,9 +143,13 @@ func (b *BridgeBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 	quotaAmount := amount * QuotaExchangeRate
 	url := fmt.Sprintf("%s/api/internal/user/deduct", baseURL)
 
+	operationID := bridgeOperationID(task, "deduct")
 	body := map[string]interface{}{
 		"email": email,
 		"quota": quotaAmount,
+		// 主站必须按 operation_id 做唯一约束；网络超时重试时不得重复扣费。
+		"operation_id": operationID,
+		"task_id":      taskIDString(task),
 	}
 
 	respBody, statusCode, err := b.sendPostRequest(url, secret, body)
@@ -191,9 +200,12 @@ func (b *BridgeBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 	quotaAmount := amount * QuotaExchangeRate
 	url := fmt.Sprintf("%s/api/internal/user/refund", baseURL)
 
+	operationID := bridgeOperationID(task, "refund")
 	body := map[string]interface{}{
-		"email": email,
-		"quota": quotaAmount,
+		"email":        email,
+		"quota":        quotaAmount,
+		"operation_id": operationID,
+		"task_id":      taskIDString(task),
 	}
 
 	respBody, statusCode, err := b.sendPostRequest(url, secret, body)
@@ -215,6 +227,20 @@ func (b *BridgeBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 	}
 
 	return nil
+}
+
+func taskIDString(task *model.GenerationTask) string {
+	if task == nil {
+		return ""
+	}
+	return task.ID.String()
+}
+
+func bridgeOperationID(task *model.GenerationTask, action string) string {
+	if task == nil {
+		return fmt.Sprintf("adhoc:%s:%s", action, uuid.NewString())
+	}
+	return fmt.Sprintf("task:%s:%s", task.ID.String(), action)
 }
 
 func (b *BridgeBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error {

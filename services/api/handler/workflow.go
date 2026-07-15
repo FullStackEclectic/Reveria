@@ -598,12 +598,12 @@ func RunMagicAction(c *gin.Context) {
 			releaseStorage(req.WorkspaceID, totalSize)
 		}
 	}()
-	if err := os.WriteFile(newStoragePath, encoded.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(newStoragePath, encoded.Bytes(), 0640); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存输出图像失败"})
 		return
 	}
 	if len(thumbBytes) > 0 {
-		if err := os.WriteFile(thumbPath, thumbBytes, 0644); err != nil {
+		if err := os.WriteFile(thumbPath, thumbBytes, 0640); err != nil {
 			_ = os.Remove(newStoragePath)
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存缩略图失败"})
 			return

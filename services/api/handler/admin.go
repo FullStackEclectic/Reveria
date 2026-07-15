@@ -140,9 +140,16 @@ func AdjustCredits(c *gin.Context) {
 		AfterSnapshot: ptrString(fmt.Sprintf(`{"amount": %d, "reason": "%s"}`, req.Amount, req.Reason)),
 		CreatedAt:     time.Now(),
 	}
-	tx.Create(&auditLog)
+	if err := tx.Create(&auditLog).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "记录审计日志失败"})
+		return
+	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交额度调整事务失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

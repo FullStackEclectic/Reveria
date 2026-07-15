@@ -284,8 +284,15 @@ func DeleteProject(c *gin.Context) {
 	}
 
 	// 级联清理画布
-	_ = tx.Where("project_id = ?", projectID).Delete(&model.ProjectCanvas{})
+	if err := tx.Where("project_id = ?", projectID).Delete(&model.ProjectCanvas{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "清理项目画布失败"})
+		return
+	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交项目删除事务失败"})
+		return
+	}
 	c.Status(http.StatusNoContent)
 }

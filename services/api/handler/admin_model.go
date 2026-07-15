@@ -277,7 +277,10 @@ func BatchImportModels(c *gin.Context) {
 			}
 		}
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交模型导入事务失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "模型批量导入保存成功"})
 }

@@ -75,7 +75,7 @@ func CreateWorkspace(c *gin.Context) {
 		Name:         req.Name,
 		OwnerUserID:  actorID,
 		GiftBalance:  0,
-		StorageQuota: 10 * 1024 * 1024 * 1024, // 10GB
+		StorageQuota: defaultWorkspaceStorageQuota(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -102,7 +102,10 @@ func CreateWorkspace(c *gin.Context) {
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交工作区事务失败"})
+		return
+	}
 	c.JSON(http.StatusOK, workspace)
 }
 
@@ -214,8 +217,15 @@ func AcceptInvitation(c *gin.Context) {
 	if count > 0 {
 		// 已是成员，直接标记邀请已被接受，提交事务
 		invitation.Status = "accepted"
-		tx.Save(&invitation)
-		tx.Commit()
+		if err := tx.Save(&invitation).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新邀请状态失败"})
+			return
+		}
+		if err := tx.Commit().Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交邀请事务失败"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "你已是该工作区成员"})
 		return
 	}
@@ -237,9 +247,15 @@ func AcceptInvitation(c *gin.Context) {
 
 	// 4. 更改邀请状态
 	invitation.Status = "accepted"
-	tx.Save(&invitation)
-
-	tx.Commit()
+	if err := tx.Save(&invitation).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新邀请状态失败"})
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交邀请事务失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":      true,

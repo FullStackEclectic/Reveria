@@ -104,14 +104,14 @@ func UploadAsset(c *gin.Context) {
 
 	// 5. 存储文件
 	storageDir := getStorageDir()
-	if err := os.MkdirAll(storageDir, 0755); err != nil {
+	if err := os.MkdirAll(storageDir, 0750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建存储目录失败"})
 		return
 	}
 
 	storedName := uuid.New().String() + "-" + sanitizeFileName(header.Filename)
 	storagePath := filepath.Join(storageDir, storedName)
-	if err := os.WriteFile(storagePath, fileBytes, 0644); err != nil {
+	if err := os.WriteFile(storagePath, fileBytes, 0640); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存源文件失败"})
 		return
 	}
@@ -123,7 +123,7 @@ func UploadAsset(c *gin.Context) {
 		if err == nil {
 			thumbName := uuid.New().String() + "-thumb.jpg"
 			thumbPath := filepath.Join(storageDir, thumbName)
-			if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+			if err := os.WriteFile(thumbPath, thumbBytes, 0640); err == nil {
 				url := "/api/files/" + thumbName
 				thumbnailURL = &url
 			}
@@ -331,7 +331,7 @@ func DeleteAsset(c *gin.Context) {
 	}
 	if asset.ThumbnailURL != nil {
 		thumbName := strings.TrimPrefix(*asset.ThumbnailURL, "/api/files/")
-		if thumbName != "" && !strings.Contains(thumbName, "..") {
+		if thumbName != "" && !strings.ContainsAny(thumbName, `/\\`) && !strings.Contains(thumbName, "..") {
 			_ = os.Remove(filepath.Join(getStorageDir(), thumbName))
 		}
 	}

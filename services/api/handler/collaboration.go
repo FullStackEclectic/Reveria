@@ -411,7 +411,11 @@ func ApprovePortalProject(c *gin.Context) {
 	// 更新项目状态为 delivered (已交付)
 	project.Status = "delivered"
 	project.UpdatedAt = time.Now()
-	tx.Save(&project)
+	if err := tx.Save(&project).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新项目状态失败"})
+		return
+	}
 
 	// 新增一条系统评论通知
 	systemMsg := "外部客户已审批通过该项目交付版本。"
@@ -422,9 +426,16 @@ func ApprovePortalProject(c *gin.Context) {
 		Content:    systemMsg,
 		CreatedAt:  time.Now(),
 	}
-	tx.Create(&comment)
+	if err := tx.Create(&comment).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存审批记录失败"})
+		return
+	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交审批事务失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -483,13 +494,24 @@ func SyncRetouchSettings(c *gin.Context) {
 	}
 
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法开启同步事务"})
+		return
+	}
 	for _, assetSync := range req.Assets {
 		// 1. 更新 Asset 状态
 		var asset model.Asset
-		if err := tx.Where("id = ? AND project_id = ?", assetSync.AssetID, projectID).First(&asset).Error; err == nil {
-			if assetSync.SelectionStatus != "" {
-				asset.SelectionStatus = assetSync.SelectionStatus
-				tx.Save(&asset)
+		if err := tx.Where("id = ? AND project_id = ?", assetSync.AssetID, projectID).First(&asset).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "同步资产不存在或不属于当前项目"})
+			return
+		}
+		if assetSync.SelectionStatus != "" {
+			asset.SelectionStatus = assetSync.SelectionStatus
+			if err := tx.Save(&asset).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新选片状态失败"})
+				return
 			}
 		}
 
@@ -512,7 +534,11 @@ func SyncRetouchSettings(c *gin.Context) {
 					AdvancedJSON: assetSync.RetouchSettings.AdvancedJSON,
 					UpdatedAt:    time.Now(),
 				}
-				tx.Create(&settings)
+				if err := tx.Create(&settings).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建修图参数失败"})
+					return
+				}
 			} else {
 				// 更新
 				settings.Exposure = assetSync.RetouchSettings.Exposure
@@ -524,11 +550,18 @@ func SyncRetouchSettings(c *gin.Context) {
 				settings.LUTFile = assetSync.RetouchSettings.LUTFile
 				settings.AdvancedJSON = assetSync.RetouchSettings.AdvancedJSON
 				settings.UpdatedAt = time.Now()
-				tx.Save(&settings)
+				if err := tx.Save(&settings).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新修图参数失败"})
+					return
+				}
 			}
 		}
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交同步事务失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "同步成功"})
 }

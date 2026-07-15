@@ -445,7 +445,8 @@ func LoginUser(c *gin.Context) {
 
 // DevLogin 开发模式快捷登录 (POST /auth/dev-login)
 func DevLogin(c *gin.Context) {
-	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") != "true" {
+	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") != "true" ||
+		os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release" {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "开发登录未启用"})
 		return
 	}
@@ -489,7 +490,11 @@ func DevLogin(c *gin.Context) {
 		// 为该用户创建一个默认工作区
 		workspaceID := uuid.New()
 		var devSettings model.ClientSettings
-		_ = tx.First(&devSettings).Error
+		if err := tx.First(&devSettings).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取开发环境配置失败"})
+			return
+		}
 		workspace := model.Workspace{
 			ID:           workspaceID,
 			Name:         req.DisplayName + " 的个人工作区",
@@ -499,7 +504,11 @@ func DevLogin(c *gin.Context) {
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		tx.Create(&workspace)
+		if err := tx.Create(&workspace).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建开发工作区失败"})
+			return
+		}
 
 		member := model.WorkspaceMember{
 			ID:          uuid.New(),
@@ -509,13 +518,21 @@ func DevLogin(c *gin.Context) {
 			Status:      "joined",
 			JoinedAt:    time.Now(),
 		}
-		tx.Create(&member)
+		if err := tx.Create(&member).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "绑定开发工作区成员失败"})
+			return
+		}
 	} else {
 		// 已存在则强制设为 active 且为 platform admin，更新显示名称
 		user.IsPlatformAdmin = true
 		user.Status = "active"
 		user.DisplayName = &req.DisplayName
-		tx.Save(&user)
+		if err := tx.Save(&user).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新开发用户失败"})
+			return
+		}
 	}
 
 	if err := tx.Commit().Error; err != nil {

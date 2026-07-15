@@ -13,7 +13,9 @@ func registerAuthPublicRoutes(api *gin.RouterGroup) {
 	api.POST("/auth/register", handler.RegisterUser)
 	api.POST("/auth/login", handler.LoginUser)
 	api.POST("/auth/refresh", handler.RefreshSession)
-	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" {
+	// 开发登录只能在非生产环境暴露，避免配置误传导致任意用户获得超管权限。
+	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" &&
+		os.Getenv("REVERIA_ENV") != "production" && os.Getenv("GIN_MODE") != "release" {
 		api.POST("/auth/dev-login", handler.DevLogin)
 	}
 	api.GET("/version", handler.GetBuildVersion)

@@ -83,7 +83,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		}
 
 		storageDir := getStorageDir()
-		_ = os.MkdirAll(storageDir, 0755)
+		_ = os.MkdirAll(storageDir, 0750)
 
 		ext := ".jpg"
 		if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
@@ -91,7 +91,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		}
 		storedName := uuid.New().String() + ext
 		storagePath := filepath.Join(storageDir, storedName)
-		if err := os.WriteFile(storagePath, fileBytes, 0644); err != nil {
+		if err := os.WriteFile(storagePath, fileBytes, 0640); err != nil {
 			releaseStorage(task.WorkspaceID, int64(len(fileBytes)))
 			continue
 		}
@@ -104,7 +104,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			if err == nil {
 				thumbName := uuid.New().String() + "-thumb.jpg"
 				thumbPath := filepath.Join(storageDir, thumbName)
-				if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+				if err := os.WriteFile(thumbPath, thumbBytes, 0640); err == nil {
 					u := "/api/files/" + thumbName
 					localThumbURL = &u
 				}

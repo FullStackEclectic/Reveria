@@ -22,6 +22,7 @@ import (
 
 func main() {
 	log.Println("正在启动 Reveria-Go 业务分站服务端...")
+	validateRuntimeConfig()
 
 	// 1. 初始化数据库
 	database.InitDatabase()
@@ -106,6 +107,19 @@ func main() {
 	}
 }
 
+func validateRuntimeConfig() {
+	production := os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release"
+	if !production {
+		return
+	}
+	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" {
+		log.Fatal("生产环境禁止启用 REVERIA_ENABLE_DEV_LOGIN")
+	}
+	if strings.TrimSpace(os.Getenv("REVERIA_ALLOWED_ORIGINS")) == "" {
+		log.Fatal("生产环境必须配置 REVERIA_ALLOWED_ORIGINS")
+	}
+}
+
 func requestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := strings.TrimSpace(c.GetHeader("X-Request-ID"))
@@ -120,11 +134,16 @@ func requestIDMiddleware() gin.HandlerFunc {
 
 // corsMiddleware 简单的 CORS 跨域请求处理
 func corsMiddleware() gin.HandlerFunc {
-	configuredOrigins := strings.Split(os.Getenv("REVERIA_ALLOWED_ORIGINS"), ",")
-	allowedOrigins := map[string]bool{
-		"http://localhost:3000": true, "http://127.0.0.1:3000": true,
-		"http://localhost:1420": true, "http://127.0.0.1:1420": true,
-		"wails://wails": true,
+	configured := strings.TrimSpace(os.Getenv("REVERIA_ALLOWED_ORIGINS"))
+	configuredOrigins := strings.Split(configured, ",")
+	allowedOrigins := map[string]bool{}
+	// 本地开发保留常用来源；生产环境必须显式配置，避免凭据跨源暴露。
+	if os.Getenv("REVERIA_ENV") != "production" && os.Getenv("GIN_MODE") != "release" {
+		allowedOrigins["http://localhost:3000"] = true
+		allowedOrigins["http://127.0.0.1:3000"] = true
+		allowedOrigins["http://localhost:1420"] = true
+		allowedOrigins["http://127.0.0.1:1420"] = true
+		allowedOrigins["wails://wails"] = true
 	}
 	for _, origin := range configuredOrigins {
 		if normalized := strings.TrimSpace(origin); normalized != "" {
