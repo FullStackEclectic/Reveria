@@ -85,6 +85,8 @@ func InitDatabase() {
 func AutoMigrate() {
 	modelsToMigrate := []any{
 		&model.User{},
+		&model.AuthSession{},
+		&model.AuthThrottle{},
 		&model.Workspace{},
 		&model.WorkspaceMember{},
 		&model.Customer{},

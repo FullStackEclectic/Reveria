@@ -29,6 +29,8 @@ import { runTemplateGeneration } from "./templateWorkflowUtils";
 import { useProjectCanvasState } from "./useProjectCanvasState";
 import { AssetEditorWorkbench } from "../asset/AssetEditorWorkbench";
 import { FileText, FolderOpen, Link2, Maximize2, Settings, Sparkles, Trash2, Frame } from "lucide-react";
+// AI 画布样式目前与客户门户共用这份历史样式表。
+import "../portal/ClientPortalView.css";
 
 interface ProjectDetailViewProps {
   projects: ProjectSummary[];

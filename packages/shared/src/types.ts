@@ -102,11 +102,13 @@ export type CurrentUserResponse = {
 
 export type DevLoginResponse = {
   user: UserSummary;
-  access_token: string;
+  access_token?: string;
+  refresh_token?: string;
 };
 
 export type AuthTokenResponse = {
-  access_token: string;
+  access_token?: string;
+  refresh_token?: string;
 };
 
 export type BuildInfoResponse = {
@@ -157,7 +159,6 @@ export type AssetSummary = {
   asset_type: string;
   source: string;
   file_url?: string | null;
-  local_path?: string | null;
   selection_status?: string;
   thumbnail_url?: string | null;
   created_at?: string;

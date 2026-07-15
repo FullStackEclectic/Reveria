@@ -2,7 +2,7 @@ import React from "react";
 
 interface WorkflowParamPopupProps {
   selectedWorkflow: string | null;
-  paramPopupRef: React.RefObject<HTMLDivElement>;
+  paramPopupRef: React.RefObject<HTMLDivElement | null>;
   quality: "auto" | "high" | "medium" | "low";
   setQuality: (q: "auto" | "high" | "medium" | "low") => void;
   width: number;

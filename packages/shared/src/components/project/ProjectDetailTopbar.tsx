@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ArrowLeft, ChevronDown, Download, Plus, Loader2, Save, Sparkles, Undo, Redo, LogOut, MessageSquare } from "lucide-react";
 import { ProjectSummary, ProjectCanvasDocument, WorkspaceSummary, UserSummary } from "../../types";
-import { formatCredits, getJson, postJson } from "../../utils";
+import { clearAuthTokens, formatCredits, getJson, postJson } from "../../utils";
 
 interface ProjectDetailTopbarProps {
   selectedProject: ProjectSummary;
@@ -268,7 +268,7 @@ export function ProjectDetailTopbar({
                     // Quiet fail
                   } finally {
                     localStorage.removeItem("reveria.currentUser");
-                    localStorage.removeItem("reveria.accessToken");
+                    await clearAuthTokens();
                     window.location.reload();
                   }
                 }}

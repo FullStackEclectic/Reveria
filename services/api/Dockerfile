@@ -26,4 +26,6 @@ COPY --from=builder /build/reveria-api /app/reveria-api
 RUN mkdir -p /app/storage/uploads
 
 EXPOSE 4100
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=6 \
+  CMD wget -q -O - http://127.0.0.1:4100/ready >/dev/null || exit 1
 ENTRYPOINT ["/app/reveria-api"]

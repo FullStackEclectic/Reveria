@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // forUpdateSvc 条件化地在查询上添加 FOR UPDATE 行锁
@@ -16,7 +17,7 @@ func forUpdateSvc(tx *gorm.DB) *gorm.DB {
 	if database.IsSQLite {
 		return tx
 	}
-	return tx.Set("gorm:query_option", "FOR UPDATE")
+	return tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate})
 }
 
 // StandaloneBilling 本地独立计费模式实现
@@ -38,6 +39,9 @@ func (s *StandaloneBilling) GetBalance(userID uuid.UUID, workspaceID uuid.UUID) 
 // DeductCredits 本地工作区余额预扣减/冻结
 func (s *StandaloneBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUID, amount int64, reason string, task *model.GenerationTask) (bool, error) {
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
 
 	var ws model.Workspace
 	if err := forUpdateSvc(tx).Where("id = ?", workspaceID).First(&ws).Error; err != nil {
@@ -134,13 +138,18 @@ func (s *StandaloneBilling) DeductCredits(userID uuid.UUID, workspaceID uuid.UUI
 		return false, err
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
 // RefundCredits 释放或退还本地工作区额度
 func (s *StandaloneBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUID, amount int64, reason string, task *model.GenerationTask) error {
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
 
 	var ws model.Workspace
 	if err := forUpdateSvc(tx).Where("id = ?", workspaceID).First(&ws).Error; err != nil {
@@ -205,8 +214,7 @@ func (s *StandaloneBilling) RefundCredits(userID uuid.UUID, workspaceID uuid.UUI
 		return err
 	}
 
-	tx.Commit()
-	return nil
+	return tx.Commit().Error
 }
 
 func (s *StandaloneBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error {
@@ -257,7 +265,11 @@ func (s *StandaloneBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUI
 			Amount: actualAmount, BalanceAfter: ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
 			Reason: &reason, CreatedAt: time.Now(),
 		}
-		return tx.Create(&transaction).Error
+		if err := tx.Create(&transaction).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Project{}).Where("id = ? AND workspace_id = ?", task.ProjectID, workspaceID).
+			UpdateColumn("consumed_credits", gorm.Expr("consumed_credits + ?", actualAmount)).Error
 	})
 }
 

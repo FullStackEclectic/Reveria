@@ -237,6 +237,10 @@ func (b *BridgeBilling) SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, a
 			ProjectID: &task.ProjectID, TaskID: &task.ID, TransactionType: "consume",
 			Amount: task.ActualCredits, BalanceAfter: 0, Reason: &reason, CreatedAt: time.Now(),
 		}
-		return tx.Create(&transaction).Error
+		if err := tx.Create(&transaction).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Project{}).Where("id = ? AND workspace_id = ?", task.ProjectID, workspaceID).
+			UpdateColumn("consumed_credits", gorm.Expr("consumed_credits + ?", task.ActualCredits)).Error
 	})
 }

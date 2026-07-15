@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"reveria/services/api/database"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -20,18 +22,22 @@ func TestSettleCreditsReturnsUnusedFrozenBalance(t *testing.T) {
 	}
 	database.DB, database.IsSQLite = db, true
 	t.Cleanup(func() { database.DB, database.IsSQLite = previousDB, previousSQLite })
-	if err := db.AutoMigrate(&model.Workspace{}, &model.GenerationTask{}, &model.CreditTransaction{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.GenerationTask{}, &model.CreditTransaction{}); err != nil {
 		t.Fatal(err)
 	}
 
 	workspace := model.Workspace{ID: uuid.New(), Name: "billing", GiftBalance: 88}
 	userID := uuid.New()
+	project := model.Project{ID: uuid.New(), WorkspaceID: workspace.ID, Name: "billing project"}
 	task := model.GenerationTask{
-		ID: uuid.New(), WorkspaceID: workspace.ID, ProjectID: uuid.New(), UserID: &userID,
+		ID: uuid.New(), WorkspaceID: workspace.ID, ProjectID: project.ID, UserID: &userID,
 		TaskType: "text", Status: "settling", EstimatedCredits: 12,
 		FrozenCredits: 12, FrozenGiftCredits: 12,
 	}
 	if err := db.Create(&workspace).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&project).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -49,5 +55,29 @@ func TestSettleCreditsReturnsUnusedFrozenBalance(t *testing.T) {
 	}
 	if task.ActualCredits != 2 || task.FrozenCredits != 0 {
 		t.Fatalf("任务结算字段异常: %#v", task)
+	}
+	if err := db.First(&project, "id = ?", project.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if project.ConsumedCredits != 2 {
+		t.Fatalf("项目累计消耗 = %d, want 2", project.ConsumedCredits)
+	}
+}
+
+func TestForUpdateSvcUsesPostgresRowLock(t *testing.T) {
+	previousSQLite := database.IsSQLite
+	database.IsSQLite = false
+	t.Cleanup(func() { database.IsSQLite = previousSQLite })
+
+	db, err := gorm.Open(postgres.Open("host=127.0.0.1 user=test dbname=test sslmode=disable"), &gorm.Config{
+		DryRun:               true,
+		DisableAutomaticPing: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := forUpdateSvc(db).Where("id = ?", uuid.New()).Find(&model.Workspace{}).Statement.SQL.String()
+	if statement == "" || !strings.Contains(statement, "FOR UPDATE") {
+		t.Fatalf("Postgres 行锁 SQL 未生成 FOR UPDATE: %q", statement)
 	}
 }

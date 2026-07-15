@@ -19,7 +19,7 @@ func TestRunVersionedMigrationsIsIdempotent(t *testing.T) {
 	}
 	DB = db
 	t.Cleanup(func() { DB = previous })
-	if err := DB.AutoMigrate(&model.GenerationTask{}, &model.CreditTransaction{}, &model.Asset{}, &model.Workspace{}, &model.Provider{}, &model.ClientSettings{}); err != nil {
+	if err := DB.AutoMigrate(&model.GenerationTask{}, &model.CreditTransaction{}, &model.Asset{}, &model.Workspace{}, &model.Provider{}, &model.ClientSettings{}, &model.AuthSession{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RunVersionedMigrations(); err != nil {
@@ -32,7 +32,15 @@ func TestRunVersionedMigrationsIsIdempotent(t *testing.T) {
 	if err := DB.Model(&schemaMigration{}).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Fatalf("迁移记录数 = %d, want 3", count)
+	if count != 5 {
+		t.Fatalf("迁移记录数 = %d, want 5", count)
+	}
+	first := model.ClientSettings{ID: uuid.New(), SiteTitle: "first"}
+	second := model.ClientSettings{ID: uuid.New(), SiteTitle: "second"}
+	if err := DB.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&second).Error; err == nil {
+		t.Fatal("client_settings 单例索引未阻止第二条配置")
 	}
 }

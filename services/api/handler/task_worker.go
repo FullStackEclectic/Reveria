@@ -17,7 +17,10 @@ var (
 	taskWorkerOnce sync.Once
 	taskWake       = make(chan struct{}, 1)
 	taskSlots      = make(chan struct{}, 4)
+	taskWorkerID   = uuid.NewString()
 )
+
+const taskLeaseDuration = 30 * time.Second
 
 // StartTaskWorker 从数据库恢复并分发任务，数据库记录是队列的持久化事实来源。
 func StartTaskWorker(ctx context.Context) {
@@ -33,7 +36,8 @@ func StartTaskWorker(ctx context.Context) {
 				case <-ticker.C:
 				case <-taskWake:
 				}
-				dispatchPendingTasks()
+				dispatchPendingTasks(ctx)
+				recoverPollingTasks(ctx)
 				recoverStaleSettlements()
 			}
 		}()
@@ -61,24 +65,55 @@ func recoverInterruptedTasks() {
 		}
 	}
 
-	var polling []model.GenerationTask
-	if err := database.DB.Where("status = ? AND upstream_task_id IS NOT NULL", "running").Find(&polling).Error; err == nil {
-		var settings model.ClientSettings
-		if database.DB.First(&settings).Error == nil {
-			for _, task := range polling {
-				if task.UpstreamTaskID != nil {
-					go pollUpstreamTask(task, *task.UpstreamTaskID, settings)
-				}
-			}
-		}
-	}
-
 	var interrupted []model.GenerationTask
-	if err := database.DB.Where("status IN ? AND upstream_task_id IS NULL AND started_at < ?", []string{"running", "dispatching"}, cutoff).Find(&interrupted).Error; err == nil {
+	if err := database.DB.Where(
+		"status IN ? AND upstream_task_id IS NULL AND started_at < ? AND (lease_until IS NULL OR lease_until < ?)",
+		[]string{"running", "dispatching"}, cutoff, time.Now(),
+	).Find(&interrupted).Error; err == nil {
 		for _, task := range interrupted {
 			handleTaskFailure(task.ID, "WORKER_INTERRUPTED", "服务重启导致任务中断，已自动释放冻结积分")
 		}
 	}
+}
+
+func recoverPollingTasks(ctx context.Context) {
+	var tasks []model.GenerationTask
+	now := time.Now()
+	if err := database.DB.Where(
+		"status = ? AND upstream_task_id IS NOT NULL AND (lease_until IS NULL OR lease_until < ?)",
+		"running", now,
+	).Order("started_at asc").Limit(20).Find(&tasks).Error; err != nil {
+		return
+	}
+	var settings model.ClientSettings
+	if err := database.DB.First(&settings).Error; err != nil {
+		return
+	}
+	for _, task := range tasks {
+		leaseUntil := now.Add(taskLeaseDuration)
+		claimed := database.DB.Model(&model.GenerationTask{}).
+			Where("id = ? AND status = ? AND upstream_task_id IS NOT NULL AND (lease_until IS NULL OR lease_until < ?)", task.ID, "running", now).
+			Updates(map[string]any{"worker_id": taskWorkerID, "lease_until": leaseUntil})
+		if claimed.Error != nil || claimed.RowsAffected != 1 || task.UpstreamTaskID == nil {
+			continue
+		}
+		pollSettings, err := resolveTaskPollingSettings(task, settings)
+		if err != nil {
+			database.DB.Model(&model.GenerationTask{}).
+				Where("id = ? AND status = ? AND worker_id = ?", task.ID, "running", taskWorkerID).
+				Updates(map[string]any{"worker_id": nil, "lease_until": time.Now().Add(time.Minute)})
+			log.Printf("[TaskWorker] 恢复任务 %s 的上游配置失败: %v", task.ID, err)
+			continue
+		}
+		go pollUpstreamTask(ctx, task, *task.UpstreamTaskID, pollSettings)
+	}
+}
+
+func renewTaskLease(taskID uuid.UUID) bool {
+	result := database.DB.Model(&model.GenerationTask{}).
+		Where("id = ? AND status = ? AND worker_id = ?", taskID, "running", taskWorkerID).
+		Update("lease_until", time.Now().Add(taskLeaseDuration))
+	return result.Error == nil && result.RowsAffected == 1
 }
 
 func recoverStaleSettlements() {
@@ -121,7 +156,7 @@ func completeSettledTextTask(task model.GenerationTask) error {
 	})
 }
 
-func dispatchPendingTasks() {
+func dispatchPendingTasks(ctx context.Context) {
 	var tasks []model.GenerationTask
 	if err := database.DB.Where("status = ?", "pending").Order("created_at asc").Limit(8).Find(&tasks).Error; err != nil {
 		log.Printf("[TaskWorker] 扫描待处理任务失败: %v", err)
@@ -135,7 +170,13 @@ func dispatchPendingTasks() {
 		}
 		claimed := database.DB.Model(&model.GenerationTask{}).
 			Where("id = ? AND status = ?", task.ID, "pending").
-			Updates(map[string]any{"status": "dispatching", "started_at": time.Now()})
+			Updates(map[string]any{
+				"status":        "dispatching",
+				"started_at":    time.Now(),
+				"worker_id":     taskWorkerID,
+				"lease_until":   time.Now().Add(taskLeaseDuration),
+				"attempt_count": gorm.Expr("attempt_count + 1"),
+			})
 		if claimed.Error != nil || claimed.RowsAffected != 1 {
 			<-taskSlots
 			continue
@@ -149,7 +190,7 @@ func dispatchPendingTasks() {
 		task.Status = "dispatching"
 		go func(task model.GenerationTask, settings model.ClientSettings) {
 			defer func() { <-taskSlots }()
-			callUpstreamGateway(task, settings)
+			callUpstreamGateway(ctx, task, settings)
 		}(task, settings)
 	}
 }
@@ -157,7 +198,7 @@ func dispatchPendingTasks() {
 func claimTaskForSettlement(taskID uuid.UUID) (model.GenerationTask, bool) {
 	result := database.DB.Model(&model.GenerationTask{}).
 		Where("id = ? AND status IN ?", taskID, []string{"pending", "dispatching", "running"}).
-		Update("status", "settling")
+		Updates(map[string]any{"status": "settling", "worker_id": nil, "lease_until": nil})
 	if result.Error != nil || result.RowsAffected != 1 {
 		return model.GenerationTask{}, false
 	}

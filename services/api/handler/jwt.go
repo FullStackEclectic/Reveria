@@ -8,6 +8,9 @@ import (
 	"os"
 	"time"
 
+	"reveria/services/api/database"
+	"reveria/services/api/model"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -45,23 +48,28 @@ func init() {
 
 // jwtClaims 自定义 JWT Claims
 type jwtClaims struct {
-	UserID string `json:"user_id"`
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	TokenType string `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
 // accessTokenTTL Access Token 有效期
-const accessTokenTTL = 24 * time.Hour
+const accessTokenTTL = 15 * time.Minute
 
 // refreshTokenTTL Refresh Token 有效期
-const refreshTokenTTL = 7 * 24 * time.Hour
+const refreshTokenTTL = 30 * 24 * time.Hour
 
 // GenerateAccessToken 签发一个 JWT Access Token
-func GenerateAccessToken(userID uuid.UUID) (string, error) {
+func GenerateAccessToken(userID, sessionID uuid.UUID) (string, error) {
+	now := time.Now()
 	claims := jwtClaims{
-		UserID: userID.String(),
+		UserID: userID.String(), SessionID: sessionID.String(), TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenTTL)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        uuid.NewString(),
+			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "reveria-api",
 		},
 	}
@@ -71,12 +79,15 @@ func GenerateAccessToken(userID uuid.UUID) (string, error) {
 }
 
 // GenerateRefreshToken 签发一个 JWT Refresh Token（有效期更长）
-func GenerateRefreshToken(userID uuid.UUID) (string, error) {
+func GenerateRefreshToken(userID, sessionID uuid.UUID) (string, error) {
+	now := time.Now()
 	claims := jwtClaims{
-		UserID: userID.String(),
+		UserID: userID.String(), SessionID: sessionID.String(), TokenType: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(refreshTokenTTL)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        uuid.NewString(),
+			ExpiresAt: jwt.NewNumericDate(now.Add(refreshTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "reveria-api",
 		},
 	}
@@ -86,28 +97,67 @@ func GenerateRefreshToken(userID uuid.UUID) (string, error) {
 }
 
 // ParseAccessToken 校验并解析 JWT Token，返回 user_id
-func ParseAccessToken(tokenStr string) (uuid.UUID, error) {
+func parseToken(tokenStr, expectedType string) (*jwtClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(token *jwt.Token) (any, error) {
-		// 确认签名算法
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, errors.New("unexpected signing method")
 		}
 		return jwtSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("reveria-api"))
 
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 
 	claims, ok := token.Claims.(*jwtClaims)
 	if !ok || !token.Valid {
-		return uuid.Nil, errors.New("invalid token claims")
+		return nil, errors.New("invalid token claims")
 	}
+	if claims.TokenType != expectedType || claims.ID == "" {
+		return nil, errors.New("invalid token type")
+	}
+	return claims, nil
+}
 
+func parseTokenIDs(claims *jwtClaims) (uuid.UUID, uuid.UUID, error) {
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return uuid.Nil, errors.New("invalid user_id in token")
+		return uuid.Nil, uuid.Nil, errors.New("invalid user_id in token")
 	}
+	sessionID, err := uuid.Parse(claims.SessionID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, errors.New("invalid session_id in token")
+	}
+	return userID, sessionID, nil
+}
 
-	return userID, nil
+func ParseAccessTokenDetails(tokenStr string) (uuid.UUID, uuid.UUID, error) {
+	claims, err := parseToken(tokenStr, "access")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	userID, sessionID, err := parseTokenIDs(claims)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	var count int64
+	if err := database.DB.Model(&model.AuthSession{}).
+		Where("id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", sessionID, userID, time.Now()).
+		Count(&count).Error; err != nil || count != 1 {
+		return uuid.Nil, uuid.Nil, errors.New("session expired or revoked")
+	}
+	return userID, sessionID, nil
+}
+
+func ParseRefreshToken(tokenStr string) (uuid.UUID, uuid.UUID, error) {
+	claims, err := parseToken(tokenStr, "refresh")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	return parseTokenIDs(claims)
+}
+
+func ParseAccessToken(tokenStr string) (uuid.UUID, error) {
+	userID, _, err := ParseAccessTokenDetails(tokenStr)
+	return userID, err
 }

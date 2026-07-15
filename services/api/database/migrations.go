@@ -95,6 +95,30 @@ func RunVersionedMigrations() error {
 			}
 			return nil
 		}},
+		{id: "20260715_worker_leases_and_singleton_settings", run: func(tx *gorm.DB) error {
+			statements := []string{
+				"CREATE INDEX IF NOT EXISTS generation_tasks_worker_lease_idx ON generation_tasks(status, lease_until)",
+				"CREATE UNIQUE INDEX IF NOT EXISTS client_settings_singleton_idx ON client_settings ((1))",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+		{id: "20260715_revocable_auth_sessions", run: func(tx *gorm.DB) error {
+			statements := []string{
+				"CREATE INDEX IF NOT EXISTS auth_sessions_user_active_idx ON auth_sessions(user_id, revoked_at, expires_at)",
+				"CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions(expires_at)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
 	}
 
 	for _, migration := range migrations {

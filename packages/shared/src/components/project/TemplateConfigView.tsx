@@ -14,7 +14,7 @@ interface TemplateConfigViewProps {
   uploadedImages: string[];
   setUploadedImages: (urls: string[]) => void;
   isUploading: boolean;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
   advParams: AIAdvancedParams;
   setAdvParams: (val: AIAdvancedParams) => void;

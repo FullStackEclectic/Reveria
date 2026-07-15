@@ -4,6 +4,7 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  envDir: "../..",
   resolve: {
     alias: {
       "@reveria/shared": path.resolve(__dirname, "../../packages/shared"),
@@ -18,4 +19,3 @@ export default defineConfig({
   },
   clearScreen: false,
 });
-

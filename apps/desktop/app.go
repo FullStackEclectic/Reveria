@@ -2,14 +2,22 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/zalando/go-keyring"
 )
+
+const desktopCredentialService = "Reveria"
 
 // App struct
 type App struct {
@@ -32,6 +40,41 @@ func (a *App) Greet(name string) string {
 	return CallGreet(name)
 }
 
+func (a *App) SaveAuthTokens(accessToken, refreshToken string) error {
+	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(refreshToken) == "" {
+		return os.ErrInvalid
+	}
+	if err := keyring.Set(desktopCredentialService, "access_token", accessToken); err != nil {
+		return err
+	}
+	if err := keyring.Set(desktopCredentialService, "refresh_token", refreshToken); err != nil {
+		_ = keyring.Delete(desktopCredentialService, "access_token")
+		return err
+	}
+	return nil
+}
+
+func (a *App) LoadAuthTokens() map[string]string {
+	tokens := map[string]string{}
+	if token, err := keyring.Get(desktopCredentialService, "access_token"); err == nil {
+		tokens["access_token"] = token
+	}
+	if token, err := keyring.Get(desktopCredentialService, "refresh_token"); err == nil {
+		tokens["refresh_token"] = token
+	}
+	return tokens
+}
+
+func (a *App) ClearAuthTokens() error {
+	var firstErr error
+	for _, account := range []string{"access_token", "refresh_token"} {
+		if err := keyring.Delete(desktopCredentialService, account); err != nil && err != keyring.ErrNotFound && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // SelectSavePath 弹出保存文件对话框，返回用户选择的路径，取消返回空字符串
 func (a *App) SelectSavePath(defaultFilename string) string {
 	path, err := wailsRuntime.SaveFileDialog(a.ctx, wailsRuntime.SaveDialogOptions{
@@ -50,6 +93,93 @@ func (a *App) SelectSavePath(defaultFilename string) string {
 	return path
 }
 
+const defaultDesktopCacheLimit int64 = 512 * 1024 * 1024
+
+func desktopCacheLimit() int64 {
+	if raw := strings.TrimSpace(os.Getenv("REVERIA_DESKTOP_MAX_CACHE_FILE_BYTES")); raw != "" {
+		if value, err := strconv.ParseInt(raw, 10, 64); err == nil && value > 0 {
+			return value
+		}
+	}
+	return defaultDesktopCacheLimit
+}
+
+func desktopAssetCacheDir() (string, error) {
+	root, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, "Reveria", "assets")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func downloadAssetToCache(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || parsed.User != nil {
+		return "", &url.Error{Op: "download", URL: rawURL, Err: os.ErrInvalid}
+	}
+	cacheDir, err := desktopAssetCacheDir()
+	if err != nil {
+		return "", err
+	}
+	ext := strings.ToLower(filepath.Ext(parsed.Path))
+	if len(ext) > 10 || strings.ContainsAny(ext, `/\\`) {
+		ext = ""
+	}
+	cacheIdentity := parsed.Scheme + "://" + parsed.Host + parsed.Path
+	digest := sha256.Sum256([]byte(cacheIdentity))
+	cachePath := filepath.Join(cacheDir, hex.EncodeToString(digest[:])+ext)
+	if info, statErr := os.Stat(cachePath); statErr == nil && info.Size() > 0 {
+		return cachePath, nil
+	}
+
+	requestCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", &url.Error{Op: "download", URL: rawURL, Err: os.ErrPermission}
+	}
+
+	tempFile, err := os.CreateTemp(cacheDir, ".reveria-download-*")
+	if err != nil {
+		return "", err
+	}
+	tempPath := tempFile.Name()
+	committed := false
+	defer func() {
+		_ = tempFile.Close()
+		if !committed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	written, err := io.Copy(tempFile, io.LimitReader(resp.Body, desktopCacheLimit()+1))
+	if err != nil {
+		return "", err
+	}
+	if written > desktopCacheLimit() {
+		return "", os.ErrInvalid
+	}
+	if err := tempFile.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, cachePath); err != nil {
+		return "", err
+	}
+	committed = true
+	return cachePath, nil
+}
+
 // ExportRetouchedImage 导出精修图片，返回 0 表示成功，负数表示错误码
 func (a *App) ExportRetouchedImage(
 	fileURL string,
@@ -64,74 +194,15 @@ func (a *App) ExportRetouchedImage(
 	lutFile string,
 ) int32 {
 	inputPath := localPath
-
-	// 如果 localPath 为空或者文件不存在，则从 fileURL 下载到临时文件
-	if inputPath == "" {
+	if inputPath == "" || func() bool { _, err := os.Stat(inputPath); return err != nil }() {
 		if fileURL == "" {
-			return -104 // 缺少输入源
+			return -104
 		}
-
-		fullURL := fileURL
-		if strings.HasPrefix(fileURL, "/") {
-			fullURL = "http://127.0.0.1:4100" + fileURL
-		}
-
-		resp, err := http.Get(fullURL)
+		cachedPath, err := downloadAssetToCache(fileURL)
 		if err != nil {
-			return -105 // 下载失败
+			return -105
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return -106 // 响应状态错误
-		}
-
-		ext := filepath.Ext(fileURL)
-		if ext == "" {
-			ext = ".jpg"
-		}
-		tmpFile, err := os.CreateTemp("", "reveria-retouch-*"+ext)
-		if err != nil {
-			return -107 // 创建临时文件失败
-		}
-		tmpPath := tmpFile.Name()
-		defer os.Remove(tmpPath)
-		defer tmpFile.Close()
-
-		_, err = io.Copy(tmpFile, resp.Body)
-		if err != nil {
-			return -108 // 保存临时文件失败
-		}
-		_ = tmpFile.Close() // 提前关闭以释放句柄
-
-		inputPath = tmpPath
-	} else {
-		// 校验本地文件是否存在，不存在则尝试用 fileURL 下载
-		if _, err := os.Stat(inputPath); os.IsNotExist(err) {
-			if fileURL != "" {
-				fullURL := fileURL
-				if strings.HasPrefix(fileURL, "/") {
-					fullURL = "http://127.0.0.1:4100" + fileURL
-				}
-				resp, err := http.Get(fullURL)
-				if err == nil && resp.StatusCode == http.StatusOK {
-					ext := filepath.Ext(fileURL)
-					if ext == "" {
-						ext = ".jpg"
-					}
-					tmpFile, err := os.CreateTemp("", "reveria-retouch-*"+ext)
-					if err == nil {
-						tmpPath := tmpFile.Name()
-						defer os.Remove(tmpPath)
-						_, copyErr := io.Copy(tmpFile, resp.Body)
-						tmpFile.Close()
-						if copyErr == nil {
-							inputPath = tmpPath
-						}
-					}
-				}
-			}
-		}
+		inputPath = cachedPath
 	}
 
 	// 再次确认文件是否存在
@@ -160,4 +231,3 @@ func (a *App) ExportRetouchedImage(
 
 	return ret
 }
-

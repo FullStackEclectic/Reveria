@@ -45,16 +45,16 @@ interface WorkflowPromptConsoleProps {
   costPoints: number;
   isRunnable: boolean;
   getAvailableModels: () => { id: string; name: string; display_name: string }[];
-  paramBadgeRef: React.RefObject<HTMLButtonElement>;
-  paramPopupRef: React.RefObject<HTMLDivElement>;
-  modelTriggerRef: React.RefObject<HTMLButtonElement>;
-  modelDropdownRef: React.RefObject<HTMLDivElement>;
-  refMenuTriggerRef: React.RefObject<HTMLDivElement>;
-  fileRefInputRef: React.RefObject<HTMLInputElement>;
+  paramBadgeRef: React.RefObject<HTMLButtonElement | null>;
+  paramPopupRef: React.RefObject<HTMLDivElement | null>;
+  modelTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  modelDropdownRef: React.RefObject<HTMLDivElement | null>;
+  refMenuTriggerRef: React.RefObject<HTMLDivElement | null>;
+  fileRefInputRef: React.RefObject<HTMLInputElement | null>;
   handleUploadRefImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
   imageAssets: AssetSummary[];
   quickTasks: readonly { type: WorkflowType; label: string }[];
-  textareaRef: React.RefObject<HTMLTextAreaElement>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 export const WorkflowPromptConsole: React.FC<WorkflowPromptConsoleProps> = ({

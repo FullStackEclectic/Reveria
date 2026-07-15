@@ -475,7 +475,7 @@ export function TemplateSelectModal({
             uploadedImages={uploadedImages}
             setUploadedImages={setUploadedImages}
             isUploading={isUploading}
-            fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
+            fileInputRef={fileInputRef}
             handleUploadImage={handleUploadImage}
             advParams={advParams}
             setAdvParams={setAdvParams}

@@ -37,7 +37,17 @@ func main() {
 
 	// 3. 开启 Gin 服务
 	r := gin.Default()
+	trustedProxies := make([]string, 0)
+	for _, proxy := range strings.Split(os.Getenv("REVERIA_TRUSTED_PROXIES"), ",") {
+		if normalized := strings.TrimSpace(proxy); normalized != "" {
+			trustedProxies = append(trustedProxies, normalized)
+		}
+	}
+	if err := r.SetTrustedProxies(trustedProxies); err != nil {
+		log.Fatalf("配置可信反向代理失败: %v", err)
+	}
 
+	r.Use(requestIDMiddleware())
 	// 简单的 CORS 跨域中间件
 	r.Use(corsMiddleware())
 
@@ -47,6 +57,20 @@ func main() {
 			"status":  "ok",
 			"message": "Reveria Go API 运行正常",
 		})
+	})
+	r.GET("/ready", func(c *gin.Context) {
+		sqlDB, err := database.DB.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "message": "数据库连接不可用"})
+			return
+		}
+		checkCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := sqlDB.PingContext(checkCtx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "message": "数据库健康检查失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
 	// 注册所有业务路由
@@ -82,6 +106,18 @@ func main() {
 	}
 }
 
+func requestIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := strings.TrimSpace(c.GetHeader("X-Request-ID"))
+		if requestID == "" {
+			requestID = uuid.NewString()
+		}
+		c.Set("request_id", requestID)
+		c.Header("X-Request-ID", requestID)
+		c.Next()
+	}
+}
+
 // corsMiddleware 简单的 CORS 跨域请求处理
 func corsMiddleware() gin.HandlerFunc {
 	configuredOrigins := strings.Split(os.Getenv("REVERIA_ALLOWED_ORIGINS"), ",")
@@ -99,9 +135,10 @@ func corsMiddleware() gin.HandlerFunc {
 		origin := c.GetHeader("Origin")
 		if origin != "" && allowedOrigins[origin] {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			c.Writer.Header().Set("Vary", "Origin")
 		}
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Reveria-Client, X-Reveria-Refresh-Token, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
 
 		if c.Request.Method == "OPTIONS" && origin != "" && !allowedOrigins[origin] {
@@ -121,14 +158,18 @@ func initDefaultSettings() {
 	var count int64
 	database.DB.Model(&model.ClientSettings{}).Count(&count)
 	if count == 0 {
+		siteTitle := strings.TrimSpace(os.Getenv("REVERIA_SITE_TITLE"))
+		if siteTitle == "" {
+			siteTitle = "Reveria"
+		}
 		settings := model.ClientSettings{
 			ID:                    uuid.New(),
-			SiteTitle:             "Reveria AI 算力中心",
-			SiteAnnouncement:      "欢迎来到分站！本站已支持百万 Token 精细计费和全浮点大本位钱包系统。",
-			UpstreamAPIURL:        "https://api.12zx.com", // 默认 12ZX-AI 上游网关
-			UpstreamAPIKey:        "sk-default-placeholder-key",
+			SiteTitle:             siteTitle,
+			SiteAnnouncement:      strings.TrimSpace(os.Getenv("REVERIA_SITE_ANNOUNCEMENT")),
+			UpstreamAPIURL:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_URL")),
+			UpstreamAPIKey:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_KEY")),
 			AllowUserRegister:     true,
-			GiftCreditsOnRegister: 100, // 默认新注册用户送 100 积分
+			GiftCreditsOnRegister: 0,
 			PriceRate:             1.00,
 			BillingMode:           "standalone",
 			BridgeMainStationURL:  "",
@@ -145,5 +186,7 @@ func initDefaultSettings() {
 		} else {
 			log.Println("默认 ClientSettings 设置记录初始化完成。")
 		}
+	} else if count > 1 {
+		log.Fatalf("client_settings 存在 %d 条记录，系统配置必须保持单例，请先合并重复配置", count)
 	}
 }

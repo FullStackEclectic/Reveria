@@ -12,6 +12,7 @@ import (
 func registerAuthPublicRoutes(api *gin.RouterGroup) {
 	api.POST("/auth/register", handler.RegisterUser)
 	api.POST("/auth/login", handler.LoginUser)
+	api.POST("/auth/refresh", handler.RefreshSession)
 	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" {
 		api.POST("/auth/dev-login", handler.DevLogin)
 	}
@@ -22,7 +23,6 @@ func registerAuthPublicRoutes(api *gin.RouterGroup) {
 func registerAuthProtectedRoutes(auth *gin.RouterGroup) {
 	auth.GET("/auth/me", handler.CurrentUser)
 	auth.POST("/auth/logout", handler.LogoutUser)
-	auth.POST("/auth/refresh", handler.RefreshSession)
 	auth.GET("/workspaces", handler.ListWorkspaces)
 	auth.POST("/workspaces", handler.CreateWorkspace)
 	auth.POST("/workspaces/:workspace_id/invitations", handler.CreateInvitation)

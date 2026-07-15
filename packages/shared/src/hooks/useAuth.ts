@@ -1,10 +1,12 @@
 import { useState, FormEvent, useEffect } from "react";
-import { UserSummary, DevLoginResponse } from "../types";
+import { UserSummary, DevLoginResponse, CurrentUserResponse } from "../types";
 import { 
   postJson, 
   CURRENT_USER_STORAGE_KEY, 
-  ACCESS_TOKEN_STORAGE_KEY, 
-  readCachedUser 
+  readCachedUser,
+  getJson,
+  persistAuthTokens,
+  clearAuthTokens,
 } from "../utils";
 
 interface UseAuthProps {
@@ -44,6 +46,14 @@ export function useAuth({
     if (cached) {
       setCurrentUser(cached);
     }
+    try {
+      const response = await getJson<CurrentUserResponse>("/api/auth/me");
+      setCurrentUser(response.user);
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(response.user));
+    } catch {
+      setCurrentUser(null);
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    }
   }
 
   useEffect(() => {
@@ -59,9 +69,9 @@ export function useAuth({
       console.error("Logout request failed:", err);
     }
     if (typeof window !== "undefined") {
-      localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
       localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
     }
+    await clearAuthTokens();
     setCurrentUser(null);
     if (onLogoutSuccess) {
       void onLogoutSuccess();
@@ -85,9 +95,7 @@ export function useAuth({
               email: loginForm.email,
               password: loginForm.password,
             });
-      if (response.access_token && typeof window !== "undefined") {
-        localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, response.access_token);
-      }
+      await persistAuthTokens(response.access_token, response.refresh_token);
       if (typeof window !== "undefined") {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(response.user));
       }
@@ -141,9 +149,7 @@ export function useAuth({
         display_name: displayName,
         email: email,
       });
-      if (response.access_token && typeof window !== "undefined") {
-        localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, response.access_token);
-      }
+      await persistAuthTokens(response.access_token, response.refresh_token);
       if (typeof window !== "undefined") {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(response.user));
       }

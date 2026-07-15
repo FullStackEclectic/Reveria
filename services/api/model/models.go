@@ -22,6 +22,27 @@ type User struct {
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// AuthSession 可撤销登录会话。Refresh Token 仅保存哈希，原文只返回给客户端或写入 HttpOnly Cookie。
+type AuthSession struct {
+	ID               uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID           uuid.UUID  `gorm:"type:uuid;index;not null" json:"user_id"`
+	RefreshTokenHash string     `gorm:"type:varchar(64);uniqueIndex;not null" json:"-"`
+	ClientType       string     `gorm:"type:varchar(24);not null;index" json:"client_type"`
+	ExpiresAt        time.Time  `gorm:"index;not null" json:"expires_at"`
+	LastUsedAt       time.Time  `gorm:"not null" json:"last_used_at"`
+	RevokedAt        *time.Time `gorm:"index" json:"revoked_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type AuthThrottle struct {
+	Key             string     `gorm:"type:varchar(64);primaryKey"`
+	AttemptCount    int        `gorm:"default:0;not null"`
+	WindowStartedAt time.Time  `gorm:"not null"`
+	BlockedUntil    *time.Time `gorm:"index"`
+	UpdatedAt       time.Time  `gorm:"not null"`
+}
+
 // Workspace 工作区表
 type Workspace struct {
 	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
@@ -113,7 +134,7 @@ type Asset struct {
 	AssetType       string     `gorm:"type:varchar(32);not null;index" json:"asset_type"`
 	Source          string     `gorm:"type:varchar(32);not null" json:"source"`
 	FileURL         string     `gorm:"type:text;not null" json:"file_url"`
-	LocalPath       *string    `gorm:"type:text" json:"local_path"`                                      // 本地硬盘照片路径（仅客户端有用）
+	LocalPath       *string    `gorm:"type:text" json:"-"`                                               // 历史字段；客户端本地路径不得同步到云端
 	SelectionStatus string     `gorm:"type:varchar(32);default:'pending';index" json:"selection_status"` // 客户选片状态：pending / approved / rejected
 	ThumbnailURL    *string    `gorm:"type:text" json:"thumbnail_url"`
 	Metadata        *string    `gorm:"type:jsonb" json:"metadata"`
@@ -144,6 +165,9 @@ type GenerationTask struct {
 	ErrorCode             *string    `gorm:"type:varchar(80)" json:"error_code"`
 	ErrorMessage          *string    `gorm:"type:text" json:"error_message"`
 	IdempotencyKey        *string    `gorm:"type:varchar(120)" json:"idempotency_key"`
+	WorkerID              *string    `gorm:"type:varchar(120);index" json:"-"`
+	LeaseUntil            *time.Time `gorm:"index" json:"-"`
+	AttemptCount          int        `gorm:"default:0;not null" json:"attempt_count"`
 	CreatedAt             time.Time  `json:"created_at"`
 	StartedAt             *time.Time `json:"started_at"`
 	CompletedAt           *time.Time `json:"completed_at"`

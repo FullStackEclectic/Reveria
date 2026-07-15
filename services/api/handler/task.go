@@ -47,6 +47,40 @@ type CompatCreateTaskRequest struct {
 	IdempotencyKey string    `json:"idempotency_key"`
 }
 
+func resolveEstimatedCredits(taskType, modelIdentifier string) (int64, error) {
+	var rule model.PricingRule
+	if strings.TrimSpace(modelIdentifier) != "" {
+		err := database.DB.Where(
+			"enabled = ? AND model_id = ? AND (task_type IS NULL OR task_type = ?)",
+			true, modelIdentifier, taskType,
+		).Order("updated_at desc").First(&rule).Error
+		if err == nil && rule.MinCredits != nil && *rule.MinCredits > 0 {
+			return *rule.MinCredits, nil
+		}
+	}
+	if err := database.DB.Where(
+		"enabled = ? AND model_id IS NULL AND (task_type IS NULL OR task_type = ?)", true, taskType,
+	).Order("updated_at desc").First(&rule).Error; err == nil && rule.MinCredits != nil && *rule.MinCredits > 0 {
+		return *rule.MinCredits, nil
+	}
+
+	if strings.TrimSpace(modelIdentifier) != "" {
+		var configuredModel model.Model
+		lookupErr := database.DB.Where("id = ? AND enabled = true", modelIdentifier).First(&configuredModel).Error
+		if lookupErr != nil {
+			lookupErr = database.DB.Where("name = ? AND enabled = true", modelIdentifier).First(&configuredModel).Error
+		}
+		if lookupErr == nil && configuredModel.CreditsCost > 0 {
+			credits := int64(configuredModel.CreditsCost + 0.5)
+			if credits < 1 {
+				credits = 1
+			}
+			return credits, nil
+		}
+	}
+	return 0, fmt.Errorf("任务类型 %s 尚未配置有效价格", taskType)
+}
+
 // EstimateTask 估算任务积分 (POST /tasks/estimate)
 func EstimateTask(c *gin.Context) {
 	var req TaskEstimateRequest
@@ -62,13 +96,10 @@ func EstimateTask(c *gin.Context) {
 		return
 	}
 
-	// 简单的积分定价估算：生图 10 点，视频 50 点，文本 2 点
-	var estCredits int64 = 2
-	switch req.TaskType {
-	case "image_generation", "text_to_image":
-		estCredits = 10
-	case "video_generation", "image_to_video":
-		estCredits = 50
+	estCredits, err := resolveEstimatedCredits(req.TaskType, req.ModelName)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"success": false, "message": err.Error()})
+		return
 	}
 
 	// 支持根据站长加价率进行换算
@@ -147,32 +178,13 @@ func CreateTask(c *gin.Context) {
 		}
 	}
 
-	// 2. 估算与扣除/冻结积分
-	var estCredits int64 = 12 // 默认生图估算 12 点
-	if req.TaskType == "video_generation" || req.TaskType == "image_to_video" {
-		estCredits = 30
-	} else if req.TaskType == "text" {
-		estCredits = 2
-	}
-
-	// 动态关联管理后台设置的模型定价 (CreditsCost)
-	if req.SelectedModel != "" {
-		var m model.Model
-		if err := database.DB.Where("id = ?", req.SelectedModel).First(&m).Error; err != nil {
-			// 兜底匹配：若是模板推荐的模型ID没有带 provider_uuid 前缀，则使用 name 进行匹配
-			_ = database.DB.Where("name = ? AND enabled = true", req.SelectedModel).First(&m).Error
-		}
-		if m.CreditsCost > 0 {
-			estCredits = int64(m.CreditsCost + 0.5)
-		}
-	}
-
 	var settings model.ClientSettings
-	_ = database.DB.First(&settings).Error
+	if err := database.DB.First(&settings).Error; err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "系统计费配置不可用"})
+		return
+	}
 
-	if settings.BillingMode != "bridge" {
-		estCredits = int64(float64(estCredits) * settings.PriceRate)
-	} else {
+	if settings.BillingMode == "bridge" {
 		// 桥接模式下的默认模型分配：如果 SelectedModel 为空，则从已配置的逗号分隔列表中提取第一个作为兜底
 		if req.SelectedModel == "" {
 			var fallbackModel string
@@ -186,6 +198,19 @@ func CreateTask(c *gin.Context) {
 				parts := strings.Split(fallbackModel, ",")
 				req.SelectedModel = strings.TrimSpace(parts[0])
 			}
+		}
+	}
+
+	// 2. 估算与扣除/冻结积分。价格必须来自模型或定价规则，禁止使用代码内默认价格。
+	estCredits, err := resolveEstimatedCredits(req.TaskType, req.SelectedModel)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if settings.BillingMode != "bridge" {
+		estCredits = int64(float64(estCredits) * settings.PriceRate)
+		if estCredits < 1 {
+			estCredits = 1
 		}
 	}
 
@@ -253,7 +278,7 @@ func CreateTask(c *gin.Context) {
 	// 3. 调用 12ZX-AI 网关
 	if c.FullPath() == "/api/workflows/image-generation" {
 		// 生图工作流兼容接口采用同步方式等待网关调用结束，这样能即时返回生图任务的状态或资产结果给画板展示
-		callUpstreamGateway(task, settings)
+		callUpstreamGateway(c.Request.Context(), task, settings)
 
 		var finalTask model.GenerationTask
 		database.DB.Where("id = ?", task.ID).First(&finalTask)

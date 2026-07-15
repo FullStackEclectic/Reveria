@@ -12,29 +12,33 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AuthMiddleware JWT 鉴权中间件
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		tokenStr := ""
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if !(len(parts) == 2 && parts[0] == "Bearer") {
+				c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Authorization 格式错误"})
+				c.Abort()
+				return
+			}
+			tokenStr = strings.TrimSpace(parts[1])
+		} else if cookieToken, err := c.Cookie(accessCookieName); err == nil {
+			tokenStr = strings.TrimSpace(cookieToken)
+		}
+		if tokenStr == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未提供登录凭证"})
 			c.Abort()
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if !(len(parts) == 2 && parts[0] == "Bearer") {
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Authorization 格式错误"})
-			c.Abort()
-			return
-		}
-
-		tokenStr := strings.TrimSpace(parts[1])
-
 		// 使用 JWT 校验 Token 签名和有效期
-		userID, err := ParseAccessToken(tokenStr)
+		userID, sessionID, err := ParseAccessTokenDetails(tokenStr)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "登录凭证无效或已过期，请重新登录"})
 			c.Abort()
@@ -50,6 +54,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("user_id", userID)
+		c.Set("session_id", sessionID)
 		c.Next()
 	}
 }
@@ -179,5 +184,5 @@ func forUpdate(tx *gorm.DB) *gorm.DB {
 	if database.IsSQLite {
 		return tx
 	}
-	return tx.Set("gorm:query_option", "FOR UPDATE")
+	return tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate})
 }

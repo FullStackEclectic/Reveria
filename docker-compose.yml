@@ -37,6 +37,12 @@ services:
       - REVERIA_ALLOWED_ORIGINS=${REVERIA_ALLOWED_ORIGINS:-http://127.0.0.1:14200}
     ports:
       - "127.0.0.1:14100:4100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4100/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
     volumes:
       - ./services/api/storage/uploads:/app/storage/uploads
     networks:
@@ -48,6 +54,9 @@ services:
       dockerfile: apps/web-next/Dockerfile
     container_name: reveria-web
     restart: unless-stopped
+    depends_on:
+      reveria-api:
+        condition: service_healthy
     environment:
       - API_INTERNAL_URL=http://reveria-api:4100
     ports:

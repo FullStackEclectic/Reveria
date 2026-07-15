@@ -16,7 +16,6 @@ import (
 	"reveria/services/api/service"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // handleTaskSuccess 任务成功，下载素材并退还剩余积分
@@ -208,35 +207,17 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		return
 	}
 
-	// 4. 积分正式扣减结算事务
+	// 4. 通过统一账务服务完成正式结算，避免不同任务类型形成两套账务语义。
 	task.Status = "succeeded"
 	task.OutputPayload = &lastMetaStr
 	task.CompletedAt = ptrTime(time.Now())
-
-	// 将预扣积分从 workspace 的冻结状态标记为已消费，这里释放冻结字段
-	task.ActualCredits = task.EstimatedCredits
-	task.FrozenCredits = 0
-	task.FrozenGiftCredits = 0
-	task.FrozenRefundCredits = 0
-	task.FrozenRechargeCredits = 0
-	// 记录正式消费流水
 	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
-	if err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&task).Error; err != nil {
-			return err
-		}
-		var ws model.Workspace
-		if err := tx.Where("id = ?", task.WorkspaceID).First(&ws).Error; err != nil {
-			return err
-		}
-		transaction := model.CreditTransaction{
-			ID: uuid.New(), WorkspaceID: task.WorkspaceID, UserID: task.UserID,
-			ProjectID: &task.ProjectID, TaskID: &task.ID, TransactionType: "consume",
-			Amount: task.ActualCredits, BalanceAfter: ws.RechargeBalance + ws.GiftBalance + ws.RefundBalance,
-			Reason: &consumeReason, CreatedAt: time.Now(),
-		}
-		return tx.Create(&transaction).Error
-	}); err != nil {
+	if task.UserID == nil {
+		failClaimedTask(task, "TASK_USER_MISSING", "生成任务缺少创建用户")
+		return
+	}
+	billingSvc := service.GetBillingService()
+	if err := billingSvc.SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, consumeReason, &task); err != nil {
 		log.Printf("[TaskSucceeded] 任务 %s 结算事务失败: %v", task.ID, err)
 		return
 	}

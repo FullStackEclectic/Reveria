@@ -21,15 +21,74 @@ import {
   PricingRuleSummary,
 } from "./types";
 
-export const API_BASE = typeof window !== "undefined"
-  ? (window.location.hostname === "localhost" || 
-     window.location.hostname === "127.0.0.1" || 
-     window.location.hostname.includes("wails")
-       ? "http://127.0.0.1:4100" 
-       : "")
-  : "http://127.0.0.1:4100";
+type ReveriaRuntimeWindow = Window & {
+  __REVERIA_API_BASE__?: string;
+  go?: unknown;
+};
+
+function resolveApiBase() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const runtimeWindow = window as ReveriaRuntimeWindow;
+  const configuredBase = runtimeWindow.__REVERIA_API_BASE__?.trim();
+  if (configuredBase) {
+    return configuredBase.replace(/\/$/, "");
+  }
+  return "";
+}
+
+export let API_BASE = resolveApiBase();
+
+export function configureApiBase(baseURL: string) {
+  API_BASE = baseURL.trim().replace(/\/$/, "");
+}
 export const CURRENT_USER_STORAGE_KEY = "reveria.currentUser";
-export const ACCESS_TOKEN_STORAGE_KEY = "reveria.accessToken";
+export const ACCESS_TOKEN_STORAGE_KEY = "reveria.accessToken"; // 仅用于清理历史版本遗留值
+if (typeof window !== "undefined") {
+  localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+}
+
+type DesktopAuthRuntime = {
+  accessToken: string;
+  refreshToken: string;
+  saveTokens?: (accessToken: string, refreshToken: string) => Promise<void>;
+  clearTokens?: () => Promise<void>;
+};
+
+let desktopAuthRuntime: DesktopAuthRuntime | null = null;
+let refreshRequest: Promise<boolean> | null = null;
+
+export function configureDesktopAuthRuntime(runtime: DesktopAuthRuntime) {
+  desktopAuthRuntime = runtime;
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  }
+}
+
+export function isDesktopAuthRuntime() {
+  return desktopAuthRuntime !== null;
+}
+
+export async function persistAuthTokens(accessToken?: string, refreshToken?: string) {
+  if (!desktopAuthRuntime || !accessToken || !refreshToken) {
+    return;
+  }
+  desktopAuthRuntime.accessToken = accessToken;
+  desktopAuthRuntime.refreshToken = refreshToken;
+  await desktopAuthRuntime.saveTokens?.(accessToken, refreshToken);
+}
+
+export async function clearAuthTokens() {
+  if (desktopAuthRuntime) {
+    desktopAuthRuntime.accessToken = "";
+    desktopAuthRuntime.refreshToken = "";
+    await desktopAuthRuntime.clearTokens?.();
+  }
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  }
+}
 
 export function parseJwt(token: string) {
   try {
@@ -329,45 +388,93 @@ export function isWorkflowRunnable(workflow: WorkflowType) {
 }
 
 export function withAuthHeaders(headers: Record<string, string> = {}) {
-  if (typeof window === "undefined") {
-    return headers;
+  if (desktopAuthRuntime) {
+    return {
+      ...headers,
+      "X-Reveria-Client": "desktop",
+      ...(desktopAuthRuntime.accessToken
+        ? { Authorization: `Bearer ${desktopAuthRuntime.accessToken}` }
+        : {}),
+    };
   }
-  const token = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-  if (!token) {
-    return headers;
-  }
-  return {
-    ...headers,
-    Authorization: `Bearer ${token}`,
-  };
+  return headers;
 }
 
-function handleHttpStatus(status: number) {
+async function handleHttpStatus(status: number) {
   if (status === 401) {
+    await clearAuthTokens();
     if (typeof window !== "undefined") {
-      localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
       localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
       window.dispatchEvent(new Event("reveria-unauthorized"));
     }
   }
 }
 
+async function refreshAuthentication() {
+  if (refreshRequest) {
+    return refreshRequest;
+  }
+  refreshRequest = (async () => {
+    const headers: Record<string, string> = {};
+    if (desktopAuthRuntime) {
+      if (!desktopAuthRuntime.refreshToken) {
+        return false;
+      }
+      headers["X-Reveria-Client"] = "desktop";
+      headers["X-Reveria-Refresh-Token"] = desktopAuthRuntime.refreshToken;
+    }
+    const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      return false;
+    }
+    if (desktopAuthRuntime) {
+      const tokens = await response.json() as { access_token?: string; refresh_token?: string };
+      if (!tokens.access_token || !tokens.refresh_token) {
+        return false;
+      }
+      await persistAuthTokens(tokens.access_token, tokens.refresh_token);
+    }
+    return true;
+  })().finally(() => {
+    refreshRequest = null;
+  });
+  return refreshRequest;
+}
+
+async function authorizedFetch(path: string, init: RequestInit = {}, allowRefresh = true) {
+  const headers = withAuthHeaders(init.headers as Record<string, string> | undefined);
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+  const isAuthEntry = path === "/api/auth/login" || path === "/api/auth/register" || path === "/api/auth/dev-login" || path === "/api/auth/refresh";
+  if (response.status === 401 && allowRefresh && !isAuthEntry && await refreshAuthentication()) {
+    return authorizedFetch(path, init, false);
+  }
+  return response;
+}
+
 export async function getJson<T>(
   path: string,
   headers?: Record<string, string>,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await authorizedFetch(path, {
     headers: withAuthHeaders(headers),
   });
   if (!response.ok) {
-    handleHttpStatus(response.status);
+    await handleHttpStatus(response.status);
     throw new Error(`GET ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
 }
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await authorizedFetch(path, {
     method: "POST",
     headers: withAuthHeaders({
       "Content-Type": "application/json",
@@ -375,7 +482,7 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    handleHttpStatus(response.status);
+    await handleHttpStatus(response.status);
     throw new Error(`POST ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
@@ -385,7 +492,7 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function putJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await authorizedFetch(path, {
     method: "PUT",
     headers: withAuthHeaders({
       "Content-Type": "application/json",
@@ -393,20 +500,20 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    handleHttpStatus(response.status);
+    await handleHttpStatus(response.status);
     throw new Error(`PUT ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
 }
 
 export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await authorizedFetch(path, {
     method: "DELETE",
     headers: withAuthHeaders(body ? { "Content-Type": "application/json" } : undefined),
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
-    handleHttpStatus(response.status);
+    await handleHttpStatus(response.status);
     throw new Error(`DELETE ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
@@ -416,13 +523,13 @@ export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
-  const response = await fetch(`${API_BASE}/api/assets/upload`, {
+  const response = await authorizedFetch("/api/assets/upload", {
     method: "POST",
     headers: withAuthHeaders(),
     body: formData,
   });
   if (!response.ok) {
-    handleHttpStatus(response.status);
+    await handleHttpStatus(response.status);
     throw new Error(`POST /api/assets/upload failed with ${response.status}`);
   }
   return (await response.json()) as AssetSummary;
@@ -430,13 +537,14 @@ export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
 
 export function assetUrl(url: string, shareToken?: string) {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+  if (url.startsWith("data:")) {
     return url;
   }
-  
+
   let formattedUrl = url;
+  const absolute = formattedUrl.startsWith("http://") || formattedUrl.startsWith("https://");
   // 如果 url 只是一个纯文件名（如 fdda4a...jpg）或不含 /api/files/ 的路径，智能重整为标准的相对静态路由
-  if (!formattedUrl.includes("/api/files/")) {
+  if (!absolute && !formattedUrl.includes("/api/files/")) {
     if (formattedUrl.startsWith("/")) {
       formattedUrl = `/api/files${formattedUrl}`;
     } else {
@@ -445,8 +553,8 @@ export function assetUrl(url: string, shareToken?: string) {
   }
 
   const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
-  const resolved = `${base}${formattedUrl}`;
-  const token = shareToken || (typeof window !== "undefined" ? localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) : null);
+  const resolved = absolute ? formattedUrl : `${base}${formattedUrl}`;
+  const token = shareToken || desktopAuthRuntime?.accessToken;
   if (!token || !formattedUrl.includes("/api/files/")) return resolved;
   const separator = resolved.includes("?") ? "&" : "?";
   return `${resolved}${separator}${shareToken ? "share_token" : "access_token"}=${encodeURIComponent(token)}`;

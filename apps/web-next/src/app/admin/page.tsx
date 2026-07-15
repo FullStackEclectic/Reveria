@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserSummary, readCachedUser, ACCESS_TOKEN_STORAGE_KEY } from "@reveria/shared";
+import { CurrentUserResponse, UserSummary, getJson, readCachedUser } from "@reveria/shared";
 import { AdminConsole } from "@reveria/shared/src/components/admin/AdminConsole";
 import "@reveria/shared/src/styles.css";
 
@@ -14,7 +14,10 @@ export default function AdminPage() {
     setIsMounted(true);
     const user = readCachedUser();
     setCurrentUser(user);
-    setIsLoading(false);
+    void getJson<CurrentUserResponse>("/api/auth/me")
+      .then((response) => setCurrentUser(response.user))
+      .catch(() => setCurrentUser(null))
+      .finally(() => setIsLoading(false));
   }, []);
 
   // 避免 SSR 水合不匹配错误及状态装载竞态
@@ -35,9 +38,8 @@ export default function AdminPage() {
     );
   }
 
-  // 严格鉴权：未登录（没有 token 或没有 currentUser）或不是超级管理员，自动重定向至首页强制登录
-  const token = typeof window !== "undefined" ? localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) : null;
-  if (!token || !currentUser || !currentUser.is_platform_admin) {
+  // 严格鉴权：服务端会话无效或不是超级管理员时，自动重定向至首页。
+  if (!currentUser || !currentUser.is_platform_admin) {
     if (typeof window !== "undefined") {
       window.location.href = "/";
     }

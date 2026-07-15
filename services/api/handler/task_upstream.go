@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -35,8 +36,36 @@ func init() {
 	}
 }
 
+func resolveTaskPollingSettings(task model.GenerationTask, settings model.ClientSettings) (model.ClientSettings, error) {
+	if settings.BillingMode == "bridge" {
+		settings.UpstreamAPIURL = settings.BridgeMainStationURL
+	} else if task.SelectedModel != nil && strings.TrimSpace(*task.SelectedModel) != "" {
+		var dbModel model.Model
+		lookupErr := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error
+		if lookupErr != nil {
+			lookupErr = database.DB.Where("name = ? AND enabled = true", *task.SelectedModel).First(&dbModel).Error
+		}
+		if lookupErr == nil {
+			var provider model.Provider
+			if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
+				if strings.TrimSpace(provider.ApiURL) != "" {
+					settings.UpstreamAPIURL = provider.ApiURL
+				}
+				if provider.ApiKey != "" {
+					settings.UpstreamAPIKey = provider.ApiKey
+				}
+			}
+		}
+	}
+	settings.UpstreamAPIURL = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(settings.UpstreamAPIURL), "/"), "/v1")
+	if settings.UpstreamAPIURL == "" {
+		return settings, fmt.Errorf("上游 API 地址为空")
+	}
+	return settings, nil
+}
+
 // callUpstreamGateway 发包调用 12ZX-AI
-func callUpstreamGateway(task model.GenerationTask, settings model.ClientSettings) {
+func callUpstreamGateway(ctx context.Context, task model.GenerationTask, settings model.ClientSettings) {
 	// 更新任务状态为 running
 	progressJSON := `{"progress_text":"已提交请求，等待 AI 响应..."}`
 	database.DB.Model(&task).Updates(map[string]any{
@@ -58,9 +87,6 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		settings.UpstreamAPIURL = settings.BridgeMainStationURL
 		log.Printf("[callUpstreamGateway] Bridge Mode: Model=%s, URL=%s", gatewayModelName, settings.UpstreamAPIURL)
 	} else {
-		// 自营模式下强制锁定使用 12ZX 官方网关地址
-		settings.UpstreamAPIURL = "https://ai.12zx.net"
-
 		if task.SelectedModel != nil {
 			var dbModel model.Model
 			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err != nil {
@@ -74,6 +100,9 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 				// 读取模型对应的 Provider，仅覆盖 settings 的 API 密钥
 				var provider model.Provider
 				if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
+					if strings.TrimSpace(provider.ApiURL) != "" {
+						settings.UpstreamAPIURL = provider.ApiURL
+					}
 					if provider.ApiKey != "" {
 						settings.UpstreamAPIKey = provider.ApiKey
 					}
@@ -87,8 +116,12 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 			}
 		}
 	}
+	if strings.TrimSpace(settings.UpstreamAPIURL) == "" {
+		handleTaskFailure(task.ID, "UPSTREAM_NOT_CONFIGURED", "尚未配置可用的上游 API 地址")
+		return
+	}
 
-	// 裁剪 API URL，去掉末尾可能存在的 "/" 以及 "/v1" 后缀，方便之后统一硬编码拼接 `/v1/images/generations` 等
+	// 统一规范 API 根地址，后续按任务类型拼接标准端点。
 	settings.UpstreamAPIURL = strings.TrimSuffix(settings.UpstreamAPIURL, "/")
 	settings.UpstreamAPIURL = strings.TrimSuffix(settings.UpstreamAPIURL, "/v1")
 
@@ -361,7 +394,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 
 			log.Printf("[callUpstreamGateway] 发送批次 %d/%d, n=%d", batchIdx+1, len(batches), count)
 
-			batchReq, bErr := http.NewRequest("POST", batchUpstreamURL, bytes.NewBuffer(batchReqBody))
+			batchReq, bErr := http.NewRequestWithContext(ctx, "POST", batchUpstreamURL, bytes.NewBuffer(batchReqBody))
 			if bErr != nil {
 				lastErr = fmt.Errorf("网关连接失败: %w", bErr)
 				log.Printf("[callUpstreamGateway] 批次 %d/%d 创建请求失败: %v", batchIdx+1, len(batches), bErr)
@@ -452,7 +485,7 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 		return
 	}
 
-	req, err := http.NewRequest("POST", upstreamURL, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		handleTaskFailure(task.ID, "HTTP_CLIENT_ERROR", "网关连接失败: "+err.Error())
 		return
@@ -524,8 +557,13 @@ func callUpstreamGateway(task model.GenerationTask, settings model.ClientSetting
 	}
 
 	// 更新 upstream_task_id 并启动协程异步轮询
-	database.DB.Model(&model.GenerationTask{}).Where("id = ?", task.ID).Update("upstream_task_id", upstreamTaskID)
-	go pollUpstreamTask(task, upstreamTaskID, settings)
+	leaseUntil := time.Now().Add(taskLeaseDuration)
+	database.DB.Model(&model.GenerationTask{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"upstream_task_id": upstreamTaskID,
+		"worker_id":        taskWorkerID,
+		"lease_until":      leaseUntil,
+	})
+	go pollUpstreamTask(ctx, task, upstreamTaskID, settings)
 }
 
 func buildConversationMessages(task model.GenerationTask, currentPrompt string) []upstreamChatMessage {
@@ -604,21 +642,27 @@ func buildConversationMessages(task model.GenerationTask, currentPrompt string) 
 }
 
 // pollUpstreamTask 轮询 12ZX-AI 异步任务进度
-func pollUpstreamTask(task model.GenerationTask, upstreamTaskID string, settings model.ClientSettings) {
+func pollUpstreamTask(ctx context.Context, task model.GenerationTask, upstreamTaskID string, settings model.ClientSettings) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	timeout := time.After(15 * time.Minute) // 视频生成最长等待 15 分钟
+	timeout := time.NewTimer(15 * time.Minute) // 视频生成最长等待 15 分钟
+	defer timeout.Stop()
 
 	pollURL := fmt.Sprintf("%s/v1/tasks/%s", settings.UpstreamAPIURL, upstreamTaskID)
 
 	for {
 		select {
-		case <-timeout:
+		case <-ctx.Done():
+			return
+		case <-timeout.C:
 			handleTaskFailure(task.ID, "TIMEOUT", "生成任务等待超时")
 			return
 		case <-ticker.C:
-			req, err := http.NewRequest("GET", pollURL, nil)
+			if !renewTaskLease(task.ID) {
+				return
+			}
+			req, err := http.NewRequestWithContext(ctx, "GET", pollURL, nil)
 			if err != nil {
 				continue
 			}
@@ -680,7 +724,9 @@ func pollUpstreamTask(task model.GenerationTask, upstreamTaskID string, settings
 					progressText = fmt.Sprintf("AI 正在绘制画面 (进度 %s)...", pctStr)
 				}
 				progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
-				database.DB.Model(&task).Update("output_payload", progressJSON)
+				database.DB.Model(&model.GenerationTask{}).
+					Where("id = ? AND status = ? AND worker_id = ?", task.ID, "running", taskWorkerID).
+					Update("output_payload", progressJSON)
 			}
 		}
 	}

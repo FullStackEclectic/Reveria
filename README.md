@@ -15,7 +15,9 @@ Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xA
    * 基于 **Gin (Go)** 构建的高并发 REST API 服务。
    * 采用 **纯 Go 版本 SQLite (`github.com/glebarez/sqlite`)** 作为本地关系数据库，消除对 CGO 和 GCC 编译链的硬性依赖，支持开箱即用。
 2. **桌面视窗容器 (`apps/desktop`)**：
-   * 基于 **Wails (Go)** 构建的轻量级桌面客户端底座，通过系统原生 WebView2 渲染 React 前端。
+   * 基于 **Wails (Go)** 构建的轻量级云端客户端，通过系统原生 WebView2 渲染 React 前端。
+   * 项目、任务、账户与协作数据统一访问云端 API；本机仅保存素材缓存、导出文件和确有必要的离线元数据。
+   * 登录令牌保存于操作系统安全凭据库，不写入浏览器 localStorage。
 3. **网页端与商业版控制台 (`apps/web-next`)**：
    * 基于 **Next.js (React)** 开发的 Web 主站与商业版独立管理后台。
    * 完美的 **SEO 搜索引擎优化**支持与 **服务端渲染 (SSR)** 兼容性保障。
@@ -75,6 +77,8 @@ pnpm dev:all
 
 * **打包桌面端可执行程序 (Reveria.exe)**：
   ```powershell
+  # 必须先配置桌面端连接的云端 API 地址
+  $env:VITE_REVERIA_API_BASE="https://api.example.com"
   # 在根目录下直接通过命令打包：
   pnpm desktop:build
   # 或者进入 apps/desktop 目录下通过 Wails 工具链打包：

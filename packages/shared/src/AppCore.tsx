@@ -21,7 +21,6 @@ import {
 } from "./types";
 import {
   CURRENT_USER_STORAGE_KEY,
-  ACCESS_TOKEN_STORAGE_KEY,
   createEmptyCanvas,
   readCachedUser,
   getJson,
@@ -33,6 +32,7 @@ import {
   fetchDashboardData,
   handleExportProject,
   normalizeCanvas,
+  assetUrl,
 } from "./utils";
 // Subview components
 // Subview components
@@ -225,8 +225,8 @@ export function AppCore() {
       if (!savePath) {
         return false;
       }
-      const localPath = asset.local_path || "";
-      const fileURL = asset.file_url || "";
+      const localPath = "";
+      const fileURL = assetUrl(asset.file_url || "");
       const errCode = await wailsApp.ExportRetouchedImage(
         fileURL,
         localPath,

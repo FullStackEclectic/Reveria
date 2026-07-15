@@ -9,7 +9,7 @@ interface SessionHeaderProps {
   setCurrentSessionId: (id: string) => void;
   isSessionDropdownOpen: boolean;
   setIsSessionDropdownOpen: (open: boolean) => void;
-  sessionDropdownRef: React.RefObject<HTMLDivElement>;
+  sessionDropdownRef: React.RefObject<HTMLDivElement | null>;
   handleRemoveSession: (sessionId: string, e: React.MouseEvent) => void;
   handleCreateNewSession: () => void;
   onClose?: () => void;

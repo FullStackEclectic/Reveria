@@ -2,6 +2,11 @@
   "name": "reveria",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=20.9.0",
+    "pnpm": ">=10.17.1"
+  },
   "scripts": {
     "desktop:dev": "pnpm --filter @reveria/desktop dev",
     "desktop:build": "pnpm --filter @reveria/desktop build",

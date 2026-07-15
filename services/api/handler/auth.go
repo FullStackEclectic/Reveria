@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,18 @@ type LoginRequest struct {
 type DevLoginRequest struct {
 	Email       *string `json:"email"`
 	DisplayName string  `json:"display_name" binding:"required"`
+}
+
+func defaultWorkspaceStorageQuota() int64 {
+	raw := strings.TrimSpace(os.Getenv("REVERIA_DEFAULT_STORAGE_QUOTA_BYTES"))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }
 
 // verifyArgon2Hash 校验密码是否匹配 Argon2 编码的哈希串
@@ -117,6 +130,19 @@ func RegisterUser(c *gin.Context) {
 	}
 
 	emailNormalized := strings.ToLower(strings.TrimSpace(req.Email))
+	allowed, retryAfter, throttleErr := consumeAuthAttempt(
+		authThrottleKey("register", c.ClientIP()),
+		authLimitFromEnv("REVERIA_REGISTER_LIMIT", 5), time.Hour, time.Hour,
+	)
+	if throttleErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "注册频率校验失败"})
+		return
+	}
+	if !allowed {
+		c.Header("Retry-After", fmt.Sprintf("%.0f", retryAfter.Seconds()))
+		c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "message": "注册请求过于频繁，请稍后再试"})
+		return
+	}
 
 	// 校验邮箱是否已被注册
 	var existingUser model.User
@@ -134,6 +160,10 @@ func RegisterUser(c *gin.Context) {
 
 	// 开启事务，注册用户并创建默认个人工作区
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法开启注册事务"})
+		return
+	}
 
 	userID := uuid.New()
 	user := model.User{
@@ -160,7 +190,7 @@ func RegisterUser(c *gin.Context) {
 	}
 
 	// 读取站长注册赠送额度设置
-	var giftBalance int64 = 100 // 默认 100
+	var giftBalance int64
 	if settings.ID != uuid.Nil {
 		giftBalance = settings.GiftCreditsOnRegister
 	}
@@ -172,7 +202,7 @@ func RegisterUser(c *gin.Context) {
 		Name:         req.DisplayName + " 的个人工作区",
 		OwnerUserID:  userID,
 		GiftBalance:  giftBalance,
-		StorageQuota: 10 * 1024 * 1024 * 1024, // 默认 10GB
+		StorageQuota: defaultWorkspaceStorageQuota(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -199,28 +229,19 @@ func RegisterUser(c *gin.Context) {
 		return
 	}
 
-	tx.Commit()
-
-	// 注册成功直接自动登录，签发 JWT
-	accessToken, err := GenerateAccessToken(user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "签发登录凭证失败"})
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交注册事务失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": accessToken,
-		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"display_name":      user.DisplayName,
-			"is_platform_admin": user.IsPlatformAdmin,
-		},
-	})
+	writeAuthSuccess(c, user)
 }
 
 // syncBridgeUser 桥接模式下将主站通过验证的用户自动同步并初始化至本地数据库
 func syncBridgeUser(email string, displayName string) (*model.User, error) {
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
 
 	var existingUser model.User
 	if err := tx.Where("email = ?", email).First(&existingUser).Error; err == nil {
@@ -246,7 +267,7 @@ func syncBridgeUser(email string, displayName string) (*model.User, error) {
 
 	// 读取站长注册赠送额度设置
 	var settings model.ClientSettings
-	var giftBalance int64 = 100 // 默认 100
+	var giftBalance int64
 	if err := tx.First(&settings).Error; err == nil {
 		giftBalance = settings.GiftCreditsOnRegister
 	}
@@ -263,7 +284,7 @@ func syncBridgeUser(email string, displayName string) (*model.User, error) {
 		Name:         displayName + " 的个人工作区",
 		OwnerUserID:  userID,
 		GiftBalance:  giftBalance,
-		StorageQuota: 10 * 1024 * 1024 * 1024,
+		StorageQuota: defaultWorkspaceStorageQuota(),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -288,7 +309,9 @@ func syncBridgeUser(email string, displayName string) (*model.User, error) {
 		return nil, err
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
 	return &user, nil
 }
 
@@ -301,6 +324,19 @@ func LoginUser(c *gin.Context) {
 	}
 
 	emailNormalized := strings.ToLower(strings.TrimSpace(req.Email))
+	allowed, retryAfter, throttleErr := consumeAuthAttempt(
+		authThrottleKey("login", c.ClientIP(), emailNormalized),
+		authLimitFromEnv("REVERIA_LOGIN_LIMIT", 20), 10*time.Minute, 15*time.Minute,
+	)
+	if throttleErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "登录频率校验失败"})
+		return
+	}
+	if !allowed {
+		c.Header("Retry-After", fmt.Sprintf("%.0f", retryAfter.Seconds()))
+		c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "message": "登录尝试过于频繁，请稍后再试"})
+		return
+	}
 
 	// 读取配置看当前是否是 bridge 模式
 	var settings model.ClientSettings
@@ -373,21 +409,7 @@ func LoginUser(c *gin.Context) {
 			return
 		}
 
-		// 3. 登录成功，签发 JWT
-		bridgeToken, err := GenerateAccessToken(user.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "签发登录凭证失败"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"access_token": bridgeToken,
-			"user": gin.H{
-				"id":                user.ID,
-				"email":             user.Email,
-				"display_name":      user.DisplayName,
-				"is_platform_admin": user.IsPlatformAdmin,
-			},
-		})
+		writeAuthSuccess(c, *user)
 		return
 	}
 
@@ -418,21 +440,7 @@ func LoginUser(c *gin.Context) {
 		}
 	}
 
-	// 签发 JWT 并返回登录数据
-	loginToken, err := GenerateAccessToken(user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "签发登录凭证失败"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": loginToken,
-		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"display_name":      user.DisplayName,
-			"is_platform_admin": user.IsPlatformAdmin,
-		},
-	})
+	writeAuthSuccess(c, user)
 }
 
 // DevLogin 开发模式快捷登录 (POST /auth/dev-login)
@@ -453,6 +461,10 @@ func DevLogin(c *gin.Context) {
 	}
 
 	tx := database.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法开启开发登录事务"})
+		return
+	}
 
 	var user model.User
 	err := tx.Where("email = ?", email).First(&user).Error
@@ -476,12 +488,14 @@ func DevLogin(c *gin.Context) {
 
 		// 为该用户创建一个默认工作区
 		workspaceID := uuid.New()
+		var devSettings model.ClientSettings
+		_ = tx.First(&devSettings).Error
 		workspace := model.Workspace{
 			ID:           workspaceID,
 			Name:         req.DisplayName + " 的个人工作区",
 			OwnerUserID:  userID,
-			GiftBalance:  100000, // 开发模式赠送 10万 积分
-			StorageQuota: 100 * 1024 * 1024 * 1024,
+			GiftBalance:  devSettings.GiftCreditsOnRegister,
+			StorageQuota: defaultWorkspaceStorageQuota(),
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
@@ -504,22 +518,12 @@ func DevLogin(c *gin.Context) {
 		tx.Save(&user)
 	}
 
-	tx.Commit()
-
-	devToken, err := GenerateAccessToken(user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "签发登录凭证失败"})
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "提交开发登录事务失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": devToken,
-		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"display_name":      user.DisplayName,
-			"is_platform_admin": user.IsPlatformAdmin,
-		},
-	})
+
+	writeAuthSuccess(c, user)
 }
 
 // CurrentUser 获取当前登录用户身份详情 (GET /auth/me)
@@ -545,7 +549,13 @@ func CurrentUser(c *gin.Context) {
 
 // LogoutUser 用户登出 (POST /auth/logout)
 func LogoutUser(c *gin.Context) {
-	// JWT 是无状态的，登出只需前端销毁 Token 即可
+	if sessionValue, exists := c.Get("session_id"); exists {
+		if sessionID, ok := sessionValue.(uuid.UUID); ok {
+			now := time.Now()
+			_ = database.DB.Model(&model.AuthSession{}).Where("id = ?", sessionID).Update("revoked_at", now).Error
+		}
+	}
+	clearWebAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "登出成功",
@@ -554,15 +564,5 @@ func LogoutUser(c *gin.Context) {
 
 // RefreshSession 刷新登录态 Token (POST /auth/refresh)
 func RefreshSession(c *gin.Context) {
-	actorID := c.MustGet("user_id").(uuid.UUID)
-	// 签发一个新的 JWT Token
-	newToken, err := GenerateAccessToken(actorID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "刷新凭证失败"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"access_token": newToken,
-		"token_type":   "Bearer",
-	})
+	rotateAuthSession(c)
 }
