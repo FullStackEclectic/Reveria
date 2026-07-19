@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
@@ -140,6 +141,37 @@ func TestFindStoredAssetSupportsLegacyAbsoluteURL(t *testing.T) {
 	}
 	if found.ID != asset.ID {
 		t.Fatalf("查询到错误素材: %s", found.ID)
+	}
+}
+
+func TestStoredAssetAccessSupportsWebAuthCookie(t *testing.T) {
+	db := useArchitectureTestDB(t, &model.User{}, &model.AuthSession{}, &model.WorkspaceMember{})
+	userID, workspaceID, sessionID := uuid.New(), uuid.New(), uuid.New()
+	if err := db.Create(&model.User{ID: userID, Status: "active"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.WorkspaceMember{
+		ID: uuid.New(), WorkspaceID: workspaceID, UserID: userID,
+		Role: "owner", Status: "joined", JoinedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.AuthSession{
+		ID: sessionID, UserID: userID, RefreshTokenHash: uuid.NewString(),
+		ClientType: "web", ExpiresAt: time.Now().Add(time.Hour), LastUsedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, err := GenerateAccessToken(userID, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/files/example.jpg", nil)
+	context.Request.AddCookie(&http.Cookie{Name: accessCookieName, Value: token})
+	if !canAccessStoredAsset(context, model.Asset{WorkspaceID: workspaceID}) {
+		t.Fatal("浏览器认证 Cookie 未能授权素材文件访问")
 	}
 }
 

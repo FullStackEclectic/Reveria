@@ -400,6 +400,12 @@ func canAccessStoredAsset(c *gin.Context, asset model.Asset) bool {
 			token = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 		}
 	}
+	if token == "" {
+		cookieToken, err := c.Cookie(accessCookieName)
+		if err == nil {
+			token = strings.TrimSpace(cookieToken)
+		}
+	}
 	if token != "" {
 		if userID, err := ParseAccessToken(token); err == nil && hasWorkspaceRole(asset.WorkspaceID, userID, []string{"owner", "admin", "member"}) {
 			return true
