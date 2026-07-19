@@ -711,7 +711,26 @@ export function WorkflowHistoryFeed({
             <div className="gen-msg-bubble gen-msg-user" style={{ alignSelf: "flex-end", flexDirection: "row-reverse" }}>
               <div className="gen-avatar-user">{currentUser?.display_name?.slice(0, 1).toUpperCase() || "U"}</div>
               <div className="gen-msg-body" style={{ alignItems: "flex-end" }}>
-                {refImageUrl && <img className="gen-user-ref-preview" src={assetUrl(refImageUrl)} alt="Reference input" />}
+                {refImageUrl && (
+                  <div
+                    className="gen-user-ref-preview"
+                    style={{
+                      width: "80px",
+                      height: "80px",
+                      borderRadius: "6px",
+                      overflow: "hidden",
+                      border: "1px solid var(--rv-color-border-thin)",
+                      marginBottom: "6px",
+                      boxShadow: "var(--rv-shadow-sm)",
+                      background: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <img src={assetUrl(refImageUrl)} alt="Reference input" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                )}
                 <div className="gen-msg-text">{prompt}</div>
               </div>
             </div>
