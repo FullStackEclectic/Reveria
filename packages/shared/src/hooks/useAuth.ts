@@ -127,12 +127,13 @@ export function useAuth({
         loginCallback();
         setLoginCallback(null);
       }
-    } catch {
-      setLoginMessage(
-        loginMode === "register"
-          ? "注册失败：邮箱可能已存在，密码至少 8 位"
-          : "登录失败：请检查邮箱、密码以及数据库连接"
-      );
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : loginMode === "register"
+          ? "注册失败，请检查输入内容"
+          : "登录失败，请稍后重试";
+      setLoginMessage(message);
     } finally {
       setIsLoggingIn(false);
     }

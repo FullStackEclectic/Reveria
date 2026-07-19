@@ -7,6 +7,9 @@ import { App } from "./App";
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 const configuredApiBase = import.meta.env.VITE_REVERIA_API_BASE?.trim();
 const apiBase = configuredApiBase || (import.meta.env.DEV ? "http://127.0.0.1:4100" : "");
+const hasWailsRuntime = Boolean(
+  (window as Window & { go?: { main?: { App?: unknown } } }).go?.main?.App,
+);
 
 async function startDesktopApp() {
   if (!apiBase) {
@@ -18,16 +21,16 @@ async function startDesktopApp() {
     return;
   }
   configureApiBase(apiBase);
-  // 普通浏览器调试时没有 Wails 原生绑定，延迟调用可同时捕获同步异常和 Promise 拒绝。
-  const storedTokens: Record<string, string> = await Promise.resolve()
-    .then(() => LoadAuthTokens())
-    .catch(() => ({}));
-  configureDesktopAuthRuntime({
-    accessToken: storedTokens.access_token || "",
-    refreshToken: storedTokens.refresh_token || "",
-    saveTokens: SaveAuthTokens,
-    clearTokens: ClearAuthTokens,
-  });
+  // 只有 Wails 原生窗口使用系统凭据库；普通浏览器调试使用 HttpOnly Cookie。
+  if (hasWailsRuntime) {
+    const storedTokens: Record<string, string> = await LoadAuthTokens().catch(() => ({}));
+    configureDesktopAuthRuntime({
+      accessToken: storedTokens.access_token || "",
+      refreshToken: storedTokens.refresh_token || "",
+      saveTokens: SaveAuthTokens,
+      clearTokens: ClearAuthTokens,
+    });
+  }
   root.render(
     <React.StrictMode>
       <App />

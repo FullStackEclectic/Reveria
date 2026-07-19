@@ -56,6 +56,16 @@ type DesktopAuthRuntime = {
   clearTokens?: () => Promise<void>;
 };
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let desktopAuthRuntime: DesktopAuthRuntime | null = null;
 let refreshRequest: Promise<boolean> | null = null;
 
@@ -410,6 +420,19 @@ async function handleHttpStatus(status: number) {
   }
 }
 
+async function createApiError(response: Response, fallback: string) {
+  let message = fallback;
+  try {
+    const payload = await response.json() as { message?: unknown };
+    if (typeof payload.message === "string" && payload.message.trim()) {
+      message = payload.message.trim();
+    }
+  } catch {
+    // 非 JSON 错误响应沿用包含请求路径和状态码的兜底信息。
+  }
+  return new ApiError(message, response.status);
+}
+
 async function refreshAuthentication() {
   if (refreshRequest) {
     return refreshRequest;
@@ -468,7 +491,7 @@ export async function getJson<T>(
   });
   if (!response.ok) {
     await handleHttpStatus(response.status);
-    throw new Error(`GET ${path} failed with ${response.status}`);
+    throw await createApiError(response, `GET ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
 }
@@ -483,7 +506,7 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
   });
   if (!response.ok) {
     await handleHttpStatus(response.status);
-    throw new Error(`POST ${path} failed with ${response.status}`);
+    throw await createApiError(response, `POST ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -501,7 +524,7 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
   });
   if (!response.ok) {
     await handleHttpStatus(response.status);
-    throw new Error(`PUT ${path} failed with ${response.status}`);
+    throw await createApiError(response, `PUT ${path} failed with ${response.status}`);
   }
   return (await response.json()) as T;
 }
@@ -514,7 +537,7 @@ export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
   });
   if (!response.ok) {
     await handleHttpStatus(response.status);
-    throw new Error(`DELETE ${path} failed with ${response.status}`);
+    throw await createApiError(response, `DELETE ${path} failed with ${response.status}`);
   }
   if (response.status === 204) {
     return undefined as T;
