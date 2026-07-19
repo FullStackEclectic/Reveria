@@ -254,6 +254,21 @@ export function ProjectWorkflowPanel({
     }
   }, [selectedProjectId, selectedProject.brief]);
 
+  // 刷新或重新打开项目时恢复任务状态，确保失败任务也能回到当前对话。
+  useEffect(() => {
+    let cancelled = false;
+    void getJson<GenerationTaskSummary[]>(`/api/tasks?project_id=${encodeURIComponent(selectedProjectId)}`)
+      .then((tasksRes) => {
+        if (cancelled || !Array.isArray(tasksRes)) return;
+        setLocalTasks(tasksRes);
+        setTasks(tasksRes);
+      })
+      .catch((error) => console.error("Failed to restore project tasks:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, setTasks]);
+
   // 动态输入框 rows 自适应
   useEffect(() => {
     if (!workflowInput) {

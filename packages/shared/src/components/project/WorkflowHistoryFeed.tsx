@@ -696,17 +696,37 @@ export function WorkflowHistoryFeed({
       )}
 
       {/* 异步轮询中失败的任务气泡展示 */}
-      {failedTasks.map((task) => (
-        <div key={task.id} className="gen-msg-bubble gen-msg-ai">
-          <div className="gen-avatar-ai">AI</div>
-          <div className="gen-msg-body">
-            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
-            <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
-              {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
+      {failedTasks.map((task) => {
+        let prompt = "创意绘图";
+        let refImageUrl = "";
+        try {
+          const payload = typeof task.input_payload === "string" ? JSON.parse(task.input_payload) : task.input_payload;
+          prompt = payload?.prompt || prompt;
+          refImageUrl = payload?.ref_image_url || "";
+        } catch {
+          // 任务输入损坏时仍展示失败原因。
+        }
+        return (
+          <div key={task.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div className="gen-msg-bubble gen-msg-user" style={{ alignSelf: "flex-end", flexDirection: "row-reverse" }}>
+              <div className="gen-avatar-user">{currentUser?.display_name?.slice(0, 1).toUpperCase() || "U"}</div>
+              <div className="gen-msg-body" style={{ alignItems: "flex-end" }}>
+                {refImageUrl && <img className="gen-user-ref-preview" src={assetUrl(refImageUrl)} alt="Reference input" />}
+                <div className="gen-msg-text">{prompt}</div>
+              </div>
+            </div>
+            <div className="gen-msg-bubble gen-msg-ai">
+              <div className="gen-avatar-ai">AI</div>
+              <div className="gen-msg-body">
+                <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
+                <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
+                  {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div ref={chatEndRef} />
     </div>
