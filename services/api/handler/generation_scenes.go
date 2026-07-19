@@ -48,8 +48,18 @@ func buildScenePrompt(globalPrompt string, scene generationScene) string {
 		parts = append(parts, prompt)
 	}
 	parts = append(parts, fmt.Sprintf("当前场景：%s。%s", scene.Title, scene.Prompt))
-	parts = append(parts, "仅生成一张完整画面，禁止拼图、多格和组图")
-	return strings.Join(parts, "\n")
+	return ensureSingleImagePrompt(strings.Join(parts, "\n"))
+}
+
+func ensureSingleImagePrompt(prompt string) string {
+	const constraint = "仅生成一张完整画面，主体连续且占据单一画布，禁止拼图、六宫格、多格、分屏、组图或在同一张图中展示多个版本。"
+	if strings.Contains(prompt, "禁止拼图") || strings.Contains(prompt, "六宫格") {
+		return prompt
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return constraint
+	}
+	return strings.TrimSpace(prompt) + "\n" + constraint
 }
 
 func stringValue(value any) string {

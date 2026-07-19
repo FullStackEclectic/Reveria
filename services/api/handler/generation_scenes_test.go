@@ -31,3 +31,13 @@ func TestBuildScenePrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureSingleImagePrompt(t *testing.T) {
+	prompt := ensureSingleImagePrompt("一个可爱的日本女高中生")
+	if !strings.Contains(prompt, "仅生成一张完整画面") || !strings.Contains(prompt, "禁止拼图") {
+		t.Fatalf("ensureSingleImagePrompt() did not add single-image constraint: %s", prompt)
+	}
+	if got := ensureSingleImagePrompt("已经禁止拼图"); strings.Count(got, "禁止拼图") != 1 {
+		t.Fatalf("ensureSingleImagePrompt() duplicated an existing constraint: %s", got)
+	}
+}

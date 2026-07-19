@@ -584,6 +584,7 @@ export function ProjectWorkflowPanel({
         input_payload: {
           prompt: workflowInput,
           size: `${width}x${height}`,
+          image_count: imageCount,
           ref_image_url: refAsset ? (refAsset.file_url ?? refAsset.thumbnail_url ?? "") : null
         }
       };

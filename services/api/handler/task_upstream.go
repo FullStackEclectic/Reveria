@@ -295,6 +295,7 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 				batches = append(batches, 1)
 			}
 		} else {
+			prompt = ensureSingleImagePrompt(prompt)
 			maxPerBatch := 4
 			if refImg != "" {
 				maxPerBatch = 2 // 图生图每批上限降低，提高成功率
