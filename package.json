@@ -12,7 +12,7 @@
     "desktop:build": "pnpm --filter @reveria/desktop build",
     "web:dev": "pnpm --filter @reveria/web-next dev",
     "web:build": "pnpm --filter @reveria/web-next build",
-    "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/开发-全部启动.ps1",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/start_dev.ps1",
     "env:init": "powershell -ExecutionPolicy Bypass -File scripts/初始化-本地环境.ps1",
     "env:check": "powershell -ExecutionPolicy Bypass -File scripts/检查-本地环境.ps1",
     "smoke:task-loop": "powershell -ExecutionPolicy Bypass -File scripts/验收-任务闭环.ps1",
