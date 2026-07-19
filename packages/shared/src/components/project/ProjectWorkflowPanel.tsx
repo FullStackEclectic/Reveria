@@ -720,6 +720,7 @@ export function ProjectWorkflowPanel({
         isRunningWorkflow={isRunningWorkflow}
         activeTask={currentActiveTask}
         activeProgress={activeProgress}
+        conversationId={currentSessionId}
         workflowResult={workflowResult}
         setPreviewAsset={setPreviewAsset}
         pendingTaskIds={sessionPendingTasks[currentSessionId] || []}

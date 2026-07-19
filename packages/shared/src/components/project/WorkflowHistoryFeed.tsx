@@ -19,6 +19,7 @@ interface WorkflowHistoryFeedProps {
   activeTask?: any;
   activeProgress?: number;
   pendingTaskIds?: string[];
+  conversationId?: string;
   localTasks?: any[];
 }
 
@@ -45,10 +46,11 @@ export function WorkflowHistoryFeed({
   activeTask,
   activeProgress = 0,
   pendingTaskIds = [],
+  conversationId = "",
   localTasks = [],
 }: WorkflowHistoryFeedProps) {
   const failedTasks = localTasks.filter(
-    (t) => pendingTaskIds.includes(t.id) && t.status === "failed"
+    (t) => t.status === "failed" && (pendingTaskIds.includes(t.id) || t.conversation_id === conversationId)
   );
 
   const chatEndRef = useRef<HTMLDivElement>(null);

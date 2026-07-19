@@ -6,6 +6,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"log"
 	"mime/multipart"
@@ -16,6 +18,7 @@ import (
 
 	"time"
 
+	xdraw "golang.org/x/image/draw"
 	"reveria/services/api/database"
 	"reveria/services/api/model"
 	"reveria/services/api/service"
@@ -281,6 +284,18 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 					return
 				}
 				log.Printf("[callUpstreamGateway] ImageToImage (edits): Successfully downloaded image via HTTP: %s", refImg)
+			}
+		}
+		if len(imgBytes) > 4500000 {
+			compressed, compressErr := compressReferenceImage(imgBytes)
+			if compressErr != nil {
+				handleTaskFailure(task.ID, "REFERENCE_IMAGE_INVALID", "参考图片无法压缩处理: "+compressErr.Error())
+				return
+			}
+			imgBytes = compressed
+			if len(imgBytes) > 5000000 {
+				handleTaskFailure(task.ID, "REFERENCE_IMAGE_TOO_LARGE", "参考图片压缩后仍超过上游 5MB 限制")
+				return
 			}
 		}
 
@@ -569,6 +584,31 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 		"lease_until":      leaseUntil,
 	})
 	go pollUpstreamTask(ctx, task, upstreamTaskID, settings)
+}
+
+func compressReferenceImage(data []byte) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	const maxDimension = 2048
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width > maxDimension || height > maxDimension {
+		scale := float64(maxDimension) / float64(width)
+		if height > width {
+			scale = float64(maxDimension) / float64(height)
+		}
+		width = max(1, int(float64(width)*scale))
+		height = max(1, int(float64(height)*scale))
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	xdraw.BiLinear.Scale(dst, dst.Bounds(), src, bounds, xdraw.Over, nil)
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 82}); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func buildConversationMessages(task model.GenerationTask, currentPrompt string) []upstreamChatMessage {
