@@ -2,6 +2,7 @@ import React, { FormEvent, useState } from "react";
 import { Plus, Cpu, RefreshCw, X, Check, ShieldAlert, Layers } from "lucide-react";
 import { ProviderSummary, UserSummary } from "../../types";
 import { postJson, deleteJson } from "../../utils";
+import "./ProviderAdminPanel.css";
 
 interface ProviderAdminPanelProps {
   providers: ProviderSummary[];
@@ -170,24 +171,24 @@ export function ProviderAdminPanel({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div className="provider-admin-panel">
       {/* 双栏布局 */}
-      <div className="admin-subpanel-grid" style={{ display: "grid", gridTemplateColumns: "0.9fr 1.1fr", gap: "20px" }}>
+      <div className="provider-admin-grid">
         
         {/* 服务商配置表单 */}
-        <div className="panel" style={{ minHeight: "auto", display: "flex", flexDirection: "column" }}>
+        <div className="panel provider-admin-card">
           <div className="panel-header" style={{ borderBottom: "1px solid var(--rv-color-border-thin)", paddingBottom: "12px", marginBottom: "20px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>上游算力服务商接入</h3>
             <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>管理大模型中台网关的上游接口参数</span>
           </div>
 
-          <form onSubmit={handleCreateProvider} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div className="assets-form-field">
+          <form className="provider-admin-form" onSubmit={handleCreateProvider}>
+            <div className="provider-form-field">
               <label style={{ fontSize: "10px", fontWeight: "700" }}>供应商名称</label>
               <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="如 12ZX-AI, 官方OpenAI等" />
             </div>
 
-            <div className="assets-form-field">
+            <div className="provider-form-field">
               <label style={{ fontSize: "10px", fontWeight: "700" }}>接口地址</label>
               <input
                 type="url"
@@ -199,7 +200,7 @@ export function ProviderAdminPanel({
               />
             </div>
 
-            <div className="assets-form-field">
+            <div className="provider-form-field">
               <label style={{ fontSize: "10px", fontWeight: "700" }}>接口密钥 (API Key)</label>
               <input
                 type="password"
@@ -212,7 +213,7 @@ export function ProviderAdminPanel({
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+            <div className="provider-form-actions">
               <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--rv-color-text-main)", cursor: "pointer" }}>
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: "auto" }} />
                 默认启用该通道
@@ -226,7 +227,7 @@ export function ProviderAdminPanel({
         </div>
 
         {/* 服务商列表 */}
-        <div className="panel" style={{ minHeight: "auto", display: "flex", flexDirection: "column" }}>
+        <div className="panel provider-admin-card">
           <div className="panel-header" style={{ borderBottom: "1px solid var(--rv-color-border-thin)", paddingBottom: "12px", marginBottom: "20px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>已接入算力服务商</h3>
             <span style={{ fontSize: "11px", color: "var(--rv-color-text-muted)" }}>当前系统注册在库的所有上游渠道列表</span>
