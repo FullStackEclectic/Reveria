@@ -138,6 +138,8 @@ export function LoginView({
                 <div className="form-floating-group">
                   <input
                     type="text"
+                    name="displayName"
+                    autoComplete="name"
                     required
                     placeholder="请输入显示名称"
                     className="form-classic-input"
@@ -155,6 +157,8 @@ export function LoginView({
               <div className="form-floating-group">
                 <input
                   type="email"
+                  name="email"
+                  autoComplete="email"
                   required
                   placeholder="请输入电子邮箱"
                   className="form-classic-input"
@@ -172,6 +176,8 @@ export function LoginView({
               <div className="form-floating-group">
                 <input
                   type="password"
+                  name="password"
+                  autoComplete={loginMode === "register" ? "new-password" : "current-password"}
                   required
                   placeholder="请输入登录密码 (不少于8位)"
                   className="form-classic-input"

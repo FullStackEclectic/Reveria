@@ -6,7 +6,8 @@ import { App } from "./App";
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 const configuredApiBase = import.meta.env.VITE_REVERIA_API_BASE?.trim();
-const apiBase = configuredApiBase || (import.meta.env.DEV ? "http://127.0.0.1:4100" : "");
+// 与 Vite 的 localhost 开发地址保持同站，确保浏览器调试时可携带 SameSite Cookie。
+const apiBase = configuredApiBase || (import.meta.env.DEV ? "http://localhost:4100" : "");
 const hasWailsRuntime = Boolean(
   (window as Window & { go?: { main?: { App?: unknown } } }).go?.main?.App,
 );
