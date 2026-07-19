@@ -20,6 +20,12 @@ if (Test-Path $EnvFile) {
     Write-Host "Loaded local environment from $EnvFile"
 }
 
+# 旧版 .env 可能只有遗留 DATABASE_URL。未显式选择数据库类型时，本地开发继续使用现有 SQLite 数据。
+if ([string]::IsNullOrWhiteSpace($env:DATABASE_TYPE)) {
+    $env:DATABASE_TYPE = "sqlite"
+    $env:DATABASE_URL = "reveria.db"
+}
+
 Write-Host "Starting Go Backend..."
 Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd services/api; go run main.go"
 
