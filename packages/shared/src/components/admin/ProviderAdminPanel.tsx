@@ -94,8 +94,7 @@ export function ProviderAdminPanel({
     try {
       // 真实请求后端代理获取模型 ID 数组
       const models = await postJson<string[]>("/api/admin/providers/fetch-upstream-models", {
-        api_url: provider.api_url,
-        api_key: provider.api_key
+        provider_id: provider.id,
       });
 
       setUpstreamModels(models);
@@ -188,11 +187,29 @@ export function ProviderAdminPanel({
               <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="如 12ZX-AI, 官方OpenAI等" />
             </div>
 
-
+            <div className="assets-form-field">
+              <label style={{ fontSize: "10px", fontWeight: "700" }}>接口地址</label>
+              <input
+                type="url"
+                name="provider-api-url"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                required
+                placeholder="https://api.example.com"
+              />
+            </div>
 
             <div className="assets-form-field">
               <label style={{ fontSize: "10px", fontWeight: "700" }}>接口密钥 (API Key)</label>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填入该通道的 sk-..." required />
+              <input
+                type="password"
+                name="provider-api-key"
+                autoComplete="off"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="填入该通道的 sk-..."
+                required
+              />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
@@ -228,7 +245,7 @@ export function ProviderAdminPanel({
                       <div>
                         <strong style={{ display: "block", fontSize: "12px", color: "var(--rv-color-text-main)" }}>{provider.name}</strong>
                         <span style={{ display: "block", fontSize: "9px", color: "var(--rv-color-text-muted)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "160px", whiteSpace: "nowrap" }}>
-                          https://ai.12zx.net
+                          {provider.api_url || "未配置接口地址"}
                         </span>
                       </div>
                     </div>

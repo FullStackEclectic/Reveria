@@ -102,8 +102,7 @@ func DeleteProvider(c *gin.Context) {
 
 // FetchUpstreamModelsRequest 代理拉取上游模型请求
 type FetchUpstreamModelsRequest struct {
-	ApiURL string `json:"api_url" binding:"required"`
-	ApiKey string `json:"api_key" binding:"required"`
+	ProviderID string `json:"provider_id" binding:"required"`
 }
 
 // UpstreamModelItem 上游模型条目
@@ -132,15 +131,24 @@ func FetchUpstreamModels(c *gin.Context) {
 		return
 	}
 
-	// 强制锁定使用 12ZX 官方网关地址
-	apiHost := "https://ai.12zx.net"
-	url := strings.TrimSuffix(apiHost, "/") + "/v1/models"
+	var provider model.Provider
+	if err := database.DB.Where("id = ? AND enabled = ?", req.ProviderID, true).First(&provider).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "服务商不存在或已禁用"})
+		return
+	}
+	apiHost := strings.TrimSpace(provider.ApiURL)
+	if apiHost == "" || strings.TrimSpace(provider.ApiKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "服务商接口地址或 API Key 未配置"})
+		return
+	}
+	apiHost = strings.TrimSuffix(strings.TrimSuffix(apiHost, "/"), "/v1")
+	url := apiHost + "/v1/models"
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "上游 API 链接格式有误"})
 		return
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+req.ApiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(provider.ApiKey))
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(httpReq)

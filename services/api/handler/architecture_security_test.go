@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,6 +174,29 @@ func TestStoredAssetAccessSupportsWebAuthCookie(t *testing.T) {
 	context.Request.AddCookie(&http.Cookie{Name: accessCookieName, Value: token})
 	if !canAccessStoredAsset(context, model.Asset{WorkspaceID: workspaceID}) {
 		t.Fatal("浏览器认证 Cookie 未能授权素材文件访问")
+	}
+}
+
+func TestFetchUpstreamModelsUsesStoredProviderCredentials(t *testing.T) {
+	db := useArchitectureTestDB(t, &model.Provider{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Fatalf("上游请求参数错误: path=%s auth=%s", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+	}))
+	defer server.Close()
+	if err := db.Create(&model.Provider{ID: "provider-test", Name: "测试服务商", ApiURL: server.URL, ApiKey: "test-key", Enabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/admin/providers/fetch-upstream-models", bytes.NewBufferString(`{"provider_id":"provider-test"}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	FetchUpstreamModels(context)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "model-a") {
+		t.Fatalf("拉取模型失败: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
