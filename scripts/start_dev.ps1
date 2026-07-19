@@ -2,6 +2,15 @@ $ProjectRoot = $PWD.Path
 if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\pnpm-workspace.yaml")) {
     $ProjectRoot = (Get-Item "$PSScriptRoot\..").FullName
 }
+$StatePath = Join-Path $ProjectRoot ".reveria-dev-processes.json"
+$Ports = @(4100, 3000, 1420)
+
+$occupied = @(Get-NetTCPConnection -State Listen -LocalPort $Ports -ErrorAction SilentlyContinue)
+if ($occupied.Count -gt 0) {
+    $occupiedPorts = ($occupied.LocalPort | Select-Object -Unique) -join ", "
+    Write-Error "开发端口已被占用: $occupiedPorts。请先运行 scripts/stop_dev.ps1。"
+    exit 1
+}
 
 $EnvFile = Join-Path $ProjectRoot ".env"
 if (Test-Path $EnvFile) {
@@ -27,10 +36,17 @@ if ([string]::IsNullOrWhiteSpace($env:DATABASE_TYPE)) {
 }
 
 Write-Host "Starting Go Backend..."
-Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd services/api; go run main.go"
+$backendProcess = Start-Process powershell -PassThru -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd services/api; go run main.go"
 
 Write-Host "Starting Web (Next.js)..."
-Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd apps/web-next; pnpm dev"
+$webProcess = Start-Process powershell -PassThru -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd apps/web-next; pnpm dev"
 
 Write-Host "Starting Desktop (Wails)..."
-Start-Process powershell -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd apps/desktop; wails dev"
+$desktopProcess = Start-Process powershell -PassThru -WorkingDirectory $ProjectRoot -ArgumentList "-ExecutionPolicy Bypass", "-NoExit", "-Command", "cd apps/desktop; wails dev"
+
+@{
+    backend = $backendProcess.Id
+    web = $webProcess.Id
+    desktop = $desktopProcess.Id
+} | ConvertTo-Json | Set-Content -Path $StatePath -Encoding UTF8
+Write-Host "开发进程已记录到 $StatePath"
