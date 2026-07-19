@@ -444,6 +444,8 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 					if m, ok := item.(map[string]any); ok {
 						if url, ok := m["url"].(string); ok && url != "" {
 							allURLs = append(allURLs, url)
+						} else if encoded, ok := m["b64_json"].(string); ok && strings.TrimSpace(encoded) != "" {
+							allURLs = append(allURLs, "data:image/png;base64,"+strings.TrimSpace(encoded))
 						}
 					}
 				}
@@ -535,6 +537,8 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 			if m, ok := item.(map[string]any); ok {
 				if url, ok := m["url"].(string); ok && url != "" {
 					urls = append(urls, url)
+				} else if encoded, ok := m["b64_json"].(string); ok && strings.TrimSpace(encoded) != "" {
+					urls = append(urls, "data:image/png;base64,"+strings.TrimSpace(encoded))
 				}
 			}
 		}

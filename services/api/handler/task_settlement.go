@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,30 +47,40 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		if url == "" {
 			continue
 		}
-		if !isSafeRemoteURL(url) {
-			log.Printf("[TaskSucceeded] 拒绝下载不安全的结果 URL")
-			continue
-		}
-
 		// 每次下载，向 DB 写入当前的下载落地进度，让前端能实时呈现 (已完成 1/6)
 		progressText := fmt.Sprintf("AI 画面生成完毕，正在下载本地化 (已完成 %d/%d)...", idx, totalCount)
 		progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
 		database.DB.Model(&task).Update("output_payload", progressJSON)
 
-		log.Printf("[TaskSucceeded] 开始下载图片 %d/%d: %s", idx+1, totalCount, url)
-		resp, err := downloadClient.Get(url)
-		if err != nil {
-			log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (网络错误): %v, URL: %s", idx+1, totalCount, err, url)
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (HTTP %d), URL: %s", idx+1, totalCount, resp.StatusCode, url)
+		var fileBytes []byte
+		contentType := "image/jpeg"
+		var err error
+		if strings.HasPrefix(url, "data:") {
+			fileBytes, contentType, err = decodeImageDataURL(url)
+			if err != nil {
+				log.Printf("[TaskSucceeded] 解码图片 %d/%d 的 Base64 数据失败: %v", idx+1, totalCount, err)
+				continue
+			}
+		} else {
+			if !isSafeRemoteURL(url) {
+				log.Printf("[TaskSucceeded] 拒绝下载不安全的结果 URL")
+				continue
+			}
+			log.Printf("[TaskSucceeded] 开始下载图片 %d/%d: %s", idx+1, totalCount, url)
+			resp, downloadErr := downloadClient.Get(url)
+			if downloadErr != nil {
+				log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (网络错误): %v, URL: %s", idx+1, totalCount, downloadErr, url)
+				continue
+			}
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("[TaskSucceeded] 下载图片 %d/%d 失败 (HTTP %d), URL: %s", idx+1, totalCount, resp.StatusCode, url)
+				resp.Body.Close()
+				continue
+			}
+			fileBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
+			contentType = resp.Header.Get("Content-Type")
 			resp.Body.Close()
-			continue
 		}
-
-		fileBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
-		resp.Body.Close()
 		if err != nil {
 			continue
 		}
@@ -85,10 +96,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		storageDir := getStorageDir()
 		_ = os.MkdirAll(storageDir, 0750)
 
-		ext := ".jpg"
-		if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
-			ext = ".mp4"
-		}
+		ext := extensionForGeneratedContent(task, contentType, fileBytes)
 		storedName := uuid.New().String() + ext
 		storagePath := filepath.Join(storageDir, storedName)
 		if err := os.WriteFile(storagePath, fileBytes, 0640); err != nil {
@@ -99,7 +107,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		localURL := "/api/files/" + storedName
 
 		var localThumbURL *string
-		if ext == ".jpg" {
+		if ext != ".mp4" {
 			thumbBytes, err := resizeImage(fileBytes, 320)
 			if err == nil {
 				thumbName := uuid.New().String() + "-thumb.jpg"
@@ -140,7 +148,10 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			}
 		}
 
-		mimeType := "image/jpeg"
+		mimeType := contentType
+		if mimeType == "" {
+			mimeType = "image/jpeg"
+		}
 		if ext == ".mp4" {
 			mimeType = "video/mp4"
 		}
@@ -222,6 +233,39 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		return
 	}
 	log.Printf("[TaskSucceeded] 任务 %s 结算完成，已归档资产。", task.ID)
+}
+
+func decodeImageDataURL(raw string) ([]byte, string, error) {
+	parts := strings.SplitN(raw, ",", 2)
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], "data:") || !strings.Contains(parts[0], ";base64") {
+		return nil, "", fmt.Errorf("图片数据不是合法的 Base64 Data URL")
+	}
+	mimeType := strings.TrimPrefix(strings.SplitN(parts[0], ";", 2)[0], "data:")
+	decoded, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, "", err
+	}
+	return decoded, mimeType, nil
+}
+
+func extensionForGeneratedContent(task model.GenerationTask, contentType string, fileBytes []byte) string {
+	if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
+		return ".mp4"
+	}
+	contentType = strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	if contentType == "" {
+		contentType = http.DetectContentType(fileBytes)
+	}
+	switch contentType {
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	default:
+		return ".jpg"
+	}
 }
 
 // handleTaskFailure 任务失败，执行退款并更新状态
