@@ -30,6 +30,10 @@ interface GroupedChatItem {
   id: string;
 }
 
+type TimelineItem =
+  | { kind: "chat"; item: GroupedChatItem; createdAt: number }
+  | { kind: "failure"; task: any; createdAt: number };
+
 export function WorkflowHistoryFeed({
   aiAssets,
   currentUser,
@@ -181,16 +185,65 @@ export function WorkflowHistoryFeed({
   }
 
   const chatItems = groupAIAssets(aiAssets);
+  const timelineItems: TimelineItem[] = [
+    ...chatItems.map((item) => {
+      const asset = item.asset || item.assets?.[0];
+      return { kind: "chat" as const, item, createdAt: asset?.created_at ? new Date(asset.created_at).getTime() : 0 };
+    }),
+    ...failedTasks.map((task) => ({
+      kind: "failure" as const,
+      task,
+      createdAt: task.created_at ? new Date(task.created_at).getTime() : 0,
+    })),
+  ].sort((left, right) => left.createdAt - right.createdAt);
+
+  function renderFailedTask(task: any) {
+    let prompt = "创意绘图";
+    let refImageUrl = "";
+    try {
+      const payload = typeof task.input_payload === "string" ? JSON.parse(task.input_payload) : task.input_payload;
+      prompt = payload?.prompt || prompt;
+      refImageUrl = payload?.ref_image_url || "";
+    } catch {
+      // 任务输入损坏时仍展示失败原因。
+    }
+    return (
+      <div key={task.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div className="gen-msg-bubble gen-msg-user" style={{ alignSelf: "flex-end", flexDirection: "row-reverse" }}>
+          <div className="gen-avatar-user">{currentUser?.display_name?.slice(0, 1).toUpperCase() || "U"}</div>
+          <div className="gen-msg-body" style={{ alignItems: "flex-end" }}>
+            {refImageUrl && (
+              <div className="gen-user-ref-preview" style={{ width: "min(100%, 440px)", aspectRatio: "16 / 9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--rv-color-border-thin)", marginBottom: "6px", background: "#fff" }}>
+                <img src={assetUrl(refImageUrl)} alt="Reference input" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+              </div>
+            )}
+            <div className="gen-msg-text">{prompt}</div>
+          </div>
+        </div>
+        <div className="gen-msg-bubble gen-msg-ai">
+          <div className="gen-avatar-ai">AI</div>
+          <div className="gen-msg-body">
+            <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
+            <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
+              {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="gen-chat-feed">
-      {chatItems.length === 0 ? (
+      {timelineItems.length === 0 ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px", color: "var(--rv-color-text-muted)", fontSize: "12px", textAlign: "center", padding: "40px 20px" }}>
           <Sparkles size={24} style={{ color: "var(--rv-color-primary)", opacity: 0.7 }} />
           <span>欢迎使用 AI 创意工坊！在下方输入创意灵感，一键召唤您的智能创意助手。</span>
         </div>
       ) : (
-        chatItems.map((item) => {
+        timelineItems.map((timelineItem) => {
+          if (timelineItem.kind === "failure") return renderFailedTask(timelineItem.task);
+          const item = timelineItem.item;
           if (item.type === "single" && item.asset) {
             const asset = item.asset;
             const isImage = asset.asset_type === "image";
@@ -694,58 +747,6 @@ export function WorkflowHistoryFeed({
           </div>
         </div>
       )}
-
-      {/* 异步轮询中失败的任务气泡展示 */}
-      {failedTasks.map((task) => {
-        let prompt = "创意绘图";
-        let refImageUrl = "";
-        try {
-          const payload = typeof task.input_payload === "string" ? JSON.parse(task.input_payload) : task.input_payload;
-          prompt = payload?.prompt || prompt;
-          refImageUrl = payload?.ref_image_url || "";
-        } catch {
-          // 任务输入损坏时仍展示失败原因。
-        }
-        return (
-          <div key={task.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div className="gen-msg-bubble gen-msg-user" style={{ alignSelf: "flex-end", flexDirection: "row-reverse" }}>
-              <div className="gen-avatar-user">{currentUser?.display_name?.slice(0, 1).toUpperCase() || "U"}</div>
-              <div className="gen-msg-body" style={{ alignItems: "flex-end" }}>
-                {refImageUrl && (
-                  <div
-                    className="gen-user-ref-preview"
-                    style={{
-                      width: "80px",
-                      height: "80px",
-                      borderRadius: "6px",
-                      overflow: "hidden",
-                      border: "1px solid var(--rv-color-border-thin)",
-                      marginBottom: "6px",
-                      boxShadow: "var(--rv-shadow-sm)",
-                      background: "#fff",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <img src={assetUrl(refImageUrl)} alt="Reference input" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  </div>
-                )}
-                <div className="gen-msg-text">{prompt}</div>
-              </div>
-            </div>
-            <div className="gen-msg-bubble gen-msg-ai">
-              <div className="gen-avatar-ai">AI</div>
-              <div className="gen-msg-body">
-                <div className="gen-msg-ai-meta" style={{ color: "#ef4444" }}>生成失败</div>
-                <div className="gen-msg-ai-content" style={{ color: "#ef4444", fontSize: "11px", borderColor: "rgba(239, 68, 68, 0.2)", background: "rgba(239, 68, 68, 0.03)" }}>
-                  {task.error_message || task.error_code || "异步工作流执行失败，请检查 API 连接状态"}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
 
       <div ref={chatEndRef} />
     </div>
