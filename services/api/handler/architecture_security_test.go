@@ -124,6 +124,25 @@ func TestStoredFileNameIgnoresAuthorizationQuery(t *testing.T) {
 	}
 }
 
+func TestFindStoredAssetSupportsLegacyAbsoluteURL(t *testing.T) {
+	db := useArchitectureTestDB(t, &model.Asset{})
+	asset := model.Asset{
+		ID: uuid.New(), WorkspaceID: uuid.New(), ProjectID: uuid.New(),
+		AssetType: "image", Source: "upload",
+		FileURL: "http://127.0.0.1:4100/api/files/legacy.jpg",
+	}
+	if err := db.Create(&asset).Error; err != nil {
+		t.Fatal(err)
+	}
+	found, err := findStoredAsset("/api/files/legacy.jpg")
+	if err != nil {
+		t.Fatalf("历史绝对文件地址查询失败: %v", err)
+	}
+	if found.ID != asset.ID {
+		t.Fatalf("查询到错误素材: %s", found.ID)
+	}
+}
+
 func containsAny(value string, candidates ...string) bool {
 	for _, candidate := range candidates {
 		if len(candidate) > 0 && len(value) >= len(candidate) {

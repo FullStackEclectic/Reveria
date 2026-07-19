@@ -365,8 +365,8 @@ func ServeFile(c *gin.Context) {
 		return
 	}
 	fileURL := "/api/files/" + fileName
-	var asset model.Asset
-	if err := database.DB.Where("file_url = ? OR thumbnail_url = ?", fileURL, fileURL).First(&asset).Error; err != nil {
+	asset, err := findStoredAsset(fileURL)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "文件记录不存在"})
 		return
 	}
@@ -380,6 +380,16 @@ func ServeFile(c *gin.Context) {
 	}
 
 	c.File(filePath)
+}
+
+func findStoredAsset(fileURL string) (model.Asset, error) {
+	var asset model.Asset
+	legacyAbsolutePattern := "%" + fileURL
+	err := database.DB.Where(
+		"file_url = ? OR thumbnail_url = ? OR file_url LIKE ? OR thumbnail_url LIKE ?",
+		fileURL, fileURL, legacyAbsolutePattern, legacyAbsolutePattern,
+	).First(&asset).Error
+	return asset, err
 }
 
 func canAccessStoredAsset(c *gin.Context, asset model.Asset) bool {

@@ -565,7 +565,19 @@ export function assetUrl(url: string, shareToken?: string) {
   }
 
   let formattedUrl = url;
-  const absolute = formattedUrl.startsWith("http://") || formattedUrl.startsWith("https://");
+  let absolute = formattedUrl.startsWith("http://") || formattedUrl.startsWith("https://");
+  // 历史本地数据可能保存了 127.0.0.1 等绝对文件地址，统一切回当前 API 主机以携带认证凭据。
+  if (absolute) {
+    try {
+      const parsed = new URL(formattedUrl);
+      if (parsed.pathname.startsWith("/api/files/")) {
+        formattedUrl = `${parsed.pathname}${parsed.search}`;
+        absolute = false;
+      }
+    } catch {
+      // 非法绝对地址交由浏览器按原值处理。
+    }
+  }
   // 如果 url 只是一个纯文件名（如 fdda4a...jpg）或不含 /api/files/ 的路径，智能重整为标准的相对静态路由
   if (!absolute && !formattedUrl.includes("/api/files/")) {
     if (formattedUrl.startsWith("/")) {
