@@ -54,17 +54,17 @@ func TestPlatformAdminMiddlewareRejectsRegularUser(t *testing.T) {
 }
 
 func TestClientSettingsResponseDoesNotExposeSecrets(t *testing.T) {
-	settings := model.ClientSettings{UpstreamAPIKey: "upstream-secret", BridgeInternalSecret: "bridge-secret"}
+	settings := model.ClientSettings{UpstreamAPIKey: "upstream-secret"}
 	response := sanitizedClientSettings(settings)
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	if containsAny(text, "upstream-secret", "bridge-secret") {
+	if containsAny(text, "upstream-secret") {
 		t.Fatalf("配置响应泄露了密钥: %s", text)
 	}
-	if response["upstream_api_key_configured"] != true || response["bridge_internal_secret_configured"] != true {
+	if response["upstream_api_key_configured"] != true {
 		t.Fatalf("配置状态没有正确返回: %#v", response)
 	}
 }

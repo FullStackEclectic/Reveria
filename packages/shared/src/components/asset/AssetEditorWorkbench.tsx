@@ -1,17 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
-import { 
+import { RetouchRenderer, RetouchRendererHandle } from "./RetouchRenderer";
+import {
   Wand2, Sun, Droplet, Eye, ArrowLeft, Save, Download,
   Sparkles, Sliders, Scissors, User, History, Camera,
-  RotateCcw, Check, Star, FolderOpen, Image as ImageIcon,
+  RotateCcw, FolderOpen, Image as ImageIcon,
   Eraser, Move, CheckSquare
 } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl } from "../../utils";
-import { 
-  RetouchSettings, DEFAULT_SETTINGS, VS_SOURCE, FS_SOURCE, PRESET_EFFECTS 
+import { detectFacePoints, FacePoints } from "../../utils/faceMesh";
+import {
+  RetouchSettings, DEFAULT_SETTINGS, PRESET_EFFECTS, normalizeRetouchSettings,
+  type CurveKey, type CurvePoints
 } from "./editorConstants";
 import { PortraitAdjustments } from "./PortraitAdjustments";
 import { ColorAdjustments } from "./ColorAdjustments";
+import { useRetouchPresets } from "./useRetouchPresets";
+import { CropOverlay, CropRect } from "./CropOverlay";
+import { CanvasToolbar } from "./CanvasToolbar";
+import { RetouchPresetPanel } from "./RetouchPresetPanel";
+import { HealingBrushOverlay } from "./HealingBrushOverlay";
+import { LocalHealingPanel } from "./LocalHealingPanel";
+import { CloneStampOverlay } from "./CloneStampOverlay";
+import { CloneStampPanel } from "./CloneStampPanel";
+import { AssetFilmstrip } from "./AssetFilmstrip";
 import "./AssetEditorWorkbench.css";
 
 export type { RetouchSettings } from "./editorConstants";
@@ -21,7 +33,13 @@ interface AssetEditorProps {
   projectAssets: AssetSummary[];
   onClose: () => void;
   onSaveSettings: (assetId: string, settings: RetouchSettings) => Promise<boolean>;
-  onExportImage: (assetId: string, settings: RetouchSettings) => Promise<boolean>;
+  onLoadSettings?: (assetId: string) => Promise<RetouchSettings | undefined>;
+  onExportImage: (
+    assetId: string,
+    settings: RetouchSettings,
+    dataUrl: string,
+    format: "jpeg" | "png",
+  ) => Promise<boolean>;
   initialSettings?: RetouchSettings;
   onUpload?: (file: File) => Promise<void>;
 }
@@ -31,17 +49,20 @@ export function AssetEditorWorkbench({
   projectAssets,
   onClose,
   onSaveSettings,
+  onLoadSettings,
   onExportImage,
   initialSettings,
   onUpload,
 }: AssetEditorProps) {
   const [currentAsset, setCurrentAsset] = useState<AssetSummary | undefined>(initialAsset);
-  const [settings, setSettings] = useState<RetouchSettings>(initialSettings || DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<RetouchSettings>(normalizeRetouchSettings(initialSettings));
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const autoSaveTimeoutRef = useRef<any | null>(null);
+  const settingsDirtyRef = useRef(false);
+  const explicitInitialAssetIdRef = useRef(initialAsset?.id);
+  const explicitInitialConsumedRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<"portrait" | "color" | "local" | "other">("portrait");
   const [role, setRole] = useState<"female" | "male" | "child" | "elder_female" | "elder_male">("female");
@@ -49,6 +70,21 @@ export function AssetEditorWorkbench({
   const [activePresetIndex, setActivePresetIndex] = useState<number | null>(null);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const { presets: customPresets, savePreset, deletePreset } = useRetouchPresets();
+  const historyRef = useRef<RetouchSettings[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [facePoints, setFacePoints] = useState<FacePoints | null>(null);
+  const [exportFormat, setExportFormat] = useState<"jpeg" | "png">("jpeg");
+  const [cropDraft, setCropDraft] = useState<CropRect | null>(null);
+  const [activeCanvasTool, setActiveCanvasTool] = useState<"move" | "healing" | "clone">("move");
+  const [healingBrushSize, setHealingBrushSize] = useState(32);
+  const [healingStrength, setHealingStrength] = useState(80);
+  const [cloneSource, setCloneSource] = useState<{ x: number; y: number } | null>(null);
+  const [cloneSampling, setCloneSampling] = useState(true);
+  const rendererRef = useRef<RetouchRendererHandle>(null);
 
   const [portraitSettings, setPortraitSettings] = useState({
     flatness: 35,
@@ -71,9 +107,11 @@ export function AssetEditorWorkbench({
     cheekboneHeight: 15,
     midBone: 10,
     upperEyelid: 20,
+    eyeBrighten: 0,
     eyeBags: 25,
     tearTrough: 15,
     nasolabialFolds: 20,
+    skinWhiten: 0,
   });
 
   // 当外部传入的 asset 改变时
@@ -81,17 +119,55 @@ export function AssetEditorWorkbench({
     setCurrentAsset(initialAsset);
   }, [initialAsset]);
 
-  // 切换资产时重置
+  // 切换资产时恢复该素材的服务端参数，并重置本地操作历史。
   useEffect(() => {
     if (currentAsset) {
-      setSettings(initialSettings || DEFAULT_SETTINGS);
+      let cancelled = false;
+      if (explicitInitialAssetIdRef.current !== initialAsset?.id) {
+        explicitInitialAssetIdRef.current = initialAsset?.id;
+        explicitInitialConsumedRef.current = false;
+      }
+      const explicitInitial = !explicitInitialConsumedRef.current
+        && currentAsset.id === initialAsset?.id
+        && initialSettings
+        ? normalizeRetouchSettings(initialSettings)
+        : undefined;
+      if (explicitInitial) explicitInitialConsumedRef.current = true;
+      const applyInitial = (initial: RetouchSettings) => {
+        if (cancelled) return;
+        setSettings(initial);
+        historyRef.current = [initial];
+        historyIndexRef.current = 0;
+        setCanUndo(false);
+        setCanRedo(false);
+      };
+
+      settingsDirtyRef.current = false;
+      applyInitial(explicitInitial ?? DEFAULT_SETTINGS);
       setShowOriginal(false);
+      setCropDraft(null);
+      setCloneSource(null);
+      setCloneSampling(true);
       setActivePresetIndex(null);
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
+
+      if (!explicitInitial && onLoadSettings) {
+        void onLoadSettings(currentAsset.id)
+          .then((saved) => {
+            if (saved && !settingsDirtyRef.current) {
+              applyInitial(normalizeRetouchSettings(saved));
+            }
+          })
+          .catch((error) => console.error("Load retouch settings failed:", error));
+      }
+
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [currentAsset?.id, initialSettings]);
+  }, [currentAsset?.id, initialAsset?.id, initialSettings, onLoadSettings]);
 
   // 同步美化参数到 WebGL Core 属性
   useEffect(() => {
@@ -99,117 +175,106 @@ export function AssetEditorWorkbench({
       ...prev,
       blurStrength: settings.blur_strength,
       upperEyelid: Math.round(settings.eye_enlarge / 2),
+      eyeBrighten: settings.eye_brighten,
       doubleChin: Math.round(settings.slim_face / 2),
     }));
-  }, [settings.blur_strength, settings.eye_enlarge, settings.slim_face]);
+  }, [settings.blur_strength, settings.eye_enlarge, settings.eye_brighten, settings.slim_face]);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
     return () => {
+      window.removeEventListener('keydown', onKey);
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, []);
+  }, [canUndo, canRedo]);
 
-  const sourceUrl = currentAsset?.file_url ?? currentAsset?.thumbnail_url ?? "";
+  const sourceUrl = assetUrl(currentAsset?.file_url ?? currentAsset?.thumbnail_url ?? "");
 
-  // WebGL Shader 硬件加速实时图像管线
+  // 图片变化时自动触发面部关键点检测
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !sourceUrl) return;
-
-    const gl = canvas.getContext("webgl");
-    if (!gl) return;
-
-    let isCancelled = false;
+    if (!sourceUrl) { setFacePoints(null); return; }
+    let cancelled = false;
     const img = new Image();
-    img.src = assetUrl(sourceUrl);
     img.crossOrigin = "anonymous";
-    img.onload = () => {
-      if (isCancelled) return;
-
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      gl.viewport(0, 0, canvas.width, canvas.height);
-
-      const vs = gl.createShader(gl.VERTEX_SHADER);
-      if (!vs) return;
-      gl.shaderSource(vs, VS_SOURCE);
-      gl.compileShader(vs);
-
-      const fs = gl.createShader(gl.FRAGMENT_SHADER);
-      if (!fs) return;
-      gl.shaderSource(fs, FS_SOURCE);
-      gl.compileShader(fs);
-
-      const program = gl.createProgram();
-      if (!program) return;
-      gl.attachShader(program, vs);
-      gl.attachShader(program, fs);
-      gl.linkProgram(program);
-      gl.useProgram(program);
-
-      const positionBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        -1, -1,  1, -1, -1,  1,
-        -1,  1,  1, -1,  1,  1,
-      ]), gl.STATIC_DRAW);
-
-      const aPosition = gl.getAttribLocation(program, "a_position");
-      gl.enableVertexAttribArray(aPosition);
-      gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
-
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-
-      const uExposure = gl.getUniformLocation(program, "u_exposure");
-      const uContrast = gl.getUniformLocation(program, "u_contrast");
-      const uSaturation = gl.getUniformLocation(program, "u_saturation");
-      const uBlur = gl.getUniformLocation(program, "u_blur");
-
-      if (showOriginal) {
-        gl.uniform1f(uExposure, 0.0);
-        gl.uniform1f(uContrast, 0.0);
-        gl.uniform1f(uSaturation, 0.0);
-        gl.uniform1f(uBlur, 0.0);
-      } else {
-        gl.uniform1f(uExposure, settings.exposure / 100.0); 
-        gl.uniform1f(uContrast, settings.contrast / 100.0);
-        gl.uniform1f(uSaturation, settings.saturation / 100.0);
-        gl.uniform1f(uBlur, settings.blur_strength / 100.0); 
-      }
-
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-      gl.deleteTexture(texture);
-      gl.deleteBuffer(positionBuffer);
-      gl.deleteProgram(program);
-      gl.deleteShader(vs);
-      gl.deleteShader(fs);
+    img.src = sourceUrl;
+    img.onload = async () => {
+      if (cancelled) return;
+      const fp = await detectFacePoints(img);
+      if (!cancelled) setFacePoints(fp);
     };
+    return () => { cancelled = true; };
+  }, [sourceUrl]);
 
-    return () => {
-      isCancelled = true;
-      img.onload = null;
-    };
-  }, [currentAsset?.id, sourceUrl, settings, showOriginal]);
+  const pushHistory = (s: RetouchSettings) => {
+    const history = historyRef.current.slice(0, historyIndexRef.current + 1);
+    history.push(s);
+    if (history.length > 50) history.shift();
+    historyRef.current = history;
+    historyIndexRef.current = history.length - 1;
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(false);
+  };
+
+  const handleUndo = () => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current -= 1;
+    const prev = historyRef.current[historyIndexRef.current];
+    settingsDirtyRef.current = true;
+    setSettings(prev);
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(true);
+  };
+
+  const handleRedo = () => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current += 1;
+    const next = historyRef.current[historyIndexRef.current];
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    setCanUndo(true);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  };
 
   const handleSliderChange = (key: keyof RetouchSettings, val: number) => {
+    settingsDirtyRef.current = true;
     setSettings((prev) => ({
       ...prev,
       [key]: val,
     }));
   };
 
+  const handleCurveChange = (key: CurveKey, val: CurvePoints) => {
+    settingsDirtyRef.current = true;
+    setSettings((prev) => ({ ...prev, [key]: val }));
+  };
+
+  const handleHealingCommit = (spots: RetouchSettings["healing_spots"]) => {
+    const next = { ...settings, healing_spots: spots };
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    handleAutoSave(next);
+  };
+
+  const handleCloneCommit = (stamps: RetouchSettings["clone_stamps"]) => {
+    const next = { ...settings, clone_stamps: stamps };
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    handleAutoSave(next);
+  };
+
   const handlePortraitSliderChange = (key: string, val: number) => {
+    settingsDirtyRef.current = true;
     setPortraitSettings((prev) => {
       const next = { ...prev, [key]: val };
       if (key === "blurStrength") {
@@ -218,19 +283,25 @@ export function AssetEditorWorkbench({
         setSettings(s => ({ ...s, eye_enlarge: val * 2 }));
       } else if (key === "doubleChin") {
         setSettings(s => ({ ...s, slim_face: val * 2 }));
+      } else if (key === "skinWhiten") {
+        setSettings(s => ({ ...s, skin_whiten: val }));
+      } else if (key === "eyeBrighten") {
+        setSettings(s => ({ ...s, eye_brighten: val }));
       }
       return next;
     });
   };
 
-  const handleAutoSave = () => {
+  const handleAutoSave = (snapshot?: RetouchSettings) => {
     if (!currentAsset) return;
+    const s = snapshot ?? settings;
+    pushHistory(s);
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
     autoSaveTimeoutRef.current = setTimeout(async () => {
       try {
-        await onSaveSettings(currentAsset.id, settings);
+        await onSaveSettings(currentAsset.id, s);
       } catch (e) {
         console.error("Auto save retouch settings failed:", e);
       }
@@ -251,7 +322,9 @@ export function AssetEditorWorkbench({
     if (!currentAsset) return;
     setIsExporting(true);
     try {
-      await onExportImage(currentAsset.id, settings);
+      const dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "jpeg" ? 0.95 : undefined);
+      if (!dataUrl) throw new Error("无法读取渲染结果");
+      await onExportImage(currentAsset.id, settings, dataUrl, exportFormat);
     } finally {
       setIsExporting(false);
     }
@@ -260,10 +333,11 @@ export function AssetEditorWorkbench({
   const applyPreset = (index: number) => {
     if (!currentAsset) return;
     setActivePresetIndex(index);
+    settingsDirtyRef.current = true;
     const preset = PRESET_EFFECTS[index];
     setSettings((prev) => {
       const next = { ...prev, ...preset.settings };
-      setTimeout(() => handleAutoSave(), 50);
+      setTimeout(() => handleAutoSave(next), 50);
       return next;
     });
   };
@@ -275,11 +349,88 @@ export function AssetEditorWorkbench({
     }));
   };
 
+  const toggleAssetSelection = (assetId: string) => {
+    setSelectedAssetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(assetId)) {
+        next.delete(assetId);
+      } else {
+        next.add(assetId);
+      }
+      return next;
+    });
+  };
+
+  const handleSyncToSelected = async () => {
+    if (!currentAsset || selectedAssetIds.size === 0) {
+      alert("请先勾选需要同步的图片");
+      return;
+    }
+    const confirmed = window.confirm(`确定将当前调整参数同步到已选中的 ${selectedAssetIds.size} 张图片吗？`);
+    if (!confirmed) return;
+
+    try {
+      for (const assetId of selectedAssetIds) {
+        await onSaveSettings(assetId, settings);
+      }
+      alert(`已成功同步参数到 ${selectedAssetIds.size} 张图片`);
+      setSelectedAssetIds(new Set());
+    } catch (e) {
+      console.error("同步失败:", e);
+      alert("同步失败，请重试");
+    }
+  };
+
+  const handleSavePreset = async () => {
+    const name = window.prompt("请输入预设名称:");
+    if (!name || !name.trim()) return;
+    const synced = await savePreset(name.trim(), { ...settings });
+    alert(synced ? `预设"${name.trim()}"已同步到账号` : `预设"${name.trim()}"已保存到本地，联网后将自动同步`);
+  };
+
+  const handleDeletePreset = async (preset: (typeof customPresets)[number]) => {
+    if (!window.confirm(`确定删除预设"${preset.name}"吗？`)) return;
+    try {
+      await deletePreset(preset);
+    } catch (error) {
+      console.error("删除自定义预设失败:", error);
+      alert("删除预设失败，请检查网络后重试");
+    }
+  };
+
   const handleResetSettings = () => {
+    settingsDirtyRef.current = true;
+    setCropDraft(null);
     setSettings(DEFAULT_SETTINGS);
     setActivePresetIndex(null);
-    setTimeout(() => handleAutoSave(), 50);
+    setTimeout(() => handleAutoSave(DEFAULT_SETTINGS), 50);
   };
+
+  const commitGeometry = (changes: Partial<RetouchSettings>) => {
+    const next = normalizeRetouchSettings({ ...settings, ...changes });
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    setTimeout(() => handleAutoSave(next), 50);
+  };
+
+  const handleRotate = () => commitGeometry({
+    rotation: (Math.round(settings.rotation) + 1) % 4,
+    crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1,
+  });
+
+  const handleFlipHorizontal = () => commitGeometry({
+    flip_horizontal: settings.flip_horizontal ? 0 : 1,
+    crop_x: 1 - settings.crop_x - settings.crop_width,
+  });
+
+  const handleFlipVertical = () => commitGeometry({
+    flip_vertical: settings.flip_vertical ? 0 : 1,
+    crop_y: 1 - settings.crop_y - settings.crop_height,
+  });
+
+  const renderSettings = cropDraft
+    ? normalizeRetouchSettings({ ...settings, crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1 })
+    : settings;
 
   const title = currentAsset ? assetTitle(currentAsset) : "";
 
@@ -313,6 +464,15 @@ export function AssetEditorWorkbench({
             <Download size={14} />
             {isExporting ? "导出中..." : "导出"}
           </button>
+          <select
+            className="export-format-select"
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as "jpeg" | "png")}
+            disabled={!currentAsset}
+          >
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+          </select>
         </div>
       </header>
 
@@ -321,46 +481,29 @@ export function AssetEditorWorkbench({
         
         {/* 中间大画布预览区 / 空导入区 */}
         <main className="editor-center-canvas">
-          <div className="retouch-canvas-toolbar">
-            <div className="tool-dropdown-group">
-              <span className="zoom-text">{zoomPercent}%</span>
-              <button className="utility-btn" disabled={!currentAsset} onClick={() => setZoomPercent(z => Math.max(50, z - 10))}>-</button>
-              <button className="utility-btn" disabled={!currentAsset} onClick={() => setZoomPercent(z => Math.min(300, z + 10))}>+</button>
-            </div>
-
-            <div className="tool-divider" />
-
-            <div className="photo-edit-tools">
-              <button className="tool-icon-btn active" disabled={!currentAsset} title="移动工具 (M)"><Move size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="选区套索 (L)"><Scissors size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="修补画笔 (B)"><Wand2 size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="参考辅助线 (U)"><Sliders size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="高精液化 (W)"><Sparkles size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="污点修复 (J)"><RotateCcw size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="仿制图章 (S)"><CheckSquare size={15} /></button>
-              <button className="tool-icon-btn" disabled={!currentAsset} title="智能消除 (E)"><Eraser size={15} /></button>
-            </div>
-
-            <div className="tool-divider" />
-
-            <div className="toolbar-right-actions">
-              <button 
-                className={`compare-btn ${showOriginal ? "active" : ""}`}
-                disabled={!currentAsset}
-                onMouseDown={() => setShowOriginal(true)}
-                onMouseUp={() => setShowOriginal(false)}
-                onMouseLeave={() => setShowOriginal(false)}
-                title="按住临时查看修改前原图"
-              >
-                <Eye size={15} />
-                <span>对比原图</span>
-              </button>
-              <button className="reset-btn" disabled={!currentAsset} onClick={handleResetSettings} title="恢复所有调节项至零位">
-                <RotateCcw size={13} />
-                <span>重置效果</span>
-              </button>
-            </div>
-          </div>
+          <CanvasToolbar
+            hasAsset={Boolean(currentAsset)}
+            zoomPercent={zoomPercent}
+            setZoomPercent={setZoomPercent}
+            settings={settings}
+            cropDraft={cropDraft}
+            setCropDraft={setCropDraft}
+            activeCanvasTool={activeCanvasTool}
+            setActiveCanvasTool={setActiveCanvasTool}
+            cloneSource={cloneSource}
+            setCloneSampling={setCloneSampling}
+            setActiveTab={setActiveTab}
+            onRotate={handleRotate}
+            onFlipHorizontal={handleFlipHorizontal}
+            onFlipVertical={handleFlipVertical}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            showOriginal={showOriginal}
+            setShowOriginal={setShowOriginal}
+            onReset={handleResetSettings}
+          />
 
           <div className="canvas-wrapper">
             {currentAsset ? (
@@ -368,7 +511,53 @@ export function AssetEditorWorkbench({
                 className="canvas-interactive-container"
                 style={{ transform: `scale(${zoomPercent / 100})`, transition: "transform 0.15s ease-out" }}
               >
-                <canvas ref={canvasRef} />
+                <RetouchRenderer
+                  ref={rendererRef}
+                  imageUrl={sourceUrl}
+                  settings={renderSettings}
+                  showOriginal={showOriginal}
+                  facePoints={facePoints}
+                />
+                {cropDraft && (
+                  <CropOverlay
+                    value={cropDraft}
+                    onChange={setCropDraft}
+                    onCancel={() => setCropDraft(null)}
+                    onApply={() => {
+                      commitGeometry({
+                        crop_x: cropDraft.x,
+                        crop_y: cropDraft.y,
+                        crop_width: cropDraft.width,
+                        crop_height: cropDraft.height,
+                      });
+                      setCropDraft(null);
+                    }}
+                  />
+                )}
+                {activeCanvasTool === "healing" && !cropDraft && (
+                  <HealingBrushOverlay
+                    settings={settings}
+                    brushSize={healingBrushSize}
+                    strength={healingStrength}
+                    onChange={(spots) => {
+                      settingsDirtyRef.current = true;
+                      setSettings((current) => ({ ...current, healing_spots: spots }));
+                    }}
+                    onCommit={handleHealingCommit}
+                  />
+                )}
+                {activeCanvasTool === "clone" && !cropDraft && (
+                  <CloneStampOverlay
+                    settings={settings} brushSize={healingBrushSize} strength={healingStrength}
+                    source={cloneSource} samplingSource={cloneSampling}
+                    onSourceChange={(source) => { setCloneSource(source); setCloneSampling(false); }}
+                    onChange={(stamps) => {
+                      settingsDirtyRef.current = true;
+                      setSettings((current) => ({ ...current, clone_stamps: stamps }));
+                    }}
+                    onCommit={handleCloneCommit}
+                  />
+                )}
               </div>
             ) : (
               <div className="retouch-empty-import-container">
@@ -419,38 +608,20 @@ export function AssetEditorWorkbench({
           </div>
         </main>
 
-        {/* 浮动预设选择栏 */}
-        <aside className="editor-presets-panel">
-          <div className="panel-header-row">
-            <h3>预设</h3>
-            <div className="header-icon-group">
-              <span className="preset-count">{PRESET_EFFECTS.length}</span>
-            </div>
-          </div>
-          <div className="filter-search-row">
-            <select className="preset-filter-select" disabled={!currentAsset}>
-              <option>全部预设</option>
-              <option>人像美白</option>
-              <option>胶片复古</option>
-              <option>暖色调</option>
-            </select>
-          </div>
-          <div className="presets-scroll-list">
-            {PRESET_EFFECTS.map((preset, index) => (
-              <button
-                key={preset.name}
-                type="button"
-                className={`preset-item-btn ${activePresetIndex === index ? "active" : ""}`}
-                disabled={!currentAsset}
-                onClick={() => applyPreset(index)}
-              >
-                <span className="indicator" />
-                <span className="name">{preset.name}</span>
-                {activePresetIndex === index && <Check size={12} className="check-icon" />}
-              </button>
-            ))}
-          </div>
-        </aside>
+        <RetouchPresetPanel
+          disabled={!currentAsset}
+          activePresetIndex={activePresetIndex}
+          customPresets={customPresets}
+          onApplyBuiltIn={applyPreset}
+          onApplyCustom={(preset) => {
+            const next = normalizeRetouchSettings(preset.settings);
+            settingsDirtyRef.current = true;
+            setSettings(next);
+            setActivePresetIndex(null);
+            setTimeout(() => handleAutoSave(next), 50);
+          }}
+          onDeleteCustom={(preset) => void handleDeletePreset(preset)}
+        />
 
         {/* 右侧边栏：参数调节 */}
         <aside className="editor-right-adjustments">
@@ -477,16 +648,22 @@ export function AssetEditorWorkbench({
                   <ColorAdjustments
                     settings={settings}
                     handleSliderChange={handleSliderChange}
+                    handleCurveChange={handleCurveChange}
                     handleAutoSave={handleAutoSave}
                   />
                 )}
 
                 {activeTab === "local" && (
-                  <div className="adjustment-subview placeholder-view">
-                    <Sliders size={32} className="placeholder-icon" />
-                    <h4>局部精细修正</h4>
-                    <p>可通过顶部横向工具条的画笔或套索工具，对人像皮肤、背景或衣服等特定细节区域进行涂抹屏蔽或选定调整。</p>
-                  </div>
+                  activeCanvasTool === "clone" ? (
+                    <CloneStampPanel brushSize={healingBrushSize} strength={healingStrength}
+                      stampCount={settings.clone_stamps.length} hasSource={cloneSource !== null} samplingSource={cloneSampling}
+                      onBrushSizeChange={setHealingBrushSize} onStrengthChange={setHealingStrength}
+                      onSample={() => setCloneSampling(true)} onClear={() => handleCloneCommit([])} />
+                  ) : (
+                    <LocalHealingPanel brushSize={healingBrushSize} strength={healingStrength}
+                      spotCount={settings.healing_spots.length} onBrushSizeChange={setHealingBrushSize}
+                      onStrengthChange={setHealingStrength} onClear={() => handleHealingCommit([])} />
+                  )
                 )}
 
                 {activeTab === "other" && (
@@ -498,10 +675,10 @@ export function AssetEditorWorkbench({
                 )}
 
                 <div className="adjustments-footer-actions">
-                  <button className="sync-btn" onClick={() => alert("当前调整参数已成功同步至项目内其它选中大图！")}>
-                    同步到选中图片
+                  <button className="sync-btn" disabled={!currentAsset || selectedAssetIds.size === 0} onClick={handleSyncToSelected}>
+                    同步到选中图片 ({selectedAssetIds.size})
                   </button>
-                  <button className="save-preset-btn" onClick={() => alert("参数已成功存入自定义预设库，您可在左侧预设列表中随时套用。")}>
+                  <button className="save-preset-btn" disabled={!currentAsset} onClick={handleSavePreset}>
                     保存当前预设
                   </button>
                 </div>
@@ -511,15 +688,15 @@ export function AssetEditorWorkbench({
 
           {/* 右侧垂直 icon 工具栏 */}
           <div className="right-vertical-tabs-bar">
-            <button className={`vertical-tab-icon-btn ${activeTab === "color" ? "active" : ""}`} disabled={!currentAsset} onClick={() => setActiveTab("color")} title="调色">
+            <button className={`vertical-tab-icon-btn ${activeTab === "color" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("color"); setActiveCanvasTool("move"); }} title="调色">
               <Sun size={18} />
               <span>调色</span>
             </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "local" ? "active" : ""}`} disabled={!currentAsset} onClick={() => setActiveTab("local")} title="局部">
+            <button className={`vertical-tab-icon-btn ${activeTab === "local" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("local"); setCropDraft(null); setActiveCanvasTool("healing"); }} title="局部">
               <Scissors size={18} />
               <span>局部</span>
             </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "portrait" ? "active" : ""}`} disabled={!currentAsset} onClick={() => setActiveTab("portrait")} title="人像">
+            <button className={`vertical-tab-icon-btn ${activeTab === "portrait" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("portrait"); setActiveCanvasTool("move"); }} title="人像">
               <User size={18} />
               <span>人像</span>
             </button>
@@ -547,62 +724,15 @@ export function AssetEditorWorkbench({
         </aside>
       </div>
 
-      {/* 底部胶片底片栏 */}
-      {projectAssets.length > 0 && (
-        <footer className="editor-bottom-filmstrip">
-          <div className="filmstrip-header-row">
-            <div className="header-left">
-              <span className="label active">本源图</span>
-              <span className="label">已选 1 张 (共 {projectAssets.length} 张)</span>
-            </div>
-            <div className="header-right">
-              <span className="file-resolution">RGB / 8-Bit / Adobe RGB (1998)</span>
-            </div>
-          </div>
-
-          <div className="filmstrip-scroll-container">
-            {projectAssets.map((item) => {
-              const active = currentAsset && item.id === currentAsset.id;
-              const thumbUrl = item.thumbnail_url ?? item.file_url ?? "";
-              const currentRating = ratings[item.id] || 0;
-
-              return (
-                <div 
-                  key={item.id} 
-                  className={`filmstrip-card ${active ? "active" : ""}`}
-                  onClick={() => setCurrentAsset(item)}
-                >
-                  <div className="thumbnail-box">
-                    <img src={assetUrl(thumbUrl)} alt={assetTitle(item)} loading="lazy" />
-                    <span className="index-badge">{projectAssets.indexOf(item) + 1}</span>
-                    {item.selection_status === "approved" && (
-                      <span className="approved-icon"><Check size={10} /></span>
-                    )}
-                  </div>
-                  <div className="metadata-box">
-                    <span className="filename" title={assetTitle(item)}>{assetTitle(item)}</span>
-                    <div className="rating-stars">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button 
-                          key={star}
-                          type="button"
-                          className={`star-btn ${currentRating >= star ? "active" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleRating(item.id, star);
-                          }}
-                        >
-                          <Star size={9} fill={currentRating >= star ? "currentColor" : "none"} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </footer>
-      )}
+      <AssetFilmstrip
+        assets={projectAssets}
+        currentAsset={currentAsset}
+        selectedAssetIds={selectedAssetIds}
+        ratings={ratings}
+        onSelectAsset={setCurrentAsset}
+        onToggleSelection={toggleAssetSelection}
+        onRate={toggleRating}
+      />
     </div>
   );
 }

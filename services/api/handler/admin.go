@@ -7,7 +7,6 @@ import (
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
-	"reveria/services/api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -46,61 +45,31 @@ func AdjustCredits(c *gin.Context) {
 		return
 	}
 
-	var settings model.ClientSettings
-	var isBridge = false
-	if err := tx.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
-		isBridge = true
+	// 调额写入对应的余额
+	if req.Amount >= 0 {
+		ws.RechargeBalance += req.Amount
+	} else {
+		// 负数调减
+		absAmount := -req.Amount
+		if ws.RechargeBalance >= absAmount {
+			ws.RechargeBalance -= absAmount
+		} else {
+			remaining := absAmount - ws.RechargeBalance
+			ws.RechargeBalance = 0
+			if ws.GiftBalance >= remaining {
+				ws.GiftBalance -= remaining
+			} else {
+				tx.Rollback()
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区额度余额不足，扣减失败"})
+				return
+			}
+		}
 	}
 
-	if isBridge {
-		billingSvc := service.GetBillingService()
-		if req.Amount >= 0 {
-			err := billingSvc.RefundCredits(ws.OwnerUserID, ws.ID, req.Amount, "管理员手动加额: "+req.Reason, nil)
-			if err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步加额至主站失败: " + err.Error()})
-				return
-			}
-		} else {
-			success, err := billingSvc.DeductCredits(ws.OwnerUserID, ws.ID, -req.Amount, "管理员手动扣额: "+req.Reason, nil)
-			if err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "同步扣额至主站发生错误: " + err.Error()})
-				return
-			}
-			if !success {
-				tx.Rollback()
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "该用户主站配额余额不足，扣减失败"})
-				return
-			}
-		}
-	} else {
-		// 调额写入对应的余额
-		if req.Amount >= 0 {
-			ws.RechargeBalance += req.Amount
-		} else {
-			// 负数调减
-			absAmount := -req.Amount
-			if ws.RechargeBalance >= absAmount {
-				ws.RechargeBalance -= absAmount
-			} else {
-				remaining := absAmount - ws.RechargeBalance
-				ws.RechargeBalance = 0
-				if ws.GiftBalance >= remaining {
-					ws.GiftBalance -= remaining
-				} else {
-					tx.Rollback()
-					c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "工作区额度余额不足，扣减失败"})
-					return
-				}
-			}
-		}
-
-		if err := tx.Save(&ws).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存账本失败"})
-			return
-		}
+	if err := tx.Save(&ws).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存账本失败"})
+		return
 	}
 
 	// 记录流水

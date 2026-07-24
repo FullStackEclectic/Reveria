@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"bytes"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -116,13 +114,9 @@ func RegisterUser(c *gin.Context) {
 		return
 	}
 
-	// 校验分站注册控制与运行模式
+	// 校验分站注册控制
 	var settings model.ClientSettings
 	if err := database.DB.First(&settings).Error; err == nil {
-		if settings.BillingMode == "bridge" {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "当前已启用主站数据互通模式，分站不支持自助注册。请使用您在 AI主站 注册的账号直接登录。"})
-			return
-		}
 		if !settings.AllowUserRegister {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "前台自助注册功能暂未开放，请联系管理员分配账户。"})
 			return
@@ -236,85 +230,6 @@ func RegisterUser(c *gin.Context) {
 	writeAuthSuccess(c, user)
 }
 
-// syncBridgeUser 桥接模式下将主站通过验证的用户自动同步并初始化至本地数据库
-func syncBridgeUser(email string, displayName string) (*model.User, error) {
-	tx := database.DB.Begin()
-	if tx.Error != nil {
-		return nil, tx.Error
-	}
-
-	var existingUser model.User
-	if err := tx.Where("email = ?", email).First(&existingUser).Error; err == nil {
-		tx.Rollback()
-		return &existingUser, nil
-	}
-
-	userID := uuid.New()
-	user := model.User{
-		ID:           userID,
-		Email:        &email,
-		DisplayName:  &displayName,
-		PasswordHash: "$bcrypt$bridge_sync_dummy_hash", // 桥接模式下本地密码是随机无用占位符
-		Status:       "active",
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-
-	if err := tx.Create(&user).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// 读取站长注册赠送额度设置
-	var settings model.ClientSettings
-	var giftBalance int64
-	if err := tx.First(&settings).Error; err == nil {
-		giftBalance = settings.GiftCreditsOnRegister
-	}
-
-	// 如果是桥接模式，本地的个人工作区账户余额我们设为 0，因为额度是直接从主站扣的
-	if settings.BillingMode == "bridge" {
-		giftBalance = 0
-	}
-
-	// 创建默认个人工作区
-	workspaceID := uuid.New()
-	workspace := model.Workspace{
-		ID:           workspaceID,
-		Name:         displayName + " 的个人工作区",
-		OwnerUserID:  userID,
-		GiftBalance:  giftBalance,
-		StorageQuota: defaultWorkspaceStorageQuota(),
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-
-	if err := tx.Create(&workspace).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// 绑定成员关系
-	member := model.WorkspaceMember{
-		ID:          uuid.New(),
-		WorkspaceID: workspaceID,
-		UserID:      userID,
-		Role:        "owner",
-		Status:      "joined",
-		JoinedAt:    time.Now(),
-	}
-
-	if err := tx.Create(&member).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
 // LoginUser 用户登录 (POST /auth/login)
 func LoginUser(c *gin.Context) {
 	var req LoginRequest
@@ -338,82 +253,6 @@ func LoginUser(c *gin.Context) {
 		return
 	}
 
-	// 读取配置看当前是否是 bridge 模式
-	var settings model.ClientSettings
-	isBridge := false
-	if err := database.DB.First(&settings).Error; err == nil {
-		if settings.BillingMode == "bridge" {
-			isBridge = true
-		}
-	}
-
-	if isBridge {
-		// 1. 调用主站的登录接口进行校验
-		loginURL := fmt.Sprintf("%s/api/user/login", settings.BridgeMainStationURL)
-		body := map[string]string{
-			"username": emailNormalized,
-			"password": req.Password,
-		}
-
-		jsonBytes, err := json.Marshal(body)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "请求序列化失败"})
-			return
-		}
-
-		httpReq, err := http.NewRequest("POST", loginURL, bytes.NewBuffer(jsonBytes))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建登录请求失败"})
-			return
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{Timeout: 8 * time.Second}
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "连接主站登录失败: " + err.Error()})
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "主站账号或密码验证错误"})
-			return
-		}
-
-		var mainUser struct {
-			Success bool `json:"success"`
-			User    struct {
-				DisplayName string `json:"display_name"`
-				Username    string `json:"username"`
-			} `json:"user"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&mainUser); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "解析主站用户信息失败"})
-			return
-		}
-
-		displayName := mainUser.User.DisplayName
-		if displayName == "" {
-			displayName = mainUser.User.Username
-		}
-		if displayName == "" {
-			displayName = strings.Split(emailNormalized, "@")[0]
-		}
-
-		// 2. 将用户同步至本地
-		user, err := syncBridgeUser(emailNormalized, displayName)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "本地同步主站用户失败: " + err.Error()})
-			return
-		}
-
-		writeAuthSuccess(c, *user)
-		return
-	}
-
-	// 否则，执行原有的本地登录逻辑
 	var user model.User
 	if err := database.DB.Where("email = ? AND status = 'active'", emailNormalized).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户名或密码错误"})

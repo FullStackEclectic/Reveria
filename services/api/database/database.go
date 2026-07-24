@@ -95,6 +95,7 @@ func AutoMigrate() {
 		&model.ProjectCanvas{},
 		&model.Asset{},
 		&model.AssetRetouchSettings{},
+		&model.RetouchPreset{},
 		&model.AssetComment{},
 		&model.GenerationTask{},
 		&model.CreditTransaction{},

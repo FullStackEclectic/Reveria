@@ -11,15 +11,6 @@ interface ClientSettings {
   price_rate: number;
   upstream_api_url: string;
   upstream_api_key: string;
-  billing_mode: string;
-  bridge_main_station_url: string;
-  bridge_internal_secret: string;
-  bridge_text_model: string;
-  bridge_image_model: string;
-  bridge_video_model: string;
-  bridge_text_pools: string;
-  bridge_image_pools: string;
-  bridge_video_pools: string;
 }
 
 interface SystemSettingsPanelProps {

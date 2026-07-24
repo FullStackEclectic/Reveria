@@ -1,4 +1,4 @@
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppView,
   WorkspaceSummary,
@@ -32,7 +32,6 @@ import {
   fetchDashboardData,
   handleExportProject,
   normalizeCanvas,
-  assetUrl,
 } from "./utils";
 // Subview components
 // Subview components
@@ -52,6 +51,7 @@ import { ClientPortalView } from "./components/portal/ClientPortalView";
 import { Sidebar } from "./components/common/Sidebar";
 import { AssetEditorWorkbench } from "./components/asset/AssetEditorWorkbench";
 import type { RetouchSettings } from "./components/asset/AssetEditorWorkbench";
+import { normalizeRetouchSettings } from "./components/asset/editorConstants";
 const planBadgeLabel = (p?: PlanSummary) => !p ? "套餐" : p.badge_label?.trim() ? p.badge_label.trim().toUpperCase() : p.price_cents === 0 ? "FREE" : (p.name.includes("专业") || p.name.toLowerCase().includes("pro")) ? "PRO" : (p.name.includes("企业") || p.name.toLowerCase().includes("enterprise")) ? "ENT" : "PLAN";
 export function AppCore() {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -197,7 +197,7 @@ export function AppCore() {
                 eye_enlarge: settings.eye_enlarge,
                 slim_face: settings.slim_face,
                 lut_file: settings.lut_file,
-                advanced_json: "",
+                advanced_json: JSON.stringify(settings),
               }
             }
           ]
@@ -208,45 +208,75 @@ export function AppCore() {
       console.error(err); return false;
     }
   };
-  const handleExportRetouchImage = async (assetId: string, settings: RetouchSettings) => {
+
+  const handleLoadRetouchSettings = useCallback(async (assetId: string) => {
+    if (!selectedProjectId) return undefined;
+    const response = await getJson<{
+      retouch: Array<{
+        asset_id: string;
+        exposure: number;
+        contrast: number;
+        saturation: number;
+        blur_strength: number;
+        eye_enlarge: number;
+        slim_face: number;
+        lut_file: string;
+        advanced_json?: string;
+      }>;
+    }>(`/api/projects/${selectedProjectId}/retouch-sync`);
+    const saved = response.retouch.find((item) => item.asset_id === assetId);
+    if (!saved) return undefined;
+
+    let advanced: Partial<RetouchSettings> = {};
+    if (saved.advanced_json) {
+      try {
+        const parsed = JSON.parse(saved.advanced_json);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          advanced = parsed as Partial<RetouchSettings>;
+        }
+      } catch (error) {
+        console.warn("Invalid retouch advanced_json:", error);
+      }
+    }
+
+    return normalizeRetouchSettings({
+      exposure: saved.exposure,
+      contrast: saved.contrast,
+      saturation: saved.saturation,
+      blur_strength: saved.blur_strength,
+      eye_enlarge: saved.eye_enlarge,
+      slim_face: saved.slim_face,
+      lut_file: saved.lut_file,
+      ...advanced,
+    });
+  }, [selectedProjectId]);
+
+  const handleExportRetouchImage = async (
+    assetId: string,
+    _settings: RetouchSettings,
+    dataUrl: string,
+    format: "jpeg" | "png",
+  ) => {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) {
       alert("找不到要导出的素材");
       return false;
     }
+    const rawFilename = asset.metadata?.title || asset.metadata?.file_name || "retouched_image";
+    const filename = `${rawFilename.replace(/\.[^.]+$/, "")}_retouched.${format === "jpeg" ? "jpg" : "png"}`;
     const wailsApp = (window as any).go?.main?.App;
-    if (!wailsApp) {
-      alert("导出功能仅在 Reveria 桌面客户端中可用");
-      return false;
-    }
     try {
-      const defaultFilename = asset.metadata?.title || asset.metadata?.file_name || "retouched_image.jpg";
-      const savePath = await wailsApp.SelectSavePath(defaultFilename);
-      if (!savePath) {
-        return false;
-      }
-      const localPath = "";
-      const fileURL = assetUrl(asset.file_url || "");
-      const errCode = await wailsApp.ExportRetouchedImage(
-        fileURL,
-        localPath,
-        savePath,
-        settings.exposure,
-        settings.contrast,
-        settings.saturation,
-        settings.blur_strength,
-        settings.eye_enlarge,
-        settings.slim_face,
-        settings.lut_file || ""
-      );
-      if (errCode === 0) {
+      if (wailsApp?.SaveRenderedImage) {
+        const savePath = await wailsApp.SelectSavePath(filename);
+        if (!savePath) return false;
+        await wailsApp.SaveRenderedImage(dataUrl, savePath);
         alert(`导出成功！已保存至：${savePath}`);
         try {
           const recentListStr = localStorage.getItem("reveria.recentExports") || "[]";
           const recentList = JSON.parse(recentListStr);
           recentList.unshift({
             id: assetId,
-            title: defaultFilename,
+            title: filename,
             path: savePath,
             time: new Date().toLocaleTimeString(),
           });
@@ -257,10 +287,15 @@ export function AppCore() {
           console.error("Failed to update export history", e);
         }
         return true;
-      } else {
-        alert(`导出失败，错误码：${errCode}`);
-        return false;
       }
+
+      const anchor = document.createElement("a");
+      anchor.href = dataUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      return true;
     } catch (err: any) {
       console.error("Export error:", err);
       alert(`导出过程中发生错误: ${err.message || err}`);
@@ -597,6 +632,7 @@ export function AppCore() {
           handleViewChange={handleViewChange}
           exportCurrentProject={exportCurrentProject}
           handleSaveRetouchSettings={handleSaveRetouchSettings}
+          handleLoadRetouchSettings={handleLoadRetouchSettings}
           handleExportRetouchImage={handleExportRetouchImage}
           handleSaveCustomer={handleSaveCustomer}
           deleteAsset={deleteAsset}
@@ -675,6 +711,7 @@ export function AppCore() {
               setRetouchInitialSettings(null);
             }}
             onSaveSettings={handleSaveRetouchSettings}
+            onLoadSettings={handleLoadRetouchSettings}
             onExportImage={handleExportRetouchImage}
             initialSettings={retouchInitialSettings || undefined}
           />

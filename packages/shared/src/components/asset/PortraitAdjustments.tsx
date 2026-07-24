@@ -542,6 +542,7 @@ export function PortraitAdjustments({
                     <div className="sliders-list">
                       <SliderItem label="皮肤平整度" value={portraitSettings.flatness} onChange={(v) => handlePortraitSliderChange("flatness", v)} onAutoSave={handleAutoSave} />
                       <SliderItem label="极细磨皮" value={portraitSettings.blurStrength} onChange={(v) => handlePortraitSliderChange("blurStrength", v)} onAutoSave={handleAutoSave} highlight />
+                      <SliderItem label="皮肤美白" value={portraitSettings.skinWhiten} onChange={(v) => handlePortraitSliderChange("skinWhiten", v)} onAutoSave={handleAutoSave} highlight />
                       <SliderItem label="去面光 (脸部)" value={portraitSettings.removeShine} onChange={(v) => handlePortraitSliderChange("removeShine", v)} onAutoSave={handleAutoSave} />
                       <SliderItem label="泛黄额头" value={portraitSettings.yellowForehead} onChange={(v) => handlePortraitSliderChange("yellowForehead", v)} onAutoSave={handleAutoSave} />
                       <SliderItem label="泛黑眼圈" value={portraitSettings.darkCircles} onChange={(v) => handlePortraitSliderChange("darkCircles", v)} onAutoSave={handleAutoSave} />
@@ -565,6 +566,7 @@ export function PortraitAdjustments({
                   {g.id === "eye" && (
                     <div className="sliders-list">
                       <SliderItem label="捏上眼皮 (大眼)" value={portraitSettings.upperEyelid} onChange={(v) => handlePortraitSliderChange("upperEyelid", v)} onAutoSave={handleAutoSave} highlight />
+                      <SliderItem label="亮眼" value={portraitSettings.eyeBrighten} onChange={(v) => handlePortraitSliderChange("eyeBrighten", v)} onAutoSave={handleAutoSave} highlight />
                       <SliderItem label="捏大眼袋" value={portraitSettings.eyeBags} onChange={(v) => handlePortraitSliderChange("eyeBags", v)} onAutoSave={handleAutoSave} />
                       <SliderItem label="去卧蚕" value={portraitSettings.tearTrough} onChange={(v) => handlePortraitSliderChange("tearTrough", v)} onAutoSave={handleAutoSave} />
                       <SliderItem label="去鼻孔暗度" value={portraitSettings.removeNostril} onChange={(v) => handlePortraitSliderChange("removeNostril", v)} onAutoSave={handleAutoSave} />

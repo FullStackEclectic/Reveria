@@ -216,15 +216,6 @@ type ClientSettings struct {
 	AllowUserRegister     bool      `gorm:"default:true;not null" json:"allow_user_register"`
 	GiftCreditsOnRegister int64     `gorm:"default:0;not null" json:"gift_credits_on_register"`
 	PriceRate             float64   `gorm:"type:numeric(4,2);default:1.00;not null" json:"price_rate"`
-	BillingMode           string    `gorm:"type:varchar(32);default:'standalone';not null" json:"billing_mode"`
-	BridgeMainStationURL  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_main_station_url"`
-	BridgeInternalSecret  string    `gorm:"type:varchar(255);default:'';not null" json:"bridge_internal_secret"`
-	BridgeTextModel       string    `gorm:"type:text;default:'';not null" json:"bridge_text_model"`
-	BridgeImageModel      string    `gorm:"type:text;default:'';not null" json:"bridge_image_model"`
-	BridgeVideoModel      string    `gorm:"type:text;default:'';not null" json:"bridge_video_model"`
-	BridgeTextPools       string    `gorm:"type:text;default:'';not null" json:"bridge_text_pools"`
-	BridgeImagePools      string    `gorm:"type:text;default:'';not null" json:"bridge_image_pools"`
-	BridgeVideoPools      string    `gorm:"type:text;default:'';not null" json:"bridge_video_pools"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
@@ -428,6 +419,16 @@ type AssetRetouchSettings struct {
 	SlimFace     float64   `gorm:"default:0.0" json:"slim_face"`      // 瘦脸强度 (0 ~ 100)
 	LUTFile      string    `gorm:"type:varchar(255)" json:"lut_file"` // 应用的 3D LUT 文件路径
 	AdvancedJSON string    `gorm:"type:text" json:"advanced_json"`    // 其它高级/自定义参数 (如 AI 关键点数据)
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// RetouchPreset 用户自定义修图预设，跨项目和客户端复用。
+type RetouchPreset struct {
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID       uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_retouch_preset_user_name;not null" json:"user_id"`
+	Name         string    `gorm:"type:varchar(80);uniqueIndex:idx_retouch_preset_user_name;not null" json:"name"`
+	SettingsJSON string    `gorm:"type:text;not null" json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 

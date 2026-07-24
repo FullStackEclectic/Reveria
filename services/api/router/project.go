@@ -42,6 +42,9 @@ func registerProjectRoutes(auth *gin.RouterGroup) {
 	auth.DELETE("/shares/:id", handler.RevokeProjectShare)
 	auth.POST("/projects/:id/retouch-sync", handler.SyncRetouchSettings)
 	auth.GET("/projects/:id/retouch-sync", handler.PullRetouchCollaboration)
+	auth.GET("/retouch-presets", handler.ListRetouchPresets)
+	auth.POST("/retouch-presets", handler.SaveRetouchPreset)
+	auth.DELETE("/retouch-presets/:id", handler.DeleteRetouchPreset)
 
 	// 素材资产 API
 	auth.GET("/assets", handler.ListAssets)

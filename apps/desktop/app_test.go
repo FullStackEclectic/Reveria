@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,30 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestSaveRenderedImageWritesDecodedBytes(t *testing.T) {
+	payload := []byte("rendered-image")
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(payload)
+	outputPath := filepath.Join(t.TempDir(), "exports", "result.png")
+
+	if err := NewApp().SaveRenderedImage(dataURL, outputPath); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actual) != string(payload) {
+		t.Fatalf("导出内容 = %q, want %q", actual, payload)
+	}
+}
+
+func TestSaveRenderedImageRejectsUnsupportedData(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "result.webp")
+	if err := NewApp().SaveRenderedImage("data:image/webp;base64,AAAA", outputPath); err == nil {
+		t.Fatal("不支持的图片格式未返回错误")
+	}
+}
 
 func TestDownloadAssetToCacheReusesLocalMaterial(t *testing.T) {
 	cacheRoot := t.TempDir()

@@ -19,6 +19,7 @@ import {
 import { PageFrame } from "../common/PageFrame";
 import { ProjectDetailView } from "./ProjectDetailView";
 import { deleteJson } from "../../utils";
+import type { RetouchSettings } from "../asset/AssetEditorWorkbench";
 
 interface ProjectsViewProps {
   projects: ProjectSummary[];
@@ -52,7 +53,13 @@ interface ProjectsViewProps {
   models: ModelSummary[];
   onEnterEditor: (asset: AssetSummary, initialSettings?: any) => void;
   onSaveSettings: (assetId: string, settings: any) => Promise<boolean>;
-  onExportImage: (assetId: string, settings: any) => Promise<boolean>;
+  onLoadSettings: (assetId: string) => Promise<RetouchSettings | undefined>;
+  onExportImage: (
+    assetId: string,
+    settings: RetouchSettings,
+    dataUrl: string,
+    format: "jpeg" | "png",
+  ) => Promise<boolean>;
 }
 
 export function ProjectsView({
@@ -85,6 +92,7 @@ export function ProjectsView({
   models,
   onEnterEditor,
   onSaveSettings,
+  onLoadSettings,
   onExportImage,
 }: ProjectsViewProps) {
 
@@ -206,6 +214,7 @@ export function ProjectsView({
         models={models}
         onEnterEditor={onEnterEditor}
         onSaveSettings={onSaveSettings}
+        onLoadSettings={onLoadSettings}
         onExportImage={onExportImage}
       />
     );

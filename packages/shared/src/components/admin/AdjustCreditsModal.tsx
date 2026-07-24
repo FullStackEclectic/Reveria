@@ -196,7 +196,7 @@ export function AdjustCreditsModal({
           >
             <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
             <span style={{ fontSize: "10px", lineHeight: "1.4" }}>
-              <strong>调额注意:</strong> 额度改动将直接反映在当前活跃工作区 <strong>{activeWorkspace?.name}</strong> 的可用算力余额中。如果为共通模式，将同时对主站 Owner 的 Quota 进行划扣 and 调整。
+              <strong>调额注意:</strong> 额度改动将直接反映在当前活跃工作区 <strong>{activeWorkspace?.name}</strong> 的可用算力余额中。
             </span>
           </div>
 

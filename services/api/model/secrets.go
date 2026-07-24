@@ -89,22 +89,12 @@ func (provider *Provider) AfterFind(_ *gorm.DB) error {
 
 func (settings *ClientSettings) BeforeSave(_ *gorm.DB) error {
 	upstream, err := encryptSecret(settings.UpstreamAPIKey)
-	if err != nil {
-		return err
-	}
-	bridge, err := encryptSecret(settings.BridgeInternalSecret)
 	settings.UpstreamAPIKey = upstream
-	settings.BridgeInternalSecret = bridge
 	return err
 }
 
 func (settings *ClientSettings) AfterFind(_ *gorm.DB) error {
 	upstream, err := decryptSecret(settings.UpstreamAPIKey)
-	if err != nil {
-		return err
-	}
-	bridge, err := decryptSecret(settings.BridgeInternalSecret)
 	settings.UpstreamAPIKey = upstream
-	settings.BridgeInternalSecret = bridge
 	return err
 }

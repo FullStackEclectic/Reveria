@@ -25,7 +25,13 @@ interface MainRouterProps {
   handleViewChange: (view: AppView) => void;
   exportCurrentProject: (format: "json" | "markdown") => void;
   handleSaveRetouchSettings: (assetId: string, settings: RetouchSettings) => Promise<any>;
-  handleExportRetouchImage: (assetId: string, settings: RetouchSettings) => Promise<any>;
+  handleLoadRetouchSettings: (assetId: string) => Promise<RetouchSettings | undefined>;
+  handleExportRetouchImage: (
+    assetId: string,
+    settings: RetouchSettings,
+    dataUrl: string,
+    format: "jpeg" | "png",
+  ) => Promise<any>;
   handleSaveCustomer: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteAsset: (assetId: string) => Promise<void>;
   handleCreateOrder: (planId: string) => Promise<void>;
@@ -101,6 +107,7 @@ export function MainRouter({
   handleViewChange,
   exportCurrentProject,
   handleSaveRetouchSettings,
+  handleLoadRetouchSettings,
   handleExportRetouchImage,
   handleSaveCustomer,
   deleteAsset,
@@ -247,6 +254,7 @@ export function MainRouter({
           }}
           setPreviewAsset={setPreviewAsset}
           onSaveSettings={handleSaveRetouchSettings}
+          onLoadSettings={handleLoadRetouchSettings}
           onExportImage={handleExportRetouchImage}
         />
       );

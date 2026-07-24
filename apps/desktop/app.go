@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -91,6 +93,41 @@ func (a *App) SelectSavePath(defaultFilename string) string {
 		return ""
 	}
 	return path
+}
+
+// SaveRenderedImage 将前端 WebGL 的最终渲染结果写入用户选择的路径。
+func (a *App) SaveRenderedImage(dataURL string, outputPath string) error {
+	if strings.TrimSpace(outputPath) == "" {
+		return os.ErrInvalid
+	}
+	imageBytes, err := decodeRenderedImageDataURL(dataURL)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(outputPath, imageBytes, 0644)
+}
+
+func decodeRenderedImageDataURL(dataURL string) ([]byte, error) {
+	comma := strings.IndexByte(dataURL, ',')
+	if comma < 0 {
+		return nil, errors.New("无效的图片数据")
+	}
+	header := dataURL[:comma]
+	if header != "data:image/jpeg;base64" && header != "data:image/png;base64" {
+		return nil, errors.New("不支持的图片格式")
+	}
+	encoded := dataURL[comma+1:]
+	if encoded == "" || int64(len(encoded)) > desktopCacheLimit()*4/3+4 {
+		return nil, errors.New("图片数据为空或过大")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, errors.New("图片数据解码失败")
+	}
+	return decoded, nil
 }
 
 const defaultDesktopCacheLimit int64 = 512 * 1024 * 1024

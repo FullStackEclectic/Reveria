@@ -40,9 +40,7 @@ func init() {
 }
 
 func resolveTaskPollingSettings(task model.GenerationTask, settings model.ClientSettings) (model.ClientSettings, error) {
-	if settings.BillingMode == "bridge" {
-		settings.UpstreamAPIURL = settings.BridgeMainStationURL
-	} else if task.SelectedModel != nil && strings.TrimSpace(*task.SelectedModel) != "" {
+	if task.SelectedModel != nil && strings.TrimSpace(*task.SelectedModel) != "" {
 		var dbModel model.Model
 		lookupErr := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error
 		if lookupErr != nil {
@@ -83,40 +81,32 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 
 	// 获取真实的网关模型 API 英文标识
 	gatewayModelName := ""
-	if settings.BillingMode == "bridge" {
-		if task.SelectedModel != nil {
-			gatewayModelName = *task.SelectedModel
+	if task.SelectedModel != nil {
+		var dbModel model.Model
+		if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err != nil {
+			// 兜底匹配：若是模板推荐的模型ID没有带 provider_uuid 前缀，则使用 name 进行匹配
+			_ = database.DB.Where("name = ? AND enabled = true", *task.SelectedModel).First(&dbModel).Error
 		}
-		settings.UpstreamAPIURL = settings.BridgeMainStationURL
-		log.Printf("[callUpstreamGateway] Bridge Mode: Model=%s, URL=%s", gatewayModelName, settings.UpstreamAPIURL)
-	} else {
-		if task.SelectedModel != nil {
-			var dbModel model.Model
-			if err := database.DB.Where("id = ?", *task.SelectedModel).First(&dbModel).Error; err != nil {
-				// 兜底匹配：若是模板推荐的模型ID没有带 provider_uuid 前缀，则使用 name 进行匹配
-				_ = database.DB.Where("name = ? AND enabled = true", *task.SelectedModel).First(&dbModel).Error
-			}
-			if dbModel.Name != "" {
-				gatewayModelName = dbModel.Name
-				log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
+		if dbModel.Name != "" {
+			gatewayModelName = dbModel.Name
+			log.Printf("[callUpstreamGateway] Resolved model ID %s to API name %s", *task.SelectedModel, gatewayModelName)
 
-				// 读取模型对应的 Provider，仅覆盖 settings 的 API 密钥
-				var provider model.Provider
-				if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
-					if strings.TrimSpace(provider.ApiURL) != "" {
-						settings.UpstreamAPIURL = provider.ApiURL
-					}
-					if provider.ApiKey != "" {
-						settings.UpstreamAPIKey = provider.ApiKey
-					}
-					log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, locked URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
-				} else {
-					log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
+			// 读取模型对应的 Provider，仅覆盖 settings 的 API 密钥
+			var provider model.Provider
+			if err := database.DB.Where("id = ?", dbModel.ProviderID).First(&provider).Error; err == nil {
+				if strings.TrimSpace(provider.ApiURL) != "" {
+					settings.UpstreamAPIURL = provider.ApiURL
 				}
+				if provider.ApiKey != "" {
+					settings.UpstreamAPIKey = provider.ApiKey
+				}
+				log.Printf("[callUpstreamGateway] Loaded Provider from DB for model %s: ID=%s, locked URL=%s", gatewayModelName, provider.ID, settings.UpstreamAPIURL)
 			} else {
-				gatewayModelName = *task.SelectedModel
-				log.Printf("[callUpstreamGateway] Using raw model name and global settings: %s", gatewayModelName)
+				log.Printf("[callUpstreamGateway] DB provider not found for ID %s, using global setting fallback: %v", dbModel.ProviderID, err)
 			}
+		} else {
+			gatewayModelName = *task.SelectedModel
+			log.Printf("[callUpstreamGateway] Using raw model name and global settings: %s", gatewayModelName)
 		}
 	}
 	if strings.TrimSpace(settings.UpstreamAPIURL) == "" {

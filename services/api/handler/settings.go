@@ -16,11 +16,6 @@ func sanitizedClientSettings(settings model.ClientSettings) gin.H {
 		"allow_user_register": settings.AllowUserRegister, "gift_credits_on_register": settings.GiftCreditsOnRegister,
 		"price_rate": settings.PriceRate, "upstream_api_url": settings.UpstreamAPIURL,
 		"upstream_api_key": "", "upstream_api_key_configured": strings.TrimSpace(settings.UpstreamAPIKey) != "",
-		"billing_mode": settings.BillingMode, "bridge_main_station_url": settings.BridgeMainStationURL,
-		"bridge_internal_secret": "", "bridge_internal_secret_configured": strings.TrimSpace(settings.BridgeInternalSecret) != "",
-		"bridge_text_model": settings.BridgeTextModel, "bridge_image_model": settings.BridgeImageModel,
-		"bridge_video_model": settings.BridgeVideoModel, "bridge_text_pools": settings.BridgeTextPools,
-		"bridge_image_pools": settings.BridgeImagePools, "bridge_video_pools": settings.BridgeVideoPools,
 		"created_at": settings.CreatedAt, "updated_at": settings.UpdatedAt,
 	}
 }
@@ -62,17 +57,6 @@ func UpdateClientSettings(c *gin.Context) {
 	settings.AllowUserRegister = req.AllowUserRegister
 	settings.GiftCreditsOnRegister = req.GiftCreditsOnRegister
 	settings.PriceRate = req.PriceRate
-	settings.BillingMode = req.BillingMode
-	settings.BridgeMainStationURL = req.BridgeMainStationURL
-	if strings.TrimSpace(req.BridgeInternalSecret) != "" {
-		settings.BridgeInternalSecret = strings.TrimSpace(req.BridgeInternalSecret)
-	}
-	settings.BridgeTextModel = req.BridgeTextModel
-	settings.BridgeImageModel = req.BridgeImageModel
-	settings.BridgeVideoModel = req.BridgeVideoModel
-	settings.BridgeTextPools = req.BridgeTextPools
-	settings.BridgeImagePools = req.BridgeImagePools
-	settings.BridgeVideoPools = req.BridgeVideoPools
 
 	if err := database.DB.Save(&settings).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "保存失败: " + err.Error()})

@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@mediapipe/face_mesh": "^0.4.1633559619",
     "lucide-react": "0.468.0"
   },
   "peerDependencies": {
@@ -13,10 +14,10 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "typescript": "6.0.3"
   }
 }

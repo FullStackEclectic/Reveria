@@ -104,7 +104,7 @@ func EstimateTask(c *gin.Context) {
 
 	// 支持根据站长加价率进行换算
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
+	if err := database.DB.First(&settings).Error; err == nil {
 		estCredits = int64(float64(estCredits) * settings.PriceRate)
 	}
 
@@ -184,34 +184,15 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	if settings.BillingMode == "bridge" {
-		// 桥接模式下的默认模型分配：如果 SelectedModel 为空，则从已配置的逗号分隔列表中提取第一个作为兜底
-		if req.SelectedModel == "" {
-			var fallbackModel string
-			if req.TaskType == "video_generation" || req.TaskType == "image_to_video" {
-				fallbackModel = settings.BridgeVideoModel
-			} else {
-				fallbackModel = settings.BridgeImageModel
-			}
-
-			if fallbackModel != "" {
-				parts := strings.Split(fallbackModel, ",")
-				req.SelectedModel = strings.TrimSpace(parts[0])
-			}
-		}
-	}
-
 	// 2. 估算与扣除/冻结积分。价格必须来自模型或定价规则，禁止使用代码内默认价格。
 	estCredits, err := resolveEstimatedCredits(req.TaskType, req.SelectedModel)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if settings.BillingMode != "bridge" {
-		estCredits = int64(float64(estCredits) * settings.PriceRate)
-		if estCredits < 1 {
-			estCredits = 1
-		}
+	estCredits = int64(float64(estCredits) * settings.PriceRate)
+	if estCredits < 1 {
+		estCredits = 1
 	}
 
 	// 准备 GenerationTask 记录

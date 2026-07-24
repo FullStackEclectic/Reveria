@@ -190,15 +190,6 @@ func initDefaultSettings() {
 			AllowUserRegister:     true,
 			GiftCreditsOnRegister: 0,
 			PriceRate:             1.00,
-			BillingMode:           "standalone",
-			BridgeMainStationURL:  "",
-			BridgeInternalSecret:  "",
-			BridgeTextModel:       "",
-			BridgeImageModel:      "",
-			BridgeVideoModel:      "",
-			BridgeTextPools:       "",
-			BridgeImagePools:      "",
-			BridgeVideoPools:      "",
 		}
 		if err := database.DB.Create(&settings).Error; err != nil {
 			log.Printf("初始化默认配置记录失败: %v", err)

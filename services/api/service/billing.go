@@ -2,7 +2,6 @@ package service
 
 import (
 	"github.com/google/uuid"
-	"reveria/services/api/database"
 	"reveria/services/api/model"
 )
 
@@ -21,14 +20,7 @@ type BillingService interface {
 	SettleCredits(userID uuid.UUID, workspaceID uuid.UUID, actualAmount int64, reason string, task *model.GenerationTask) error
 }
 
-// GetBillingService 根据系统当前的配置获取合适的计费服务实例
+// GetBillingService 返回本地独立计费服务实例
 func GetBillingService() BillingService {
-	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
-		if settings.BillingMode == "bridge" {
-			return NewBridgeBilling()
-		}
-	}
-	// 默认独立模式
 	return NewStandaloneBilling()
 }

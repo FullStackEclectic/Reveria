@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl, uploadAsset } from "../../utils";
+import { DEFAULT_SETTINGS } from "./editorConstants";
 import "./RetouchView.css";
 
 interface RetouchViewProps {
@@ -26,33 +27,33 @@ interface RecentExport {
 
 // 预设模板
 const PRESETS = [
-  { 
+  {
     id: "wedding",
-    emoji: "WED", 
-    title: "唯美婚礼", 
+    emoji: "WED",
+    title: "唯美婚礼",
     desc: "柔和磨皮，暖调高光，高精白皙",
-    settings: { exposure: 15, contrast: -10, saturation: 8, blur_strength: 65, eye_enlarge: 20, slim_face: 15, lut_file: "wedding.3dlut" }
+    settings: { ...DEFAULT_SETTINGS, exposure: 15, contrast: -10, saturation: 8, temperature: 15, highlights: 10, blur_strength: 65, skin_whiten: 30, eye_enlarge: 20, slim_face: 15, lut_file: "wedding.3dlut" }
   },
-  { 
+  {
     id: "id_photo",
-    emoji: "ID", 
-    title: "轻颜证件", 
+    emoji: "ID",
+    title: "轻颜证件",
     desc: "通透美白，强效磨皮，精致五官",
-    settings: { exposure: 20, contrast: 5, saturation: -5, blur_strength: 80, eye_enlarge: 35, slim_face: 30, lut_file: "id_photo.3dlut" }
+    settings: { ...DEFAULT_SETTINGS, exposure: 20, contrast: 5, saturation: -5, whites: 10, blur_strength: 80, skin_whiten: 50, eye_enlarge: 35, slim_face: 30, lut_file: "id_photo.3dlut" }
   },
-  { 
+  {
     id: "outdoor",
-    emoji: "OUT", 
-    title: "清新户外", 
+    emoji: "OUT",
+    title: "清新户外",
     desc: "鲜艳色彩，自适应光影，自然磨皮",
-    settings: { exposure: 25, contrast: -5, saturation: 15, blur_strength: 50, eye_enlarge: 15, slim_face: 10, lut_file: "fresh.3dlut" }
+    settings: { ...DEFAULT_SETTINGS, exposure: 25, contrast: -5, saturation: 15, vibrance: 20, clarity: 15, blur_strength: 50, eye_enlarge: 15, slim_face: 10, lut_file: "fresh.3dlut" }
   },
-  { 
+  {
     id: "vintage",
-    emoji: "RET", 
-    title: "复古港风", 
+    emoji: "RET",
+    title: "复古港风",
     desc: "金红复古，胶片颗粒，经典阴影",
-    settings: { exposure: -5, contrast: 20, saturation: 25, blur_strength: 40, eye_enlarge: 10, slim_face: 5, lut_file: "vintage.3dlut" }
+    settings: { ...DEFAULT_SETTINGS, exposure: -5, contrast: 20, saturation: 25, temperature: 10, shadows: -15, blur_strength: 40, eye_enlarge: 10, slim_face: 5, lut_file: "vintage.3dlut" }
   }
 ];
 

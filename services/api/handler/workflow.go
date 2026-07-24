@@ -52,7 +52,7 @@ func RunBriefAnalysis(c *gin.Context) {
 	// 1. 扣减 2 个积分点数
 	var costCredits int64 = 2
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
+	if err := database.DB.First(&settings).Error; err == nil {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 
@@ -243,33 +243,22 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 	var apiURL string
 	modelName := "deepseek-chat"
 
-	if settings.BillingMode == "bridge" {
-		baseURL := strings.TrimSuffix(settings.BridgeMainStationURL, "/")
-		baseURL = strings.TrimSuffix(baseURL, "/v1")
-		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
-		if targetModel != "" {
-			modelName = targetModel
-		} else if settings.BridgeTextModel != "" {
-			modelName = settings.BridgeTextModel
-		}
-	} else {
-		// 自营模式下使用站长配置的上游网关地址，未配置时使用默认地址
-		if settings.UpstreamAPIURL == "" {
-			settings.UpstreamAPIURL = "https://ai.12zx.net"
-		}
+	// 使用站长配置的上游网关地址，未配置时使用默认地址
+	if settings.UpstreamAPIURL == "" {
+		settings.UpstreamAPIURL = "https://ai.12zx.net"
+	}
 
-		// 智能从已启用的 Provider 列表中自动抽取一个可用通道的 Key
-		var p model.Provider
-		if err := database.DB.Where("enabled = ? AND api_key != ''", true).First(&p).Error; err == nil {
-			settings.UpstreamAPIKey = p.ApiKey
-		}
+	// 智能从已启用的 Provider 列表中自动抽取一个可用通道的 Key
+	var p model.Provider
+	if err := database.DB.Where("enabled = ? AND api_key != ''", true).First(&p).Error; err == nil {
+		settings.UpstreamAPIKey = p.ApiKey
+	}
 
-		baseURL := strings.TrimSuffix(settings.UpstreamAPIURL, "/")
-		baseURL = strings.TrimSuffix(baseURL, "/v1")
-		apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
-		if targetModel != "" {
-			modelName = targetModel
-		}
+	baseURL := strings.TrimSuffix(settings.UpstreamAPIURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	apiURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
+	if targetModel != "" {
+		modelName = targetModel
 	}
 
 	reqBody := map[string]any{
@@ -356,7 +345,7 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 	// 1. 扣除 5 点积分
 	var costCredits int64 = 5
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
+	if err := database.DB.First(&settings).Error; err == nil {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 
@@ -447,7 +436,7 @@ func RunMagicAction(c *gin.Context) {
 	// 2. 扣减积分 (抠图/超分/擦除统一扣除 2 个积分点数)
 	var costCredits int64 = 2
 	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode != "bridge" {
+	if err := database.DB.First(&settings).Error; err == nil {
 		costCredits = int64(float64(costCredits) * settings.PriceRate)
 	}
 

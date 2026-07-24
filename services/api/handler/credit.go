@@ -42,21 +42,11 @@ func GetCreditBalance(c *gin.Context) {
 	var ws model.Workspace
 	database.DB.Where("id = ?", workspaceID).First(&ws)
 
-	var recharge, gift, refund float64
-	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil && settings.BillingMode == "bridge" {
-		gift = total // 桥接模式下将总额度当做赠送积分返回，保证前端大盘完美展示
-	} else {
-		recharge = float64(ws.RechargeBalance)
-		gift = float64(ws.GiftBalance)
-		refund = float64(ws.RefundBalance)
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"workspace_id":     workspaceID,
-		"recharge_credits": recharge,
-		"gift_credits":     gift,
-		"refund_credits":   refund,
+		"recharge_credits": float64(ws.RechargeBalance),
+		"gift_credits":     float64(ws.GiftBalance),
+		"refund_credits":   float64(ws.RefundBalance),
 		"total_credits":    total,
 	})
 }

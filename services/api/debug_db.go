@@ -20,10 +20,8 @@ func main() {
 	fmt.Println("--- 1. client_settings ---")
 	var settings model.ClientSettings
 	if err := database.DB.First(&settings).Error; err == nil {
-		fmt.Printf("BillingMode: '%s'\n", settings.BillingMode)
 		fmt.Printf("UpstreamAPIURL: '%s'\n", settings.UpstreamAPIURL)
 		fmt.Printf("UpstreamAPIKey: '%s'\n", settings.UpstreamAPIKey)
-		fmt.Printf("BridgeMainStationURL: '%s'\n", settings.BridgeMainStationURL)
 	} else {
 		log.Printf("获取 client_settings 失败: %v\n", err)
 	}
