@@ -3,6 +3,9 @@ import { CheckSquare, Eraser, Eye, Move, RotateCcw, Sliders, Sparkles, Wand2 } f
 import { GeometryToolButtons } from "./GeometryToolButtons";
 import { CropRect } from "./CropOverlay";
 import { RetouchSettings } from "./editorConstants";
+import { GUIDE_OPTIONS, type GuideKind } from "./GuideOverlay";
+
+export type CanvasTool = "move" | "healing" | "clone" | "liquify" | "erase";
 
 interface Props {
   hasAsset: boolean;
@@ -11,11 +14,13 @@ interface Props {
   settings: RetouchSettings;
   cropDraft: CropRect | null;
   setCropDraft: React.Dispatch<React.SetStateAction<CropRect | null>>;
-  activeCanvasTool: "move" | "healing" | "clone";
-  setActiveCanvasTool: (tool: "move" | "healing" | "clone") => void;
+  activeCanvasTool: CanvasTool;
+  setActiveCanvasTool: (tool: CanvasTool) => void;
   cloneSource: { x: number; y: number } | null;
   setCloneSampling: (sampling: boolean) => void;
-  setActiveTab: (tab: "portrait" | "color" | "local" | "other") => void;
+  setActiveTab: (tab: "portrait" | "color" | "local" | "liquify" | "erase") => void;
+  guide: GuideKind;
+  setGuide: (guide: GuideKind) => void;
   onRotate: () => void;
   onFlipHorizontal: () => void;
   onFlipVertical: () => void;
@@ -31,6 +36,7 @@ interface Props {
 export function CanvasToolbar({
   hasAsset, zoomPercent, setZoomPercent, settings, cropDraft, setCropDraft,
   activeCanvasTool, setActiveCanvasTool, cloneSource, setCloneSampling, setActiveTab,
+  guide, setGuide,
   onRotate, onFlipHorizontal, onFlipVertical, canUndo, canRedo, onUndo, onRedo,
   showOriginal, setShowOriginal, onReset,
 }: Props) {
@@ -39,6 +45,9 @@ export function CanvasToolbar({
     setCropDraft(null); setActiveCanvasTool("clone"); setActiveTab("local");
     if (!cloneSource) setCloneSampling(true);
   };
+  const selectLiquify = () => { setCropDraft(null); setActiveCanvasTool("liquify"); setActiveTab("liquify"); };
+  const selectErase = () => { setCropDraft(null); setActiveCanvasTool("erase"); setActiveTab("erase"); };
+
   return (
     <div className="retouch-canvas-toolbar">
       <div className="tool-dropdown-group">
@@ -51,10 +60,33 @@ export function CanvasToolbar({
         <button className={`tool-icon-btn ${activeCanvasTool === "move" ? "active" : ""}`} disabled={!hasAsset} onClick={() => setActiveCanvasTool("move")} title="移动工具 (M)"><Move size={15} /></button>
         <GeometryToolButtons disabled={!hasAsset} cropping={cropDraft !== null} onToggleCrop={() => setCropDraft(cropDraft ? null : { x: settings.crop_x, y: settings.crop_y, width: settings.crop_width, height: settings.crop_height })} onRotate={onRotate} onFlipHorizontal={onFlipHorizontal} onFlipVertical={onFlipVertical} />
         <button className={`tool-icon-btn ${activeCanvasTool === "healing" ? "active" : ""}`} disabled={!hasAsset} title="污点修复画笔 (J)" onClick={selectHealing}><Wand2 size={15} /></button>
-        <button className="tool-icon-btn" disabled={!hasAsset} title="参考辅助线 (U)"><Sliders size={15} /></button>
-        <button className="tool-icon-btn" disabled={!hasAsset} title="高精液化 (W)"><Sparkles size={15} /></button>
+
+        {/* 参考辅助线：纯视觉叠加，选择构图参考线类型 */}
+        <div className="guide-select-wrapper">
+          <button
+            className={`tool-icon-btn ${guide !== "none" ? "active" : ""}`}
+            disabled={!hasAsset}
+            title="参考辅助线 (U)"
+            onClick={() => setGuide(guide === "none" ? "thirds" : "none")}
+          >
+            <Sliders size={15} />
+          </button>
+          <select
+            className="guide-select"
+            value={guide}
+            disabled={!hasAsset}
+            onChange={(event) => setGuide(event.target.value as GuideKind)}
+            title="选择参考线类型"
+          >
+            {GUIDE_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <button className={`tool-icon-btn ${activeCanvasTool === "liquify" ? "active" : ""}`} disabled={!hasAsset} title="高精液化 (W)" onClick={selectLiquify}><Sparkles size={15} /></button>
         <button className={`tool-icon-btn ${activeCanvasTool === "clone" ? "active" : ""}`} disabled={!hasAsset} title="仿制图章 (S)" onClick={selectClone}><CheckSquare size={15} /></button>
-        <button className="tool-icon-btn" disabled={!hasAsset} title="智能消除 (E)"><Eraser size={15} /></button>
+        <button className={`tool-icon-btn ${activeCanvasTool === "erase" ? "active" : ""}`} disabled={!hasAsset} title="智能消除 (E)" onClick={selectErase}><Eraser size={15} /></button>
       </div>
       <div className="tool-divider" />
       <div className="toolbar-right-actions">

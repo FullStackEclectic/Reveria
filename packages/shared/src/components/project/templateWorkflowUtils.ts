@@ -39,21 +39,52 @@ export async function runTemplateGeneration({
   pushToHistory,
   projectCanvas,
 }: GenerateParams) {
-  // 智能自动同步画布内容到后端数据库，防止刷新页面后卡片或状态丢失
-  const saveCanvasData = async (updatedItems: any[]) => {
+  // 本次生成的占位卡 ID，同时用作「文档是否仍属于本次生成」的判据（见 updatePlaceholder）。
+  const placeholderId = createCanvasItemId();
+
+  // 自动同步画布到后端，防止刷新丢卡片。
+  // 必须接收「完整文档」而不是只接收 items：后端是整体覆盖式 upsert，
+  // 且文档必须来自 setProjectCanvas 的 current，不能用函数入口处捕获的闭包快照，
+  // 否则生成期间用户的任何编辑（新卡片、新画板、新连线）都会被旧快照覆盖。
+  let lastSavedPayload = "";
+  const saveCanvasDoc = async (doc: ProjectCanvasDocument) => {
+    const payload = JSON.stringify({ ...doc, version: 1 });
+    if (lastSavedPayload === payload) return;
+    lastSavedPayload = payload;
     try {
-      const updatedCanvas: ProjectCanvasDocument = {
-        ...projectCanvas,
-        version: 1,
-        panX,
-        panY,
-        activeBoardId,
-        items: updatedItems,
-      };
-      await putJson(`/api/projects/${projectId}/canvas`, { canvas: updatedCanvas });
+      await putJson(`/api/projects/${projectId}/canvas`, { canvas: JSON.parse(payload) });
     } catch (e) {
+      lastSavedPayload = "";
       console.error("[runTemplateGeneration] 自动同步画布失败:", e);
     }
+  };
+
+  /**
+   * 在最新文档上更新占位卡片。
+   *
+   * 占位卡是否还在 current.items 里，同时充当「这份文档是否仍属于本次生成」的判据：
+   * 用户切到别的项目后，全局 projectCanvas 已经换成另一个项目的文档，占位卡自然不在其中，
+   * 此时必须整体放弃——否则会把另一个项目的卡片 PUT 进本项目的画布 URL，造成跨项目覆盖。
+   * 用户手动删掉占位卡时同样应当放弃。
+   */
+  const updatePlaceholder = (
+    transform: (item: CanvasItem) => CanvasItem,
+    options: { persist: boolean } = { persist: true }
+  ) => {
+    setProjectCanvas((current) => {
+      if (!current.items.some((item) => item.id === placeholderId)) {
+        return current;
+      }
+      const nextDoc: ProjectCanvasDocument = {
+        ...current,
+        version: 1,
+        items: current.items.map((item) => (item.id === placeholderId ? transform(item) : item)),
+      };
+      if (options.persist) {
+        void saveCanvasDoc(nextDoc);
+      }
+      return nextDoc;
+    });
   };
 
   // 1. 智能提取选定分辨率或从 ratio 推导初始大小，使占位符比例与真图 100% 保持一致
@@ -101,33 +132,31 @@ export async function runTemplateGeneration({
   }
 
   // 2. 先往画布添加一个占位卡片
-  const placeholderId = createCanvasItemId();
-  
   pushToHistory(projectCanvas);
-  
-  const initialItems: CanvasItem[] = [
-    ...projectCanvas.items,
-    {
-      id: placeholderId,
-      type: "note" as const,
-      title: `正在生成 ${template.title}...`,
-      text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
-      x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
-      y: Math.round(-panY + 100 + (itemsCount % 5) * 30),
-      w,
-      h,
-      board_id: activeBoardId,
-    },
-  ];
 
-  setProjectCanvas((current) => ({
-    ...current,
-    version: 1,
-    items: initialItems,
-  }));
-  
-  // 立即自动保存占位卡片状态到数据库，确保刷新不丢失
-  void saveCanvasData(initialItems);
+  const placeholderItem: CanvasItem = {
+    id: placeholderId,
+    type: "note" as const,
+    title: `正在生成 ${template.title}...`,
+    text: `提示词: ${payload.prompt}\n\n正在拼命生成中，请稍候...`,
+    x: Math.round(-panX + 100 + (itemsCount % 4) * 40),
+    y: Math.round(-panY + 100 + (itemsCount % 5) * 30),
+    w,
+    h,
+    board_id: activeBoardId,
+  };
+
+  // 基于 current 追加，避免覆盖掉提交瞬间之后产生的其它编辑。
+  setProjectCanvas((current) => {
+    const nextDoc: ProjectCanvasDocument = {
+      ...current,
+      version: 1,
+      items: [...current.items, placeholderItem],
+    };
+    // 立即自动保存占位卡片状态到数据库，确保刷新不丢失
+    void saveCanvasDoc(nextDoc);
+    return nextDoc;
+  });
 
   showToast(`“${template.title}”任务已提交，正在生成中...`);
 
@@ -256,27 +285,17 @@ export async function runTemplateGeneration({
           setAssets((curr) => [asset, ...curr]);
         }
         
-        const syncItems: CanvasItem[] = projectCanvas.items.map((item) =>
-          item.id === placeholderId
-            ? {
-                id: placeholderId,
-                type: "asset" as const,
-                asset_id: asset.id,
-                title: assetTitle(asset) || template.title,
-                x: item.x,
-                y: item.y,
-                w: item.w,
-                h: item.h,
-                board_id: item.board_id,
-              }
-            : item
-        );
-        
-        setProjectCanvas((current) => ({
-          ...current,
-          items: syncItems,
+        updatePlaceholder((item) => ({
+          id: placeholderId,
+          type: "asset" as const,
+          asset_id: asset.id,
+          title: assetTitle(asset) || template.title,
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+          board_id: item.board_id,
         }));
-        void saveCanvasData(syncItems);
         showToast(`“${template.title}”生成成功！`);
       } else if (response.output) {
         const outputText = typeof response.output === "string" 
@@ -285,34 +304,17 @@ export async function runTemplateGeneration({
           ? response.output.summary
           : JSON.stringify(response.output, null, 2);
 
-        const textItems = projectCanvas.items.map((item) =>
-          item.id === placeholderId
-            ? {
-                ...item,
-                title: template.title,
-                text: outputText,
-              }
-            : item
-        );
-
-        setProjectCanvas((current) => ({
-          ...current,
-          items: textItems,
+        updatePlaceholder((item) => ({
+          ...item,
+          title: template.title,
+          text: outputText,
         }));
-        void saveCanvasData(textItems);
         showToast(`\u201c${template.title}\u201d创意生成成功！`);
       } else if (task && task.id) {
         const taskId = task.id;
         
         // 绑定 task_id 并持久化保存到后端
-        const idItems = initialItems.map((item) =>
-          item.id === placeholderId ? { ...item, task_id: taskId } : item
-        );
-        setProjectCanvas((current) => ({
-          ...current,
-          items: idItems,
-        }));
-        void saveCanvasData(idItems);
+        updatePlaceholder((item) => ({ ...item, task_id: taskId }));
 
         const pollInterval = setInterval(async () => {
           try {
@@ -338,45 +340,45 @@ export async function runTemplateGeneration({
                     setAssets(assetsData);
                   }
 
-                  const latestAsset = assetsData[0];
-                  
-                  setProjectCanvas((current) => {
-                    const successItems = current.items.map((item) =>
-                      item.id === placeholderId
-                        ? {
-                            id: placeholderId,
-                            type: "asset" as const,
-                            asset_id: latestAsset.id,
-                            title: assetTitle(latestAsset) || template.title,
-                            x: item.x,
-                            y: item.y,
-                            w: item.w,
-                            h: item.h,
-                            board_id: item.board_id,
-                          }
-                        : item
-                    );
-                    void saveCanvasData(successItems);
-                    return { ...current, items: successItems };
-                  });
+                  // 必须按 task_id 精确匹配本次任务的产物。
+                  // 素材列表按 created_at desc 排序，取 assetsData[0] 会在以下场景绑错图：
+                  //   - 生成期间用户手动上传了新素材
+                  //   - 同时有多个生成任务在轮询，它们会全部绑到同一张图
+                  const generated = assetsData
+                    .filter((asset) => asset.task_id === taskId)
+                    .sort((a, b) => (a.output_index ?? 0) - (b.output_index ?? 0));
+                  const producedAsset = generated[0];
+
+                  if (producedAsset) {
+                    updatePlaceholder((item) => ({
+                      id: placeholderId,
+                      type: "asset" as const,
+                      asset_id: producedAsset.id,
+                      title: assetTitle(producedAsset) || template.title,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h,
+                      board_id: item.board_id,
+                    }));
+                  } else {
+                    // 任务已成功但产物尚未入库或未回填 task_id，如实告知而不是随便绑一张图
+                    updatePlaceholder((item) => ({
+                      ...item,
+                      title: `${template.title} 结果待同步`,
+                      text: "任务已完成，但未能定位到本次生成的图片。请刷新素材库后查看。",
+                    }));
+                  }
                 }
                 showToast(`\u201c${template.title}\u201d生成完毕！`);
               } else if (taskStatus === "failed") {
                 clearInterval(pollInterval);
                 
-                setProjectCanvas((current) => {
-                  const failItems = current.items.map((item) =>
-                    item.id === placeholderId
-                      ? {
-                          ...item,
-                          title: `${template.title} 生成失败`,
-                          text: `错误信息: ${taskData.error_message || "未知服务商内部错误"}`,
-                        }
-                      : item
-                  );
-                  void saveCanvasData(failItems);
-                  return { ...current, items: failItems };
-                });
+                updatePlaceholder((item) => ({
+                  ...item,
+                  title: `${template.title} 生成失败`,
+                  text: `错误信息: ${taskData.error_message || "未知服务商内部错误"}`,
+                }));
                 showToast("任务生成失败");
               } else if (taskStatus === "running") {
                 // 从 output_payload 中读取实时进度文本并更新占位卡片
@@ -390,14 +392,11 @@ export async function runTemplateGeneration({
                   }
                 } catch (_e) { /* ignore parse error */ }
 
-                setProjectCanvas((current) => ({
-                  ...current,
-                  items: current.items.map((item) =>
-                    item.id === placeholderId
-                      ? { ...item, text: `提示词: ${payload.prompt}\n\n${progressText}` }
-                      : item
-                  ),
-                }));
+                // 进度文本变化频繁，只更新内存不落库，避免高频 PUT
+                updatePlaceholder(
+                  (item) => ({ ...item, text: `提示词: ${payload.prompt}\n\n${progressText}` }),
+                  { persist: false }
+                );
               }
             }
           } catch (err) {
@@ -416,21 +415,11 @@ export async function runTemplateGeneration({
   } catch (err: any) {
     console.error("模板直接生成失败:", err);
     
-    const errorItems = projectCanvas.items.map((item) =>
-      item.id === placeholderId
-        ? {
-            ...item,
-            title: `${template.title} 生成出错`,
-            text: `生成时发生错误，请重试。\n具体原因: ${err.message || err}`,
-          }
-        : item
-    );
-
-    setProjectCanvas((current) => ({
-      ...current,
-      items: errorItems,
+    updatePlaceholder((item) => ({
+      ...item,
+      title: `${template.title} 生成出错`,
+      text: `生成时发生错误，请重试。\n具体原因: ${err.message || err}`,
     }));
-    void saveCanvasData(errorItems);
     showToast("任务提交失败，请检查积分余额或输入");
   }
 }

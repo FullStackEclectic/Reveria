@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,6 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	// canvasItemLimit 单个画布文档允许承载的元素上限，
+	// 需与前端 packages/shared/src/utils.ts 的 CANVAS_ITEM_LIMIT 保持一致。
+	canvasItemLimit = 2000
+	// canvasMaxBytes 画布文档序列化后的体积上限，防止超大载荷打满数据库与内存。
+	canvasMaxBytes = 4 << 20 // 4MB
 )
 
 // ProjectCanvasSummary Canvas 返回 Summary
@@ -84,9 +93,9 @@ func UpdateProjectCanvas(c *gin.Context) {
 		return
 	}
 
-	// 校验画布是否合法 (is_valid_project_canvas)
-	if !isValidProjectCanvas(req.Canvas) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "画布数据结构不合法(version需为1)"})
+	// 校验画布是否合法
+	if ok, reason := validateProjectCanvas(req.Canvas); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": reason})
 		return
 	}
 
@@ -133,25 +142,57 @@ func UpdateProjectCanvas(c *gin.Context) {
 	})
 }
 
-// isValidProjectCanvas 校验画布结构
-func isValidProjectCanvas(canvasData json.RawMessage) bool {
+// validateProjectCanvas 校验画布结构，返回是否合法与不合法的具体原因。
+// 画布以原始 JSON 落库，这里是唯一的服务端防线，必须挡住超大载荷与结构错乱的文档。
+func validateProjectCanvas(canvasData json.RawMessage) (bool, string) {
+	if len(canvasData) > canvasMaxBytes {
+		return false, fmt.Sprintf("画布数据过大(上限 %d MB)，请清理后再保存", canvasMaxBytes>>20)
+	}
+
 	var val map[string]any
 	if err := json.Unmarshal(canvasData, &val); err != nil {
-		return false
+		return false, "画布数据不是合法的 JSON 对象"
 	}
 
 	versionVal, ok := val["version"]
 	if !ok {
-		return false
+		return false, "画布数据缺少 version 字段"
 	}
-
-	// 确认版本号是 1
 	switch v := versionVal.(type) {
 	case float64:
-		return v == 1
+		if v != 1 {
+			return false, "画布版本号不受支持(需为 1)"
+		}
 	case int64:
-		return v == 1
+		if v != 1 {
+			return false, "画布版本号不受支持(需为 1)"
+		}
+	default:
+		return false, "画布版本号不受支持(需为 1)"
 	}
 
-	return false
+	itemsVal, ok := val["items"]
+	if !ok {
+		return false, "画布数据缺少 items 字段"
+	}
+	items, ok := itemsVal.([]any)
+	if !ok {
+		return false, "画布 items 字段必须是数组"
+	}
+	if len(items) > canvasItemLimit {
+		return false, fmt.Sprintf("画布元素数量超过上限 %d 个", canvasItemLimit)
+	}
+
+	// boards / connections 为可选字段，出现时必须是数组，避免前端读取时崩溃。
+	for _, field := range []string{"boards", "connections"} {
+		value, exists := val[field]
+		if !exists || value == nil {
+			continue
+		}
+		if _, ok := value.([]any); !ok {
+			return false, fmt.Sprintf("画布 %s 字段必须是数组", field)
+		}
+	}
+
+	return true, ""
 }

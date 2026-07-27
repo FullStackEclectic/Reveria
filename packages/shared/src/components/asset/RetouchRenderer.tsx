@@ -1,5 +1,12 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
-import { IDENTITY_CURVE, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, RetouchSettings, VS_SOURCE, FS_SOURCE, UNIFORM_NAMES, type CurvePoints } from "./editorConstants";
+import { useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from "react";
+import {
+  IDENTITY_CURVE, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, RetouchSettings,
+  VS_SOURCE, FS_SOURCE, UNIFORM_NAMES, packPortraitParams,
+  packFacePoints, packFaceScale, type CurvePoints,
+} from "./editorConstants";
+import { bakeLiquifyMap } from "./retouch/liquifyMap";
+import { LIQUIFY_MAP_SIZE } from "./retouch/settings";
+import type { LutData } from "./retouch/lut";
 import { FacePoints } from "../../utils/faceMesh";
 
 export interface RetouchRendererHandle {
@@ -11,14 +18,39 @@ interface Props {
   settings: RetouchSettings;
   showOriginal: boolean;
   facePoints?: FacePoints | null;
+  /** 已解析的 3D LUT，由上层按 settings.lut_file 查表得到 */
+  lut?: LutData | null;
   className?: string;
+  onError?: (message: string) => void;
 }
 
-function compileShader(gl: WebGLRenderingContext, type: number, src: string) {
-  const s = gl.createShader(type)!;
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  return s;
+const TEXTURE_UNIT_IMAGE = 0;
+const TEXTURE_UNIT_LIQUIFY = 1;
+const TEXTURE_UNIT_LUT = 2;
+
+function compileShader(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
+  const shader = gl.createShader(type)!;
+  gl.shaderSource(shader, src);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(shader) ?? "未知错误";
+    gl.deleteShader(shader);
+    throw new Error(`${type === gl.VERTEX_SHADER ? "顶点" : "片元"}着色器编译失败: ${log}`);
+  }
+  return shader;
+}
+
+/** 创建一个像素纹理，作为 LUT / 位移贴图未就绪时的占位，避免采样器悬空 */
+function createPlaceholderTexture(gl: WebGLRenderingContext, r: number, g: number, b: number): WebGLTexture {
+  const tex = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+    new Uint8Array([r, g, b, 255]));
+  return tex;
 }
 
 function applyUniforms(
@@ -28,7 +60,9 @@ function applyUniforms(
   showOriginal: boolean,
   w: number,
   h: number,
-  fp?: FacePoints | null,
+  fp: FacePoints | null | undefined,
+  lut: LutData | null | undefined,
+  liquifyActive: boolean,
 ) {
   gl.uniform2f(locs["u_texSize"], w, h);
   const z = showOriginal;
@@ -45,8 +79,6 @@ function applyUniforms(
   gl.uniform1f(locs["u_dehaze"],       z ? 0 : s.dehaze);
   gl.uniform1f(locs["u_clarity"],      z ? 0 : s.clarity);
   gl.uniform1f(locs["u_sharpness"],    z ? 0 : s.sharpness);
-  gl.uniform1f(locs["u_blur"],         z ? 0 : s.blur_strength / 100);
-  gl.uniform1f(locs["u_skin_whiten"],  z ? 0 : s.skin_whiten);
   gl.uniform1f(locs["u_rotation"], s.rotation);
   gl.uniform1f(locs["u_flip_horizontal"], s.flip_horizontal);
   gl.uniform1f(locs["u_flip_vertical"], s.flip_vertical);
@@ -91,6 +123,7 @@ function applyUniforms(
   gl.uniform1f(locs["u_highlight_tone_hue"], s.highlight_tone_hue);
   gl.uniform1f(locs["u_highlight_tone_saturation"], z ? 0 : s.highlight_tone_saturation);
   gl.uniform1f(locs["u_tone_balance"], z ? 0 : s.tone_balance);
+
   const healingUniform = new Float32Array(MAX_HEALING_SPOTS * 4);
   if (!z) {
     s.healing_spots.slice(-MAX_HEALING_SPOTS).forEach((spot, index) => {
@@ -108,32 +141,48 @@ function applyUniforms(
   }
   gl.uniform4fv(locs["u_clone_targets[0]"], cloneTargets);
   gl.uniform2fv(locs["u_clone_sources[0]"], cloneSources);
-  // Face warp uniforms
-  const hasFace = !z && fp != null ? 1.0 : 0.0;
-  gl.uniform1f(locs["u_face_detected"], hasFace);
-  gl.uniform1f(locs["u_eye_left_x"],   fp ? fp.eyeLeftX  : 0);
-  gl.uniform1f(locs["u_eye_left_y"],   fp ? fp.eyeLeftY  : 0);
-  gl.uniform1f(locs["u_eye_right_x"],  fp ? fp.eyeRightX : 0);
-  gl.uniform1f(locs["u_eye_right_y"],  fp ? fp.eyeRightY : 0);
+
+  // 人脸关键点：对比原图时置零，形变与局部修饰一并失效
+  const hasFace = !z && fp != null;
+  gl.uniform1f(locs["u_face_detected"], hasFace ? 1 : 0);
+  gl.uniform4fv(locs["u_face_pts[0]"], packFacePoints(hasFace ? fp : null));
+  const scale = packFaceScale(hasFace ? fp : null);
+  gl.uniform4f(locs["u_face_scale"], scale[0], scale[1], scale[2], scale[3]);
   gl.uniform1f(locs["u_eye_left_radius_x"], fp ? fp.eyeLeftRadiusX : 0.04);
   gl.uniform1f(locs["u_eye_left_radius_y"], fp ? fp.eyeLeftRadiusY : 0.02);
   gl.uniform1f(locs["u_eye_right_radius_x"], fp ? fp.eyeRightRadiusX : 0.04);
   gl.uniform1f(locs["u_eye_right_radius_y"], fp ? fp.eyeRightRadiusY : 0.02);
-  gl.uniform1f(locs["u_face_cx"],      fp ? fp.faceCx    : 0);
-  gl.uniform1f(locs["u_face_width"],   fp ? fp.faceWidth : 0);
-  gl.uniform1f(locs["u_eye_enlarge"],  z ? 0 : s.eye_enlarge);
-  gl.uniform1f(locs["u_eye_brighten"], z ? 0 : s.eye_brighten);
-  gl.uniform1f(locs["u_slim_face"],    z ? 0 : s.slim_face);
+
+  // 全部人像参数按声明表顺序打包上传
+  gl.uniform4fv(locs["u_portrait[0]"], packPortraitParams(s, z));
+
+  gl.uniform1i(locs["u_image"], TEXTURE_UNIT_IMAGE);
+  gl.uniform1i(locs["u_liquify_map"], TEXTURE_UNIT_LIQUIFY);
+  gl.uniform1i(locs["u_lut"], TEXTURE_UNIT_LUT);
+  gl.uniform1f(locs["u_liquify_enabled"], !z && liquifyActive ? 1 : 0);
+
+  const lutActive = !z && lut != null && s.lut_file !== "" && s.lut_intensity > 0;
+  gl.uniform1f(locs["u_lut_enabled"], lutActive ? 1 : 0);
+  gl.uniform1f(locs["u_lut_size"], lut ? lut.size : 2);
+  gl.uniform1f(locs["u_lut_intensity"], s.lut_intensity);
 }
 
 export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
-  function RetouchRenderer({ imageUrl, settings, showOriginal, facePoints, className }, ref) {
+  function RetouchRenderer({ imageUrl, settings, showOriginal, facePoints, lut, className, onError }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
   const locsRef = useRef<Record<string, WebGLUniformLocation | null>>({});
   const texRef = useRef<WebGLTexture | null>(null);
+  const liquifyTexRef = useRef<WebGLTexture | null>(null);
+  const lutTexRef = useRef<WebGLTexture | null>(null);
   const sizeRef = useRef<[number, number]>([1, 1]);
+
+  // 液化位移贴图只在笔画变化时重新烘焙
+  const liquifyPixels = useMemo(
+    () => (settings.liquify_strokes.length > 0 ? bakeLiquifyMap(settings.liquify_strokes) : null),
+    [settings.liquify_strokes],
+  );
 
   const resizeOutput = (gl: WebGLRenderingContext, sourceWidth: number, sourceHeight: number) => {
     const canvas = canvasRef.current!;
@@ -158,21 +207,40 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     const canvas = canvasRef.current;
     if (!canvas) return;
     const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
-    if (!gl) return;
+    if (!gl) {
+      onError?.("当前环境不支持 WebGL，无法进行图像精修");
+      return;
+    }
     glRef.current = gl;
 
-    const vs = compileShader(gl, gl.VERTEX_SHADER, VS_SOURCE);
-    const fs = compileShader(gl, gl.FRAGMENT_SHADER, FS_SOURCE);
-    const prog = gl.createProgram()!;
-    gl.attachShader(prog, vs!);
-    gl.attachShader(prog, fs!);
-    gl.linkProgram(prog);
+    let prog: WebGLProgram;
+    try {
+      const vs = compileShader(gl, gl.VERTEX_SHADER, VS_SOURCE);
+      const fs = compileShader(gl, gl.FRAGMENT_SHADER, FS_SOURCE);
+      prog = gl.createProgram()!;
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error(`着色器链接失败: ${gl.getProgramInfoLog(prog) ?? "未知错误"}`);
+      }
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
+    } catch (error) {
+      console.error(error);
+      onError?.(error instanceof Error ? error.message : String(error));
+      return;
+    }
     gl.useProgram(prog);
     programRef.current = prog;
 
     for (const name of UNIFORM_NAMES) {
       locsRef.current[name] = gl.getUniformLocation(prog, name);
     }
+
+    // 未启用时也要给采样器绑定合法纹理：位移贴图取 0.5 表示零位移
+    liquifyTexRef.current = createPlaceholderTexture(gl, 128, 128, 0);
+    lutTexRef.current = createPlaceholderTexture(gl, 0, 0, 0);
 
     const buf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -181,24 +249,28 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     gl.enableVertexAttribArray(aPos);
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-    return () => { gl.deleteProgram(prog); };
+    return () => {
+      gl.deleteProgram(prog);
+      if (liquifyTexRef.current) gl.deleteTexture(liquifyTexRef.current);
+      if (lutTexRef.current) gl.deleteTexture(lutTexRef.current);
+    };
   }, []);
 
   // 加载纹理（仅当 imageUrl 变化时）
   useEffect(() => {
     const gl = glRef.current;
-    if (!gl || !imageUrl) return;
+    if (!gl || !programRef.current || !imageUrl) return;
     let cancelled = false;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = imageUrl;
     img.onload = () => {
       if (cancelled) return;
-      const canvas = canvasRef.current!;
       sizeRef.current = [img.naturalWidth, img.naturalHeight];
       resizeOutput(gl, img.naturalWidth, img.naturalHeight);
 
       if (texRef.current) gl.deleteTexture(texRef.current);
+      gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_IMAGE);
       const tex = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -208,24 +280,63 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
       texRef.current = tex;
 
-      applyUniforms(gl, locsRef.current, settings, showOriginal, img.naturalWidth, img.naturalHeight, facePoints);
+      applyUniforms(gl, locsRef.current, settings, showOriginal,
+        img.naturalWidth, img.naturalHeight, facePoints, lut, liquifyPixels != null);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+    };
+    img.onerror = () => {
+      if (!cancelled) onError?.("图片加载失败，请检查素材是否可访问");
     };
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl]);
 
+  // 液化位移贴图变化时重新上传
+  useEffect(() => {
+    const gl = glRef.current;
+    if (!gl || !liquifyTexRef.current) return;
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LIQUIFY);
+    gl.bindTexture(gl.TEXTURE_2D, liquifyTexRef.current);
+    if (liquifyPixels) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, LIQUIFY_MAP_SIZE, LIQUIFY_MAP_SIZE, 0,
+        gl.RGBA, gl.UNSIGNED_BYTE, liquifyPixels);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([128, 128, 0, 255]));
+    }
+  }, [liquifyPixels]);
+
+  // LUT 纹理变化时重新上传
+  useEffect(() => {
+    const gl = glRef.current;
+    if (!gl || !lutTexRef.current) return;
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LUT);
+    gl.bindTexture(gl.TEXTURE_2D, lutTexRef.current);
+    if (lut) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, lut.size * lut.size, lut.size, 0,
+        gl.RGBA, gl.UNSIGNED_BYTE, lut.pixels);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 255]));
+    }
+  }, [lut]);
+
   // 参数变化只更新 uniform + redraw，不重建 Shader 或纹理
   useEffect(() => {
     const gl = glRef.current;
-    if (!gl || !texRef.current) return;
+    if (!gl || !texRef.current || !programRef.current) return;
     const [w, h] = sizeRef.current;
     resizeOutput(gl, w, h);
     gl.useProgram(programRef.current);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_IMAGE);
     gl.bindTexture(gl.TEXTURE_2D, texRef.current);
-    applyUniforms(gl, locsRef.current, settings, showOriginal, w, h, facePoints);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LIQUIFY);
+    gl.bindTexture(gl.TEXTURE_2D, liquifyTexRef.current);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LUT);
+    gl.bindTexture(gl.TEXTURE_2D, lutTexRef.current);
+    applyUniforms(gl, locsRef.current, settings, showOriginal, w, h, facePoints, lut, liquifyPixels != null);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-  }, [settings, showOriginal, facePoints]);
+  }, [settings, showOriginal, facePoints, lut, liquifyPixels]);
 
   return <canvas ref={canvasRef} className={className} />;
 });

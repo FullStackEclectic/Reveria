@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -473,6 +474,148 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 			handleTaskFailure(task.ID, "NO_IMAGES_GENERATED", errMsg)
 			return
 		}
+	} else if task.TaskType == "image_inpainting" {
+		// AI 智能消除：source image + mask → /v1/images/edits
+		var payload map[string]any
+		_ = json.Unmarshal([]byte(task.InputPayload), &payload)
+
+		imageURL, _ := payload["image_url"].(string)
+		maskData, _ := payload["mask_data"].(string) // base64 PNG, white=erase black=keep
+		prompt, _ := payload["prompt"].(string)
+		sizeStr, _ := payload["size"].(string)
+		if sizeStr == "" {
+			sizeStr = "1024x1024"
+		}
+		if imageURL == "" || maskData == "" {
+			handleTaskFailure(task.ID, "INPAINTING_PARAMS_MISSING", "消除任务缺少源图或蒙版数据")
+			return
+		}
+
+		// 下载源图
+		var imgBytes []byte
+		if fileName, local := storedFileNameFromURL(imageURL); local {
+			fileURL := "/api/files/" + fileName
+			var count int64
+			if database.DB.Model(&model.Asset{}).Where("workspace_id = ? AND (file_url = ? OR thumbnail_url = ?)", task.WorkspaceID, fileURL, fileURL).Count(&count).Error != nil || count == 0 {
+				handleTaskFailure(task.ID, "INPAINTING_IMAGE_ACCESS_DENIED", "消除源图不属于当前工作区")
+				return
+			}
+			localPath := filepath.Join(getStorageDir(), fileName)
+			imgBytes, _ = os.ReadFile(localPath)
+		}
+		if len(imgBytes) == 0 {
+			if !isSafeRemoteURL(imageURL) {
+				handleTaskFailure(task.ID, "UNSAFE_IMAGE_URL", "消除源图地址不允许访问")
+				return
+			}
+			resp, err := (&http.Client{Transport: insecureTransport, Timeout: 30 * time.Second}).Get(imageURL)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				handleTaskFailure(task.ID, "DOWNLOAD_IMAGE_FAILED", "下载消除源图失败")
+				if resp != nil {
+					resp.Body.Close()
+				}
+				return
+			}
+			imgBytes, _ = io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
+			resp.Body.Close()
+		}
+		if len(imgBytes) > 4500000 {
+			compressed, compressErr := compressReferenceImage(imgBytes)
+			if compressErr != nil {
+				handleTaskFailure(task.ID, "IMAGE_COMPRESS_FAILED", "源图压缩失败: "+compressErr.Error())
+				return
+			}
+			imgBytes = compressed
+		}
+
+		// 解码 mask（前端传 base64 PNG 或 data URL）
+		maskBytes, _, decodeErr := decodeImageDataURL(maskData)
+		if decodeErr != nil {
+			// 尝试直接 base64 解码
+			var b64Err error
+			maskBytes, b64Err = base64.StdEncoding.DecodeString(maskData)
+			if b64Err != nil {
+				handleTaskFailure(task.ID, "MASK_DECODE_FAILED", "蒙版数据解码失败")
+				return
+			}
+		}
+
+		progressMsg := `{"progress_text":"已提交消除请求，等待 AI 处理..."}`
+		database.DB.Model(&task).Update("output_payload", progressMsg)
+
+		inpaintURL := fmt.Sprintf("%s/v1/images/edits", settings.UpstreamAPIURL)
+		bodyBuf := &bytes.Buffer{}
+		bodyWriter := multipart.NewWriter(bodyBuf)
+
+		imageField, _ := bodyWriter.CreateFormFile("image", "source.png")
+		_, _ = io.Copy(imageField, bytes.NewReader(imgBytes))
+
+		maskField, _ := bodyWriter.CreateFormFile("mask", "mask.png")
+		_, _ = io.Copy(maskField, bytes.NewReader(maskBytes))
+
+		_ = bodyWriter.WriteField("prompt", prompt)
+		_ = bodyWriter.WriteField("model", gatewayModelName)
+		_ = bodyWriter.WriteField("n", "1")
+		if sizeStr != "" {
+			_ = bodyWriter.WriteField("size", sizeStr)
+		}
+		_ = bodyWriter.Close()
+
+		inpaintReq, err := http.NewRequestWithContext(ctx, "POST", inpaintURL, bodyBuf)
+		if err != nil {
+			handleTaskFailure(task.ID, "HTTP_CLIENT_ERROR", "创建消除请求失败: "+err.Error())
+			return
+		}
+		inpaintReq.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+		inpaintReq.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
+
+		inpaintClient := &http.Client{Transport: insecureTransport, Timeout: 120 * time.Second}
+		inpaintResp, err := inpaintClient.Do(inpaintReq)
+		if err != nil {
+			handleTaskFailure(task.ID, "INPAINTING_TIMEOUT", "调用消除网关超时: "+err.Error())
+			return
+		}
+		defer inpaintResp.Body.Close()
+		inpaintRespBytes, _ := io.ReadAll(inpaintResp.Body)
+
+		if inpaintResp.StatusCode != http.StatusOK {
+			var errResp map[string]any
+			_ = json.Unmarshal(inpaintRespBytes, &errResp)
+			msg := fmt.Sprintf("消除网关返回 %d", inpaintResp.StatusCode)
+			if errData, ok := errResp["error"].(map[string]any); ok {
+				if m, ok := errData["message"].(string); ok {
+					msg = m
+				}
+			}
+			handleTaskFailure(task.ID, fmt.Sprintf("INPAINTING_GATEWAY_%d", inpaintResp.StatusCode), msg)
+			return
+		}
+
+		var inpaintData map[string]any
+		if err := json.Unmarshal(inpaintRespBytes, &inpaintData); err != nil {
+			handleTaskFailure(task.ID, "INPAINTING_PARSE_ERROR", "消除结果解析失败")
+			return
+		}
+
+		var resultURLs []string
+		if dataList, ok := inpaintData["data"].([]any); ok {
+			for _, item := range dataList {
+				if m, ok := item.(map[string]any); ok {
+					if u, _ := m["url"].(string); u != "" {
+						resultURLs = append(resultURLs, u)
+					} else if b64, _ := m["b64_json"].(string); b64 != "" {
+						resultURLs = append(resultURLs, "data:image/png;base64,"+strings.TrimSpace(b64))
+					}
+				}
+			}
+		}
+		if len(resultURLs) == 0 {
+			handleTaskFailure(task.ID, "NO_INPAINTING_RESULT", "消除网关未返回结果图片")
+			return
+		}
+		handleTaskSuccess(task, resultURLs)
+		return
+
 	} else if task.TaskType == "video_generation" || task.TaskType == "image_to_video" {
 		// 视频生成
 		upstreamURL = fmt.Sprintf("%s/v1/video/generations", settings.UpstreamAPIURL)

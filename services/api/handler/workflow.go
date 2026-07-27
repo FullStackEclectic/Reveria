@@ -400,7 +400,14 @@ type MagicActionRequest struct {
 	Action      string    `json:"action" binding:"required"` // "remove-bg" | "upscale" | "erase"
 }
 
-// RunMagicAction 后端真实抠图去背景、抗锯齿插值超分放大、局部擦除 API (POST /api/workflows/magic-action)
+// RunMagicAction 画布本地图像工具 (POST /api/workflows/magic-action)
+//
+// 注意：以下全部是确定性的本地像素运算，不涉及任何 AI 模型推理，不要在 UI 上宣称为 AI 能力：
+//   - remove-bg：取左上角像素作为底色，容差范围内的像素置为透明，仅对纯色背景有效
+//   - upscale：CatmullRom 双三次插值放大 2 倍，不会补充任何新细节，不等于超分辨率
+//   - erase：把画面正中央 25% 的矩形区域直接置为透明，不做任何内容感知填充
+//
+// 因为不消耗上游算力，本接口不扣积分。真正的 AI 抠图 / 超分 / 消除应另开任务类型走上游异步队列。
 func RunMagicAction(c *gin.Context) {
 	var req MagicActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -433,30 +440,8 @@ func RunMagicAction(c *gin.Context) {
 		return
 	}
 
-	// 2. 扣减积分 (抠图/超分/擦除统一扣除 2 个积分点数)
-	var costCredits int64 = 2
-	var settings model.ClientSettings
-	if err := database.DB.First(&settings).Error; err == nil {
-		costCredits = int64(float64(costCredits) * settings.PriceRate)
-	}
-
-	reason := fmt.Sprintf("画布 AI 魔法操作 (%s) 消费", req.Action)
-	billingSvc := service.GetBillingService()
-	success, err := billingSvc.DeductCredits(actorID, req.WorkspaceID, costCredits, reason, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "积分结算服务出错: " + err.Error()})
-		return
-	}
-	if !success {
-		c.JSON(http.StatusPaymentRequired, gin.H{"success": false, "message": "工作区余额不足，本次操作需要 " + fmt.Sprintf("%d", costCredits) + " 个点数"})
-		return
-	}
-	completed := false
-	defer func() {
-		if !completed {
-			_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "图像处理失败退回积分", nil)
-		}
-	}()
+	// 2. 纯本地像素运算，不消耗上游算力，因此不扣积分。
+	//    唯一的资源约束是输出文件占用的工作区存储配额，见下方 reserveStorage。
 
 	if asset.FileURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "源素材无有效文件链接"})
@@ -604,7 +589,7 @@ func RunMagicAction(c *gin.Context) {
 	fileSize := int64(encoded.Len())
 
 	title := asset.Metadata
-	var originTitle = "AI 生成图"
+	var originTitle = "画布素材"
 	if title != nil {
 		var meta map[string]any
 		if err := json.Unmarshal([]byte(*title), &meta); err == nil {
@@ -613,7 +598,16 @@ func RunMagicAction(c *gin.Context) {
 			}
 		}
 	}
-	newTitle := fmt.Sprintf("%s (AI %s)", originTitle, req.Action)
+	// 标题如实反映实际做了什么，不冠以 AI 之名。
+	actionLabel := map[string]string{
+		"remove-bg": "去底色",
+		"upscale":   "放大2x",
+		"erase":     "中心擦除",
+	}[req.Action]
+	if actionLabel == "" {
+		actionLabel = req.Action
+	}
+	newTitle := fmt.Sprintf("%s (%s)", originTitle, actionLabel)
 
 	metaMap := map[string]any{
 		"title":     newTitle,
@@ -657,7 +651,6 @@ func RunMagicAction(c *gin.Context) {
 		return
 	}
 	storageReserved = false
-	completed = true
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

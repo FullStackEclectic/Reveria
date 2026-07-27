@@ -13,7 +13,11 @@ import {
   assetTitle,
   assetUrl,
   putJson,
+  CANVAS_ITEM_LIMIT,
 } from "../../utils";
+
+/** 撤销栈深度上限，与图像精修工作台保持一致，避免大画布下无限增长吃内存。 */
+const HISTORY_LIMIT = 50;
 
 interface UseProjectCanvasStateProps {
   selectedProject: ProjectSummary;
@@ -51,10 +55,34 @@ export function useProjectCanvasState({
 
   const pushToHistory = (canvas: ProjectCanvasDocument) => {
     undoStack.current.push(JSON.parse(JSON.stringify(canvas)));
+    if (undoStack.current.length > HISTORY_LIMIT) {
+      undoStack.current.shift();
+    }
     redoStack.current = [];
     setCanUndo(true);
     setCanRedo(false);
   };
+
+  // 连续微调（方向键 keyrepeat）合并为一次撤销单元：
+  // 会话开始时压一次栈，之后 400ms 内的连续按键不再压栈。
+  const nudgeSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const beginNudgeSession = () => {
+    if (nudgeSessionTimerRef.current === null) {
+      pushToHistory(projectCanvas);
+    } else {
+      clearTimeout(nudgeSessionTimerRef.current);
+    }
+    nudgeSessionTimerRef.current = setTimeout(() => {
+      nudgeSessionTimerRef.current = null;
+    }, 400);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (nudgeSessionTimerRef.current) clearTimeout(nudgeSessionTimerRef.current);
+    };
+  }, []);
 
   const undo = () => {
     if (undoStack.current.length === 0) return;
@@ -89,33 +117,44 @@ export function useProjectCanvasState({
 
   const selectedProjectId = selectedProject.id;
 
+  // 仅在切换项目时清空撤销栈。
+  // 保存成功后 normalizeCanvas 会回填 panX/panY/zoom，那不该连带清掉编辑历史。
+  useEffect(() => {
+    undoStack.current = [];
+    redoStack.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
+  }, [selectedProjectId]);
+
   // Synchronize pan/zoom state with loaded canvas
   useEffect(() => {
     setPanX(projectCanvas.panX ?? 0);
     setPanY(projectCanvas.panY ?? 0);
     setZoom(projectCanvas.zoom ?? 1.0);
     setSelectedItemId("");
-    // 切换项目清空撤销栈
-    undoStack.current = [];
-    redoStack.current = [];
-    setCanUndo(false);
-    setCanRedo(false);
   }, [selectedProjectId, projectCanvas.panX, projectCanvas.panY, projectCanvas.zoom]);
 
   // Keyboard shortcuts listener (Nudge, Delete, Copy, Paste, zoom reset)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Undo Ctrl + Z
-      if (e.ctrlKey && e.key === "z") {
+      // Shift 按下时 e.key 会是大写，统一转小写再比对。
+      const shortcutKey = e.key.toLowerCase();
+
+      // Undo Ctrl + Z / Redo Ctrl + Shift + Z
+      if (e.ctrlKey && shortcutKey === "z") {
         const isInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
         if (isInput) return;
-        undo();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
         e.preventDefault();
         return;
       }
 
       // Redo Ctrl + Y
-      if (e.ctrlKey && e.key === "y") {
+      if (e.ctrlKey && shortcutKey === "y") {
         const isInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
         if (isInput) return;
         redo();
@@ -134,7 +173,7 @@ export function useProjectCanvasState({
       }
 
       // Copy Ctrl + C
-      if (e.ctrlKey && e.key === "c" && selectedItemId) {
+      if (e.ctrlKey && shortcutKey === "c" && selectedItemId) {
         const itemToCopy = projectCanvas.items.find((i) => i.id === selectedItemId);
         if (itemToCopy) {
           localStorage.setItem("reveria.canvasClipboard", JSON.stringify(itemToCopy));
@@ -142,11 +181,22 @@ export function useProjectCanvasState({
       }
 
       // Paste Ctrl + V
-      if (e.ctrlKey && e.key === "v") {
+      if (e.ctrlKey && shortcutKey === "v") {
         const clipboardData = localStorage.getItem("reveria.canvasClipboard");
         if (clipboardData) {
+          if (!ensureCapacity()) return;
           try {
             const copiedItem = JSON.parse(clipboardData) as CanvasItem;
+            // 剪贴板是全局的，跨项目粘贴时 asset_id 指向另一个项目的素材，
+            // 当前项目的 assets 里查不到，卡片会渲染成一张空白便签并被持久化成脏数据。
+            if (
+              copiedItem.type === "asset" &&
+              copiedItem.asset_id &&
+              !assets.some((asset) => asset.id === copiedItem.asset_id)
+            ) {
+              showToast("该素材不属于当前项目，无法粘贴");
+              return;
+            }
             const newId = createCanvasItemId();
             const newItem: CanvasItem = {
               ...copiedItem,
@@ -176,8 +226,11 @@ export function useProjectCanvasState({
         if (e.key === "ArrowDown") dy = dist;
         if (e.key === "ArrowLeft") dx = -dist;
         if (e.key === "ArrowRight") dx = dist;
-        
-        pushToHistory(projectCanvas);
+
+        // 连续微调合并成一条历史。
+        // 否则按住方向键时每个 keyrepeat 都会压入同一个闭包快照，
+        // 50 层历史瞬间被同一状态填满，一次 Ctrl+Z 直接跳回起点且真实历史被挤掉。
+        beginNudgeSession();
         setProjectCanvas((current) => ({
           ...current,
           items: current.items.map((item) => {
@@ -205,7 +258,17 @@ export function useProjectCanvasState({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedItemId, projectCanvas.items, activeBoardId, selectedProjectId]);
 
+  /** 元素数量守卫：达到上限时明确提示，避免保存后被 normalizeCanvas 静默截断。 */
+  function ensureCapacity() {
+    if (projectCanvas.items.length >= CANVAS_ITEM_LIMIT) {
+      showToast(`画布元素已达上限 ${CANVAS_ITEM_LIMIT} 个，请清理后再添加`);
+      return false;
+    }
+    return true;
+  }
+
   function addAssetToCanvas(asset: AssetSummary) {
+    if (!ensureCapacity()) return;
     const insert = (w: number, h: number) => {
       pushToHistory(projectCanvas);
       setProjectCanvas((current) => ({
@@ -246,6 +309,7 @@ export function useProjectCanvasState({
   }
 
   function addNoteToCanvas() {
+    if (!ensureCapacity()) return;
     pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
@@ -268,6 +332,7 @@ export function useProjectCanvasState({
   }
 
   function addFrameToCanvas() {
+    if (!ensureCapacity()) return;
     pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
@@ -344,6 +409,7 @@ export function useProjectCanvasState({
   }
 
   function addWorkflowResultToCanvas(title: string, output: any) {
+    if (!ensureCapacity()) return;
     pushToHistory(projectCanvas);
     setProjectCanvas((current) => ({
       ...current,
@@ -402,6 +468,11 @@ export function useProjectCanvasState({
       const newItems = current.items.filter(
         (item) => (item.board_id || "default") !== boardId
       );
+      // 画板下的元素被清空后，指向它们的连线必须一并删除，否则会留下悬空连线。
+      const remainingIds = new Set(newItems.map((item) => item.id));
+      const newConnections = (current.connections || []).filter(
+        (conn) => remainingIds.has(conn.fromItemId) && remainingIds.has(conn.toItemId)
+      );
       const nextActive =
         current.activeBoardId === boardId
           ? newBoards[0]?.id || "default"
@@ -410,6 +481,7 @@ export function useProjectCanvasState({
         ...current,
         boards: newBoards,
         items: newItems,
+        connections: newConnections,
         activeBoardId: nextActive,
       };
     });

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Sparkles, Image as ImageIcon, Loader2 } from "lucide-react";
 import { CanvasItem, AssetSummary, ProjectCanvasDocument } from "../../types";
 import { assetUrl, getJson, putJson, assetTitle, getAssetMetadata } from "../../utils";
@@ -80,6 +80,12 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
   assets,
   showResizeHandles = true,
 }) => {
+  const [progressText, setProgressText] = React.useState<string>("正在努力渲染画面场景...");
+  // 画板节点局部大图切换选中的 asset.id
+  const [selectedId, setSelectedId] = React.useState<string>("");
+  // 自愈保存的最近一次载荷指纹，用于抵消 StrictMode 下 state updater 的重复调用
+  const lastSavedPayloadRef = useRef("");
+
   // 智能断网/刷新自愈：如果检测到是正在生成的 AI 节点且附带 task_id，自动启动查询或轮询，将真实结果写回后端
   useEffect(() => {
     const isAiGen = item.type === "note" && item.title && (item.title.includes("正在生成") || item.title.includes("生成中"));
@@ -88,15 +94,16 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
     let isMounted = true;
     let pollInterval: any;
 
-    const saveCanvasData = async (updatedItems: any[]) => {
+    // 必须回传完整画布文档：后端是整体覆盖式 upsert，
+    // 只发 items 会把服务端的 boards / activeBoardId / connections / pan / zoom 全部抹掉。
+    const saveCanvasDoc = async (doc: ProjectCanvasDocument) => {
+      const payload = JSON.stringify({ ...doc, version: 1 });
+      if (lastSavedPayloadRef.current === payload) return;
+      lastSavedPayloadRef.current = payload;
       try {
-        await putJson(`/api/projects/${projectId}/canvas`, {
-          canvas: {
-            items: updatedItems,
-            version: 1
-          }
-        });
+        await putJson(`/api/projects/${projectId}/canvas`, { canvas: JSON.parse(payload) });
       } catch (e) {
+        lastSavedPayloadRef.current = "";
         console.error("[CanvasItemCard] 自愈保存失败:", e);
       }
     };
@@ -143,17 +150,25 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
             assetsData = (assetsRes as any).data;
           }
 
-          if (assetsData.length > 0) {
-            const latestAsset = assetsData[0];
-            
+          // 按 task_id 精确定位本卡片对应任务的产物。
+          // 刷新后可能有多张卡片同时自愈，取 assetsData[0] 会让它们全部绑到同一张图。
+          const produced = assetsData
+            .filter((asset) => asset.task_id === item.task_id)
+            .sort((a, b) => (a.output_index ?? 0) - (b.output_index ?? 0))[0];
+
+          if (produced) {
             setProjectCanvas((current) => {
+              // 卡片已不在当前文档里（切了项目或被删除）时放弃，避免把别的项目内容写回本项目
+              if (!current.items.some((i: CanvasItem) => i.id === item.id)) {
+                return current;
+              }
               const nextItems = current.items.map((i: CanvasItem) =>
                 i.id === item.id
                   ? {
                       id: item.id,
                       type: "asset" as const,
-                      asset_id: latestAsset.id,
-                      title: assetTitle(latestAsset) || item.title,
+                      asset_id: produced.id,
+                      title: assetTitle(produced) || item.title,
                       x: i.x,
                       y: i.y,
                       w: i.w,
@@ -162,8 +177,9 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
                     }
                   : i
               );
-              void saveCanvasData(nextItems);
-              return { ...current, items: nextItems };
+              const nextDoc = { ...current, items: nextItems };
+              void saveCanvasDoc(nextDoc);
+              return nextDoc;
             });
           }
         } else if (status === "failed") {
@@ -171,6 +187,10 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
 
           const errorMsg = taskData.error_message || "未知服务商内部错误";
           setProjectCanvas((current) => {
+            // 同上：卡片不在当前文档里就放弃，避免跨项目写串
+            if (!current.items.some((i: CanvasItem) => i.id === item.id)) {
+              return current;
+            }
             const nextItems = current.items.map((i) =>
               i.id === item.id
                 ? {
@@ -180,8 +200,9 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
                   }
                 : i
             );
-            void saveCanvasData(nextItems);
-            return { ...current, items: nextItems };
+            const nextDoc = { ...current, items: nextItems };
+            void saveCanvasDoc(nextDoc);
+            return nextDoc;
           });
         }
       } catch (err) {
@@ -197,10 +218,6 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [item.id, item.task_id, projectId, readOnly]);
-
-  const [progressText, setProgressText] = React.useState<string>("正在努力渲染画面场景...");
-  // 画板节点局部大图切换选中的 asset.id
-  const [selectedId, setSelectedId] = React.useState<string>("");
 
   const isAssetCard = item.type === "asset" && asset;
 
@@ -250,6 +267,11 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
         boxShadow: isFrame ? "none" : undefined,
         color: colors.text,
         zIndex: isFrame ? (isSelected ? 12 : 1) : (isSelected ? 15 : "auto"),
+        // 画框是个空心容器，整块矩形若接收指针事件，就会挡住框内所有卡片
+        //（画框 z-index=1 高于普通卡片的 auto），导致卡片一进框就再也点不中。
+        // 这里让画框本体对指针透明，只保留标题栏 / 手柄 / 删除按钮可点。
+        // pointer-events:none 不阻断子元素事件向上冒泡，onMouseDown 仍能正常触发。
+        pointerEvents: isFrame ? "none" : undefined,
       }}
       onMouseDown={(e) => onMouseDownCard(e, item.id)}
     >
@@ -259,21 +281,21 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
           <div className="processing-spinner" />
           <span>
             {processingType === "remove-bg"
-              ? "AI 去背景中..."
+              ? "去底色处理中..."
               : processingType === "upscale"
-              ? "AI 4K超分中..."
-              : "AI 消除中..."}
+              ? "放大 2x 处理中..."
+              : "中心擦除处理中..."}
           </span>
         </div>
       )}
 
-      {/* 调节大小手柄 */}
+      {/* 调节大小手柄。画框本体是 pointer-events:none，手柄需显式恢复可点。 */}
       {isSelected && !readOnly && showResizeHandles && (
         <>
-          <div className="resize-handle top-left" onMouseDown={(e) => handleResizeStart(e, item.id, "top-left")} />
-          <div className="resize-handle top-right" onMouseDown={(e) => handleResizeStart(e, item.id, "top-right")} />
-          <div className="resize-handle bottom-left" onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-left")} />
-          <div className="resize-handle bottom-right" onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-right")} />
+          <div className="resize-handle top-left" style={{ pointerEvents: "auto" }} onMouseDown={(e) => handleResizeStart(e, item.id, "top-left")} />
+          <div className="resize-handle top-right" style={{ pointerEvents: "auto" }} onMouseDown={(e) => handleResizeStart(e, item.id, "top-right")} />
+          <div className="resize-handle bottom-left" style={{ pointerEvents: "auto" }} onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-left")} />
+          <div className="resize-handle bottom-right" style={{ pointerEvents: "auto" }} onMouseDown={(e) => handleResizeStart(e, item.id, "bottom-right")} />
         </>
       )}
 
@@ -281,6 +303,7 @@ export const CanvasItemCard: React.FC<CanvasItemCardProps> = ({
         <button
           className="canvas-remove"
           type="button"
+          style={{ pointerEvents: "auto" }}
           onClick={(event) => {
             event.stopPropagation();
             removeCanvasItem(item.id);

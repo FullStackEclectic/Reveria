@@ -1,6 +1,7 @@
 import {
   AssetSummary,
   BrandKitSummary,
+  CanvasConnection,
   CanvasItem,
   CreditTransactionSummary,
   CustomerSummary,
@@ -156,6 +157,15 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+/** 单个画板文档允许承载的元素上限，需与后端 handler/canvas.go 的 canvasItemLimit 保持一致。 */
+export const CANVAS_ITEM_LIMIT = 2000;
+
+/** 把任意输入折算成有限数值，NaN / Infinity / 非数字一律退回兜底值。 */
+function finiteNumber(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): ProjectCanvasDocument {
   if (!canvas || typeof canvas !== "object") {
     return createEmptyCanvas();
@@ -166,7 +176,9 @@ export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): Projec
   const normalizedItems = items
     .filter((item): item is Partial<CanvasItem> => Boolean(item) && typeof item === "object")
     .map((item): CanvasItem => {
-      const itemType: CanvasItem["type"] = item.type === "note" ? "note" : "asset";
+      // note / frame 需要原样保留，其余一律按素材卡片处理。
+      const itemType: CanvasItem["type"] =
+        item.type === "note" || item.type === "frame" ? item.type : "asset";
       return {
         id: typeof item.id === "string" && item.id ? item.id : createCanvasItemId(),
         type: itemType,
@@ -174,17 +186,17 @@ export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): Projec
         task_id: typeof item.task_id === "string" ? item.task_id : undefined,
         title: typeof item.title === "string" && item.title ? item.title : "画布元素",
         text: typeof item.text === "string" ? item.text : "",
-        x: clamp(Number(item.x ?? 0), -1000000, 1000000),
-        y: clamp(Number(item.y ?? 0), -1000000, 1000000),
-        w: Math.max(Number(item.w ?? 180), 80),
-        h: Math.max(Number(item.h ?? 140), 60),
+        x: clamp(finiteNumber(item.x, 0), -1000000, 1000000),
+        y: clamp(finiteNumber(item.y, 0), -1000000, 1000000),
+        w: clamp(finiteNumber(item.w, 180), 80, 1000000),
+        h: clamp(finiteNumber(item.h, 140), 60, 1000000),
         board_id: typeof item.board_id === "string" ? item.board_id : undefined,
         color: typeof item.color === "string" ? item.color : undefined,
         fontSize: (item.fontSize === "sm" || item.fontSize === "md" || item.fontSize === "lg") ? item.fontSize : undefined,
         titleSize: (item.titleSize === "sm" || item.titleSize === "md" || item.titleSize === "lg") ? item.titleSize : undefined,
       };
     })
-    .slice(0, 200);
+    .slice(0, CANVAS_ITEM_LIMIT);
 
   const boards = Array.isArray(obj.boards)
     ? obj.boards
@@ -192,14 +204,45 @@ export function normalizeCanvas(canvas: ProjectCanvasDocument | unknown): Projec
         .map((b) => ({ id: b.id, name: b.name }))
     : undefined;
 
+  // 连线必须跟着文档一起还原，否则保存一次就会全部丢失。
+  // 同时剔除指向已删除元素的悬空连线、自环连线与重复连线。
+  const itemIds = new Set(normalizedItems.map((item) => item.id));
+  const seenConnections = new Set<string>();
+  const connections = Array.isArray(obj.connections)
+    ? obj.connections
+        .filter((conn): conn is Partial<CanvasConnection> => Boolean(conn) && typeof conn === "object")
+        .filter(
+          (conn) =>
+            typeof conn.fromItemId === "string" &&
+            typeof conn.toItemId === "string" &&
+            conn.fromItemId !== conn.toItemId &&
+            itemIds.has(conn.fromItemId) &&
+            itemIds.has(conn.toItemId)
+        )
+        .filter((conn) => {
+          const pairKey = `${conn.fromItemId}->${conn.toItemId}`;
+          if (seenConnections.has(pairKey)) return false;
+          seenConnections.add(pairKey);
+          return true;
+        })
+        .map((conn): CanvasConnection => ({
+          id: typeof conn.id === "string" && conn.id ? conn.id : createCanvasItemId(),
+          fromItemId: conn.fromItemId as string,
+          toItemId: conn.toItemId as string,
+          color: typeof conn.color === "string" ? conn.color : undefined,
+          label: typeof conn.label === "string" ? conn.label : undefined,
+        }))
+    : undefined;
+
   return {
     version: 1,
     items: normalizedItems,
     boards,
     activeBoardId: typeof obj.activeBoardId === "string" ? obj.activeBoardId : undefined,
-    panX: typeof obj.panX === "number" ? obj.panX : undefined,
-    panY: typeof obj.panY === "number" ? obj.panY : undefined,
-    zoom: typeof obj.zoom === "number" ? obj.zoom : undefined,
+    panX: typeof obj.panX === "number" && Number.isFinite(obj.panX) ? obj.panX : undefined,
+    panY: typeof obj.panY === "number" && Number.isFinite(obj.panY) ? obj.panY : undefined,
+    zoom: typeof obj.zoom === "number" && Number.isFinite(obj.zoom) ? obj.zoom : undefined,
+    connections,
   };
 }
 

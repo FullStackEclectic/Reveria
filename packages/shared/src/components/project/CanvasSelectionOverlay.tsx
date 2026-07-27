@@ -25,6 +25,7 @@ export interface CanvasSelectionOverlayProps {
   setConnectionSourceId: (id: string) => void;
 
   handleDrawSimilar: (asset: AssetSummary | null) => void;
+  removeCanvasItem?: (id: string) => void;
 }
 
 export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
@@ -47,6 +48,7 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
   connectionSourceId,
   setConnectionSourceId,
   handleDrawSimilar,
+  removeCanvasItem,
 }) => {
   const item = projectCanvas.items.find((i) => i.id === selectedItemId);
   if (!item || item.type !== "asset") return null;
@@ -113,10 +115,10 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
                   asset_id: response.asset.id,
                   title:
                     action === "remove-bg"
-                      ? `${i.title} (已去背景)`
+                      ? `${i.title} (已去底色)`
                       : action === "upscale"
-                      ? `${i.title} (4K超分)`
-                      : `${i.title} (AI消除)`,
+                      ? `${i.title} (放大2x)`
+                      : `${i.title} (中心擦除)`,
                 }
               : i
           ),
@@ -176,29 +178,30 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="canvas-toolbar-actions">
+          {/* 以下三项是本地像素运算，不是 AI 推理，文案需与 handler/workflow.go RunMagicAction 的实际行为一致 */}
           <button
             type="button"
             onClick={() => void handleMagicAction("remove-bg")}
             disabled={processingItemId === item.id}
-            title="AI 抠图去背景"
+            title="取左上角底色并透明化，仅适用于纯色背景图"
           >
-            AI 去背景
+            去底色
           </button>
           <button
             type="button"
             onClick={() => void handleMagicAction("upscale")}
             disabled={processingItemId === item.id}
-            title="AI 超分放大"
+            title="双三次插值放大 2 倍，不会补充新细节"
           >
-            超分放大
+            放大 2x
           </button>
           <button
             type="button"
             onClick={() => void handleMagicAction("erase")}
             disabled={processingItemId === item.id}
-            title="AI 橡皮擦消除"
+            title="擦除画面正中央 25% 区域为透明"
           >
-            橡皮擦
+            中心擦除
           </button>
 
           <div className="canvas-toolbar-divider" />
@@ -240,12 +243,12 @@ export const CanvasSelectionOverlay: React.FC<CanvasSelectionOverlayProps> = ({
             type="button"
             className="btn-danger-action"
             onClick={() => {
-              const removeBtn = document.querySelector(".canvas-remove") as HTMLButtonElement;
-              if (removeBtn) {
-                removeBtn.click();
-              } else {
-                setSelectedItemId("");
+              // 不能用 document.querySelector(".canvas-remove")：每张卡片都有同名按钮，
+              // 全局选择器只会命中 DOM 中的第一张卡片，导致删错对象。
+              if (removeCanvasItem) {
+                removeCanvasItem(item.id);
               }
+              setSelectedItemId("");
             }}
             title="从画布删除"
           >

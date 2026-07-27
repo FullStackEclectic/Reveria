@@ -1,4 +1,4 @@
-import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppView,
   WorkspaceSummary,
@@ -60,6 +60,8 @@ export function AppCore() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [assets, setAssets] = useState<AssetSummary[]>([]);
   const [projectCanvas, setProjectCanvas] = useState<ProjectCanvasDocument>(createEmptyCanvas());
+  // 画布加载请求序号，用于丢弃乱序返回的旧响应（见 loadProjectCanvas）
+  const canvasLoadSeqRef = useRef(0);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedBrandKitId, setSelectedBrandKitId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -560,11 +562,18 @@ export function AppCore() {
     }
   }
   async function loadProjectCanvas(projectId: string) {
+    // 请求序号守卫：快速切换项目时两次 GET 可能乱序返回，
+    // 若不校验，后到的旧响应会把画布换成上一个项目的文档，此时点保存就会写串项目。
+    const requestSeq = ++canvasLoadSeqRef.current;
     try {
       const response = await getJson<ProjectCanvasSummary>(`/api/projects/${projectId}/canvas`);
+      if (requestSeq !== canvasLoadSeqRef.current) return;
       setProjectCanvas(normalizeCanvas(response.canvas));
     } catch {
-      setProjectCanvas(createEmptyCanvas());
+      if (requestSeq !== canvasLoadSeqRef.current) return;
+      // 加载失败时保持内存中的文档不动。
+      // 清空是危险的：模板轮询/自愈保存随后触发时会把这份空文档 PUT 回服务端，等于删库。
+      console.error(`[loadProjectCanvas] 项目 ${projectId} 画布加载失败，保留当前内存文档`);
     }
   }
   function exportCurrentProject(format: "json" | "markdown") {
@@ -714,6 +723,7 @@ export function AppCore() {
             onLoadSettings={handleLoadRetouchSettings}
             onExportImage={handleExportRetouchImage}
             initialSettings={retouchInitialSettings || undefined}
+            onAssetsRefresh={() => { if (selectedProjectId) void loadProjectAssets(selectedProjectId); }}
           />
         )}
         <InvitationModal

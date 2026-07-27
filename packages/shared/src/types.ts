@@ -156,6 +156,10 @@ export type AssetSummary = {
   workspace_id: string;
   project_id?: string | null;
   customer_id?: string | null;
+  /** 产出该素材的生成任务 ID，用于把任务结果精确绑定回画布卡片（后端 model.Asset.TaskID）。 */
+  task_id?: string | null;
+  /** 同一任务多图输出时的序号（后端 model.Asset.OutputIndex）。 */
+  output_index?: number;
   asset_type: string;
   source: string;
   file_url?: string | null;

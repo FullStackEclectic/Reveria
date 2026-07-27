@@ -93,27 +93,42 @@ export function CanvasViewport({
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
   const batchDragStartOffsets = useRef<{ id: string; startX: number; startY: number }[]>([]);
 
+  // 已发起过尺寸探测的素材，避免每次渲染都重建 Image 对象。
+  const probedAssetIdsRef = useRef<Set<string>>(new Set());
+  const visibleAssetIdsKey = visibleItems
+    .map((item) => (item.type === "asset" ? item.asset_id ?? "" : ""))
+    .join(",");
+
   useEffect(() => {
     visibleItems.forEach((item) => {
-      if (item.type === "asset" && item.asset_id) {
-        const asset = assets.find((a) => a.id === item.asset_id);
-        if (asset && (asset.file_url || asset.thumbnail_url) && !realResolutions[asset.id]) {
-          const img = new Image();
-          img.src = assetUrl(asset.file_url ?? asset.thumbnail_url ?? "");
-          img.onload = () => {
-            setRealResolutions((prev) => ({
-              ...prev,
-              [asset.id]: `${img.naturalWidth} x ${img.naturalHeight}`,
-            }));
-            setImageRatios((prev) => ({
-              ...prev,
-              [asset.id]: img.naturalWidth / img.naturalHeight,
-            }));
-          };
-        }
-      }
+      if (item.type !== "asset" || !item.asset_id) return;
+      const asset = assets.find((a) => a.id === item.asset_id);
+      if (!asset) return;
+      const source = asset.file_url ?? asset.thumbnail_url;
+      if (!source || probedAssetIdsRef.current.has(asset.id)) return;
+
+      probedAssetIdsRef.current.add(asset.id);
+      const img = new Image();
+      img.src = assetUrl(source);
+      img.onload = () => {
+        if (!img.naturalWidth || !img.naturalHeight) return;
+        setRealResolutions((prev) => ({
+          ...prev,
+          [asset.id]: `${img.naturalWidth} x ${img.naturalHeight}`,
+        }));
+        setImageRatios((prev) => ({
+          ...prev,
+          [asset.id]: img.naturalWidth / img.naturalHeight,
+        }));
+      };
+      // 加载失败时放行，等素材地址修复后还能再探测一次。
+      img.onerror = () => {
+        probedAssetIdsRef.current.delete(asset.id);
+      };
     });
-  }, [visibleItems, assets, realResolutions]);
+    // visibleItems 每次渲染都是新数组，这里用素材 ID 串作为稳定依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleAssetIdsKey, assets]);
 
   const handleResizeStart = (e: React.MouseEvent, itemId: string, handle: typeof resizingHandle) => {
     e.stopPropagation();
@@ -331,6 +346,66 @@ export function CanvasViewport({
     };
   };
 
+  // 拖拽 / 缩放期间只改 DOM style，松手或移出视口时统一落库。
+  // onMouseUp 与 onMouseLeave 共用这一份逻辑，避免两处实现漂移。
+  const commitItemMutation = () => {
+    if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
+      const targetId = draggingCanvasItemId || resizingItemId;
+      const { x, y, w, h } = currentTempCoords.current;
+      const origin = projectCanvas.items.find((i) => i.id === targetId);
+      // 单击卡片（不拖动）时 currentTempCoords 就是卡片自身坐标，w/h 必然非 0，
+      // 只判非零等于没有守卫：每次点击都会入栈并清空 redo 栈，导致重做永久失效。
+      // 这里改为比对「坐标/尺寸是否真的变了」。
+      const hasChanged =
+        !!origin && (origin.x !== x || origin.y !== y || origin.w !== w || origin.h !== h);
+
+      if (hasChanged) {
+        if (pushToHistory) pushToHistory(projectCanvas);
+
+        if (draggingCanvasItemId && batchDragStartOffsets.current.length > 1) {
+          const actualDx = x - itemDragStart.current.itemX;
+          const actualDy = y - itemDragStart.current.itemY;
+          const snapGrid = 8;
+          // 先快照：ref 会在本函数末尾清空，而 state updater 可能延后执行。
+          const offsets = [...batchDragStartOffsets.current];
+
+          setProjectCanvas((current) => ({
+            ...current,
+            items: current.items.map((i) => {
+              const offset = offsets.find((b) => b.id === i.id);
+              if (!offset) return i;
+              return {
+                ...i,
+                x: Math.round((offset.startX + actualDx) / snapGrid) * snapGrid,
+                y: Math.round((offset.startY + actualDy) / snapGrid) * snapGrid,
+              };
+            }),
+          }));
+        } else {
+          setProjectCanvas((current) => ({
+            ...current,
+            items: current.items.map((i) => (i.id === targetId ? { ...i, x, y, w, h } : i)),
+          }));
+        }
+      }
+    }
+
+    setDraggingCanvasItemId("");
+    setResizingItemId("");
+    batchDragStartOffsets.current = [];
+    currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
+  };
+
+  // 框选矩形以「视口左上角」为原点存储，与 panX / panY 同一坐标系，
+  // 否则视口不贴屏幕左上角时，选框位置与实际命中范围会错开。
+  const toViewportPoint = (e: React.MouseEvent) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    return {
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0),
+    };
+  };
+
   return (
     <div
       ref={viewportRef}
@@ -355,11 +430,12 @@ export function CanvasViewport({
             setSelectedItemIds([]);
             
             if (!readOnly) {
+              const point = toViewportPoint(e);
               setSelectionBox({
-                startX: e.clientX,
-                startY: e.clientY,
-                curX: e.clientX,
-                curY: e.clientY
+                startX: point.x,
+                startY: point.y,
+                curX: point.x,
+                curY: point.y,
               });
             }
           }
@@ -372,10 +448,11 @@ export function CanvasViewport({
           setPanX(dragStart.current.panX + dx);
           setPanY(dragStart.current.panY + dy);
         } else if (selectionBox) {
+          const point = toViewportPoint(e);
           setSelectionBox({
             ...selectionBox,
-            curX: e.clientX,
-            curY: e.clientY
+            curX: point.x,
+            curY: point.y,
           });
         } else if (draggingCanvasItemId && !readOnly) {
           const item = projectCanvas.items.find((i) => i.id === draggingCanvasItemId);
@@ -626,88 +703,13 @@ export function CanvasViewport({
           setSelectionBox(null);
         }
 
-        if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
-          const targetId = draggingCanvasItemId || resizingItemId;
-          const { x, y, w, h } = currentTempCoords.current;
-
-          if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
-            if (pushToHistory) pushToHistory(projectCanvas);
-
-            if (draggingCanvasItemId && batchDragStartOffsets.current.length > 1) {
-              const actualDx = x - itemDragStart.current.itemX;
-              const actualDy = y - itemDragStart.current.itemY;
-              const snapGrid = 8;
-
-              setProjectCanvas((current) => {
-                const nextItems = current.items.map((i) => {
-                  const offset = batchDragStartOffsets.current.find((b) => b.id === i.id);
-                  if (offset) {
-                    const elX = Math.round((offset.startX + actualDx) / snapGrid) * snapGrid;
-                    const elY = Math.round((offset.startY + actualDy) / snapGrid) * snapGrid;
-                    return { ...i, x: elX, y: elY };
-                  }
-                  return i;
-                });
-                return { ...current, items: nextItems };
-              });
-            } else {
-              setProjectCanvas((current) => ({
-                ...current,
-                items: current.items.map((i) =>
-                  i.id === targetId ? { ...i, x, y, w, h } : i
-                ),
-              }));
-            }
-          }
-        }
-        setDraggingCanvasItemId("");
-        setResizingItemId("");
-        batchDragStartOffsets.current = [];
-        currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
+        commitItemMutation();
       }}
       onMouseLeave={() => {
         setIsPanning(false);
         setActiveGuides([]);
         setSelectionBox(null);
-
-        if ((draggingCanvasItemId || resizingItemId) && setProjectCanvas) {
-          const targetId = draggingCanvasItemId || resizingItemId;
-          const { x, y, w, h } = currentTempCoords.current;
-
-          if (x !== 0 || y !== 0 || w !== 0 || h !== 0) {
-            if (pushToHistory) pushToHistory(projectCanvas);
-
-            if (draggingCanvasItemId && batchDragStartOffsets.current.length > 1) {
-              const actualDx = x - itemDragStart.current.itemX;
-              const actualDy = y - itemDragStart.current.itemY;
-              const snapGrid = 8;
-
-              setProjectCanvas((current) => {
-                const nextItems = current.items.map((i) => {
-                  const offset = batchDragStartOffsets.current.find((b) => b.id === i.id);
-                  if (offset) {
-                    const elX = Math.round((offset.startX + actualDx) / snapGrid) * snapGrid;
-                    const elY = Math.round((offset.startY + actualDy) / snapGrid) * snapGrid;
-                    return { ...i, x: elX, y: elY };
-                  }
-                  return i;
-                });
-                return { ...current, items: nextItems };
-              });
-            } else {
-              setProjectCanvas((current) => ({
-                ...current,
-                items: current.items.map((i) =>
-                  i.id === targetId ? { ...i, x, y, w, h } : i
-                ),
-              }));
-            }
-          }
-        }
-        setDraggingCanvasItemId("");
-        setResizingItemId("");
-        batchDragStartOffsets.current = [];
-        currentTempCoords.current = { x: 0, y: 0, w: 0, h: 0 };
+        commitItemMutation();
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -720,8 +722,7 @@ export function CanvasViewport({
       >
         <CanvasDiagramLayers items={visibleItems} connections={visibleConnections} guides={activeGuides} zoom={zoom} />
 
-        {visibleItems.length ? (
-          visibleItems.map((item) => {
+        {visibleItems.map((item) => {
             const asset = item.asset_id ? assets.find((a) => a.id === item.asset_id) : null;
             const colors = getCardColorStyle(item.color);
             const isSelected = selectedItemId === item.id || selectedItemIds.includes(item.id);
@@ -746,24 +747,27 @@ export function CanvasViewport({
                 handleResizeStart={handleResizeStart}
               />
             );
-          })
-        ) : (
-          <div className="canvas-empty-overlay">
-            <div className="canvas-empty">
-              <Sparkles
-                size={24}
-                style={{ marginBottom: "8px", color: "var(--rv-color-primary)" }}
-              />
-              <h4>当前画板无元素</h4>
-              <p style={{ fontSize: "12px", color: "#6b645d" }}>
-                {readOnly
-                  ? "工作区成员尚未在画布上添加内容。"
-                  : "点击上方按钮添加卡片，按住空格键拖拽平移，使用 Ctrl+滚轮缩放。"}
-              </p>
-            </div>
-          </div>
-        )}
+        })}
       </div>
+
+      {/* 空画板引导：必须挂在视口层而非 canvas-surface 内。
+          surface 是 100000px 见方并跟随缩放平移，放在里面会被居中到画布坐标 (50000,50000)，屏幕上永远看不到。 */}
+      {visibleItems.length === 0 && (
+        <div className="canvas-empty-overlay">
+          <div className="canvas-empty">
+            <Sparkles
+              size={24}
+              style={{ marginBottom: "8px", color: "var(--rv-color-primary)" }}
+            />
+            <h4>当前画板无元素</h4>
+            <p style={{ fontSize: "12px", color: "#6b645d" }}>
+              {readOnly
+                ? "工作区成员尚未在画布上添加内容。"
+                : "点击上方按钮添加卡片，按住空格键拖拽平移，使用 Ctrl+滚轮缩放。"}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 选中卡片屏幕空间覆盖层 */}
       {!readOnly && selectedItemId && (
@@ -787,11 +791,12 @@ export function CanvasViewport({
           connectionSourceId={connectionSourceId}
           setConnectionSourceId={setConnectionSourceId}
           handleDrawSimilar={handleDrawSimilar}
+          removeCanvasItem={removeCanvasItem}
         />
       )}
 
       {/* 框选的虚线外框 */}
-      {selectionBox ? <CanvasSelectionBox selection={selectionBox} viewportRect={viewportRef.current?.getBoundingClientRect()} /> : null}
+      {selectionBox ? <CanvasSelectionBox selection={selectionBox} /> : null}
     </div>
   );
 }

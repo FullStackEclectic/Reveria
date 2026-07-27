@@ -3,12 +3,18 @@ import { CurveKey, CurvePoints, RetouchSettings } from "./editorConstants";
 import { HslAdjustments } from "./HslAdjustments";
 import { CurveAdjustments } from "./CurveAdjustments";
 import { ToneMappingAdjustments } from "./ToneMappingAdjustments";
+import { LutPanel } from "./LutPanel";
+import type { LutEntry } from "./useLutLibrary";
 
 interface Props {
   settings: RetouchSettings;
   handleSliderChange: (key: keyof RetouchSettings, val: number) => void;
   handleCurveChange: (key: CurveKey, val: CurvePoints) => void;
   handleAutoSave: (snapshot?: RetouchSettings) => void;
+  lutEntries: LutEntry[];
+  onSelectLut: (id: string) => void;
+  onImportLut: (file: File) => Promise<void>;
+  onDeleteLut: (id: string) => void;
 }
 
 function Slider({
@@ -34,7 +40,10 @@ function Slider({
   );
 }
 
-export function ColorAdjustments({ settings, handleSliderChange, handleCurveChange, handleAutoSave }: Props) {
+export function ColorAdjustments({
+  settings, handleSliderChange, handleCurveChange, handleAutoSave,
+  lutEntries, onSelectLut, onImportLut, onDeleteLut,
+}: Props) {
   const bind = (key: keyof RetouchSettings, min = -100, max = 100) => ({
     value: settings[key] as number,
     min, max,
@@ -100,26 +109,16 @@ export function ColorAdjustments({ settings, handleSliderChange, handleCurveChan
 
       <section className="adjustment-group" style={{ marginTop: "24px" }}>
         <h4 className="group-header">创意 LUT 映射</h4>
-        <div className="lut-cards-grid">
-          {[
-            { name: "无滤镜", file: "" },
-            { name: "中性高级灰", file: "gray.cube" },
-            { name: "日系清透", file: "japanese.cube" },
-            { name: "复古胶片", file: "film.cube" },
-            { name: "温暖秋色", file: "autumn.cube" },
-          ].map((lut) => (
-            <button
-              key={lut.name}
-              className={`lut-card-btn ${settings.lut_file === lut.file ? "active" : ""}`}
-              onClick={() => {
-                handleSliderChange("lut_file", lut.file as any);
-                setTimeout(() => handleAutoSave(), 50);
-              }}
-            >
-              {lut.name}
-            </button>
-          ))}
-        </div>
+        <LutPanel
+          entries={lutEntries}
+          activeId={settings.lut_file}
+          intensity={settings.lut_intensity}
+          onSelect={onSelectLut}
+          onIntensityChange={(value) => handleSliderChange("lut_intensity", value)}
+          onCommit={() => handleAutoSave()}
+          onImport={onImportLut}
+          onDelete={onDeleteLut}
+        />
       </section>
     </div>
   );

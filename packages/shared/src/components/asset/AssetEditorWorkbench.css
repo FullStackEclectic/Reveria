@@ -1648,3 +1648,231 @@
   border-radius: 2px;
   background: linear-gradient(to right, #ef4444, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444);
 }
+
+/* ===== 参考辅助线 ===== */
+.guide-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.guide-overlay line {
+  stroke: rgba(255, 255, 255, 0.42);
+  stroke-width: 0.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.guide-select-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.guide-select {
+  background-color: #1c1c21;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  font-size: 10px;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin-left: 2px;
+  cursor: pointer;
+}
+
+.guide-select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== 高精液化 ===== */
+.liquify-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: none;
+  touch-action: none;
+}
+
+.liquify-brush-cursor {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.liquify-brush-cursor.pucker { border-style: dashed; }
+.liquify-brush-cursor.bloat { border-width: 2px; }
+.liquify-brush-cursor.restore { border-color: rgba(248, 113, 113, 0.95); }
+
+.liquify-tool-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.liquify-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background-color: #1c1c21;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  padding: 8px 4px;
+  font-size: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.liquify-tool-btn:hover { background-color: #27272a; color: #ffffff; }
+
+.liquify-tool-btn.active {
+  background-color: #2e2a87;
+  color: #c7d2fe;
+  border-color: #3b37a3;
+}
+
+.panel-hint-text {
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.6;
+  margin: 12px 0;
+}
+
+.panel-hint-text.hint-success {
+  color: #4ade80;
+}
+
+.panel-hint-text.hint-error {
+  color: #f87171;
+}
+
+.panel-clear-btn {
+  width: 100%;
+  background-color: #1c1c21;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  padding: 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.panel-clear-btn:hover:not(:disabled) { background-color: #3f1d1d; color: #fca5a5; border-color: #7f1d1d; }
+.panel-clear-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== LUT 面板 ===== */
+.lut-card-wrapper {
+  position: relative;
+  display: flex;
+}
+
+.lut-card-wrapper .lut-card-btn { flex: 1; }
+
+.lut-delete-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: transparent;
+  border: none;
+  color: #52525b;
+  cursor: pointer;
+  padding: 1px;
+  line-height: 0;
+  border-radius: 2px;
+}
+
+.lut-delete-btn:hover { color: #fca5a5; background-color: rgba(127, 29, 29, 0.4); }
+
+.lut-import-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  background-color: #1c1c21;
+  border: 1px dashed #3f3f46;
+  color: #a1a1aa;
+  padding: 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lut-import-btn:hover { background-color: #27272a; color: #ffffff; border-color: #52525b; }
+
+.lut-import-error {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #fca5a5;
+  line-height: 1.5;
+}
+
+/* ===== 渲染错误提示 ===== */
+.canvas-render-error {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  background-color: #3f1d1d;
+  border: 1px solid #7f1d1d;
+  border-radius: 4px;
+  color: #fca5a5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ===== 智能消除叠加层 ===== */
+.erase-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: none;
+  touch-action: none;
+}
+
+.erase-brush-cursor {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.90);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.erase-brush-cursor.restore {
+  border-color: rgba(74, 222, 128, 0.90);
+  border-style: dashed;
+}
+
+/* ===== 智能消除面板提交按钮 ===== */
+.panel-submit-btn {
+  width: 100%;
+  margin-top: 8px;
+  background-color: #1e3a5f;
+  border: 1px solid #2563eb;
+  color: #93c5fd;
+  padding: 9px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.panel-submit-btn:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.panel-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 顶部中央 Tab 禁用态 */
+.center-tab:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

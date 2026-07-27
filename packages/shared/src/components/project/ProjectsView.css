@@ -91,6 +91,22 @@
   left: 0;
   width: 100000px;
   height: 100000px;
+  /* surface 是 100000px 见方的透明层，会完整盖住视口。
+     若它接收指针事件，画布空白处的 mousedown 目标永远是 surface 而不是 viewport，
+     导致「框选」与「点空白取消选中」的 e.target === e.currentTarget 判断恒为 false。
+     这里让 surface 对指针透明，由子元素各自重新开启。 */
+  pointer-events: none;
+}
+
+/* 卡片与覆盖层仍需正常接收事件 */
+.canvas-surface > * {
+  pointer-events: auto;
+}
+
+/* 连线与对齐辅助线是纯装饰层，不应吃掉卡片与空白区域的点击 */
+.canvas-surface > .canvas-connections-svg,
+.canvas-surface > .canvas-guides-svg {
+  pointer-events: none;
 }
 
 .cursor-grab {
