@@ -474,6 +474,9 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 			handleTaskFailure(task.ID, "NO_IMAGES_GENERATED", errMsg)
 			return
 		}
+	} else if task.TaskType == "image_background_removal" {
+		handleBackgroundRemovalTask(ctx, task, settings, gatewayModelName)
+		return
 	} else if task.TaskType == "image_inpainting" {
 		// AI 智能消除：source image + mask → /v1/images/edits
 		var payload map[string]any

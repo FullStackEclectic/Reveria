@@ -1,11 +1,11 @@
 import React from "react";
-import { CheckSquare, Eraser, Eye, Move, RotateCcw, Sliders, Sparkles, Wand2 } from "lucide-react";
+import { Blend, CheckSquare, Eraser, Eye, Move, RotateCcw, Sliders, Sparkles, Wand2 } from "lucide-react";
 import { GeometryToolButtons } from "./GeometryToolButtons";
 import { CropRect } from "./CropOverlay";
 import { RetouchSettings } from "./editorConstants";
 import { GUIDE_OPTIONS, type GuideKind } from "./GuideOverlay";
 
-export type CanvasTool = "move" | "healing" | "clone" | "liquify" | "erase";
+export type CanvasTool = "move" | "healing" | "clone" | "mask" | "liquify" | "erase";
 
 interface Props {
   hasAsset: boolean;
@@ -18,7 +18,7 @@ interface Props {
   setActiveCanvasTool: (tool: CanvasTool) => void;
   cloneSource: { x: number; y: number } | null;
   setCloneSampling: (sampling: boolean) => void;
-  setActiveTab: (tab: "portrait" | "color" | "local" | "liquify" | "erase") => void;
+  setActiveTab: (tab: "portrait" | "color" | "local" | "mask" | "liquify" | "erase" | "background") => void;
   guide: GuideKind;
   setGuide: (guide: GuideKind) => void;
   onRotate: () => void;
@@ -47,6 +47,7 @@ export function CanvasToolbar({
   };
   const selectLiquify = () => { setCropDraft(null); setActiveCanvasTool("liquify"); setActiveTab("liquify"); };
   const selectErase = () => { setCropDraft(null); setActiveCanvasTool("erase"); setActiveTab("erase"); };
+  const selectMask = () => { setCropDraft(null); setActiveCanvasTool("mask"); setActiveTab("mask"); };
 
   return (
     <div className="retouch-canvas-toolbar">
@@ -60,6 +61,7 @@ export function CanvasToolbar({
         <button className={`tool-icon-btn ${activeCanvasTool === "move" ? "active" : ""}`} disabled={!hasAsset} onClick={() => setActiveCanvasTool("move")} title="移动工具 (M)"><Move size={15} /></button>
         <GeometryToolButtons disabled={!hasAsset} cropping={cropDraft !== null} onToggleCrop={() => setCropDraft(cropDraft ? null : { x: settings.crop_x, y: settings.crop_y, width: settings.crop_width, height: settings.crop_height })} onRotate={onRotate} onFlipHorizontal={onFlipHorizontal} onFlipVertical={onFlipVertical} />
         <button className={`tool-icon-btn ${activeCanvasTool === "healing" ? "active" : ""}`} disabled={!hasAsset} title="污点修复画笔 (J)" onClick={selectHealing}><Wand2 size={15} /></button>
+        <button className={`tool-icon-btn ${activeCanvasTool === "mask" ? "active" : ""}`} disabled={!hasAsset} title="局部蒙版 (K)" onClick={selectMask}><Blend size={15} /></button>
 
         {/* 参考辅助线：纯视觉叠加，选择构图参考线类型 */}
         <div className="guide-select-wrapper">

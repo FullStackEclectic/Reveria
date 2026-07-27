@@ -1,4 +1,4 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from "react";
+import { useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import {
   IDENTITY_CURVE, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, RetouchSettings,
   VS_SOURCE, FS_SOURCE, UNIFORM_NAMES, packPortraitParams,
@@ -6,11 +6,18 @@ import {
 } from "./editorConstants";
 import { bakeLiquifyMap } from "./retouch/liquifyMap";
 import { LIQUIFY_MAP_SIZE } from "./retouch/settings";
+import {
+  bakeLocalMaskAtlas,
+  LOCAL_MASK_ATLAS_HEIGHT,
+  LOCAL_MASK_ATLAS_WIDTH,
+  packLocalMasks,
+} from "./retouch/localMasks";
 import type { LutData } from "./retouch/lut";
 import { FacePoints } from "../../utils/faceMesh";
 
 export interface RetouchRendererHandle {
-  exportImage: (format?: "jpeg" | "png", quality?: number) => string | null;
+  exportImage: (format?: "jpeg" | "png" | "webp", quality?: number) => string | null;
+  sampleColor: (x: number, y: number) => [number, number, number] | null;
 }
 
 interface Props {
@@ -20,6 +27,10 @@ interface Props {
   facePoints?: FacePoints | null;
   /** 已解析的 3D LUT，由上层按 settings.lut_file 查表得到 */
   lut?: LutData | null;
+  cutoutUrl?: string;
+  backgroundImageUrl?: string;
+  selectedLocalMaskId?: string | null;
+  showLocalMaskOverlay?: boolean;
   className?: string;
   onError?: (message: string) => void;
 }
@@ -27,6 +38,9 @@ interface Props {
 const TEXTURE_UNIT_IMAGE = 0;
 const TEXTURE_UNIT_LIQUIFY = 1;
 const TEXTURE_UNIT_LUT = 2;
+const TEXTURE_UNIT_CUTOUT = 3;
+const TEXTURE_UNIT_BACKGROUND = 4;
+const TEXTURE_UNIT_LOCAL_MASK = 5;
 
 function compileShader(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -41,7 +55,7 @@ function compileShader(gl: WebGLRenderingContext, type: number, src: string): We
 }
 
 /** 创建一个像素纹理，作为 LUT / 位移贴图未就绪时的占位，避免采样器悬空 */
-function createPlaceholderTexture(gl: WebGLRenderingContext, r: number, g: number, b: number): WebGLTexture {
+function createPlaceholderTexture(gl: WebGLRenderingContext, r: number, g: number, b: number, a = 255): WebGLTexture {
   const tex = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -49,8 +63,15 @@ function createPlaceholderTexture(gl: WebGLRenderingContext, r: number, g: numbe
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
-    new Uint8Array([r, g, b, 255]));
+    new Uint8Array([r, g, b, a]));
   return tex;
+}
+
+function parseHexColor(value: string): [number, number, number] {
+  const match = /^#([0-9a-f]{6})$/i.exec(value);
+  if (!match) return [1, 1, 1];
+  const encoded = Number.parseInt(match[1], 16);
+  return [((encoded >> 16) & 255) / 255, ((encoded >> 8) & 255) / 255, (encoded & 255) / 255];
 }
 
 function applyUniforms(
@@ -63,6 +84,11 @@ function applyUniforms(
   fp: FacePoints | null | undefined,
   lut: LutData | null | undefined,
   liquifyActive: boolean,
+  cutoutReady: boolean,
+  backgroundImageReady: boolean,
+  backgroundImageSize: [number, number],
+  selectedLocalMaskId: string | null | undefined,
+  showLocalMaskOverlay: boolean | undefined,
 ) {
   gl.uniform2f(locs["u_texSize"], w, h);
   const z = showOriginal;
@@ -165,10 +191,44 @@ function applyUniforms(
   gl.uniform1f(locs["u_lut_enabled"], lutActive ? 1 : 0);
   gl.uniform1f(locs["u_lut_size"], lut ? lut.size : 2);
   gl.uniform1f(locs["u_lut_intensity"], s.lut_intensity);
+
+  gl.uniform1i(locs["u_cutout"], TEXTURE_UNIT_CUTOUT);
+  gl.uniform1i(locs["u_background_image"], TEXTURE_UNIT_BACKGROUND);
+  const backgroundModes = { original: 0, transparent: 1, solid: 2, blur: 3, image: 4 } as const;
+  const cutoutActive = !z && cutoutReady && s.background_mode !== "original";
+  let backgroundMode = cutoutActive ? backgroundModes[s.background_mode] : 0;
+  if (backgroundMode === 4 && !backgroundImageReady) backgroundMode = 1;
+  const [red, green, blue] = parseHexColor(s.background_color);
+  gl.uniform1f(locs["u_cutout_enabled"], cutoutActive ? 1 : 0);
+  gl.uniform1f(locs["u_background_mode"], backgroundMode);
+  gl.uniform3f(locs["u_background_color"], red, green, blue);
+  gl.uniform1f(locs["u_background_blur"], s.background_blur);
+  gl.uniform1f(locs["u_background_image_ready"], backgroundImageReady ? 1 : 0);
+  gl.uniform2f(locs["u_background_image_size"], backgroundImageSize[0], backgroundImageSize[1]);
+  gl.uniform1f(locs["u_background_image_scale"], s.background_image_scale);
+  gl.uniform2f(locs["u_background_image_offset"], s.background_image_x, s.background_image_y);
+
+  const localMasks = packLocalMasks(s.local_masks, z);
+  gl.uniform1i(locs["u_local_mask_atlas"], TEXTURE_UNIT_LOCAL_MASK);
+  gl.uniform4fv(locs["u_local_meta[0]"], localMasks.meta);
+  gl.uniform4fv(locs["u_local_geometry_a[0]"], localMasks.geometryA);
+  gl.uniform4fv(locs["u_local_geometry_b[0]"], localMasks.geometryB);
+  gl.uniform4fv(locs["u_local_range[0]"], localMasks.range);
+  gl.uniform4fv(locs["u_local_sample[0]"], localMasks.sample);
+  gl.uniform4fv(locs["u_local_adjust_a[0]"], localMasks.adjustmentA);
+  gl.uniform4fv(locs["u_local_adjust_b[0]"], localMasks.adjustmentB);
+  const previewIndex = selectedLocalMaskId
+    ? s.local_masks.findIndex((mask) => mask.id === selectedLocalMaskId)
+    : -1;
+  gl.uniform1f(locs["u_local_preview_index"], previewIndex);
+  gl.uniform1f(locs["u_local_preview_enabled"], !z && showLocalMaskOverlay && previewIndex >= 0 ? 1 : 0);
 }
 
 export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
-  function RetouchRenderer({ imageUrl, settings, showOriginal, facePoints, lut, className, onError }, ref) {
+  function RetouchRenderer({
+    imageUrl, settings, showOriginal, facePoints, lut, cutoutUrl, backgroundImageUrl,
+    selectedLocalMaskId, showLocalMaskOverlay, className, onError,
+  }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
@@ -176,12 +236,24 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
   const texRef = useRef<WebGLTexture | null>(null);
   const liquifyTexRef = useRef<WebGLTexture | null>(null);
   const lutTexRef = useRef<WebGLTexture | null>(null);
+  const cutoutTexRef = useRef<WebGLTexture | null>(null);
+  const backgroundTexRef = useRef<WebGLTexture | null>(null);
+  const localMaskTexRef = useRef<WebGLTexture | null>(null);
+  const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sizeRef = useRef<[number, number]>([1, 1]);
+  const [sourceSize, setSourceSize] = useState<[number, number]>([1, 1]);
+  const [cutoutReady, setCutoutReady] = useState(false);
+  const [backgroundImageReady, setBackgroundImageReady] = useState(false);
+  const [backgroundImageSize, setBackgroundImageSize] = useState<[number, number]>([1, 1]);
 
   // 液化位移贴图只在笔画变化时重新烘焙
   const liquifyPixels = useMemo(
     () => (settings.liquify_strokes.length > 0 ? bakeLiquifyMap(settings.liquify_strokes) : null),
     [settings.liquify_strokes],
+  );
+  const localMaskPixels = useMemo(
+    () => bakeLocalMaskAtlas(settings.local_masks, sourceSize[0] / Math.max(sourceSize[1], 1)),
+    [settings.local_masks, sourceSize],
   );
 
   const resizeOutput = (gl: WebGLRenderingContext, sourceWidth: number, sourceHeight: number) => {
@@ -199,6 +271,15 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       const canvas = canvasRef.current;
       if (!canvas) return null;
       return canvas.toDataURL(`image/${format}`, quality);
+    },
+    sampleColor(x, y) {
+      const sourceCanvas = sourceCanvasRef.current;
+      const context = sourceCanvas?.getContext("2d", { willReadFrequently: true });
+      if (!sourceCanvas || !context) return null;
+      const px = Math.min(sourceCanvas.width - 1, Math.max(0, Math.round(x * (sourceCanvas.width - 1))));
+      const py = Math.min(sourceCanvas.height - 1, Math.max(0, Math.round(y * (sourceCanvas.height - 1))));
+      const pixel = context.getImageData(px, py, 1, 1).data;
+      return [pixel[0] / 255, pixel[1] / 255, pixel[2] / 255];
     },
   }));
 
@@ -241,6 +322,9 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     // 未启用时也要给采样器绑定合法纹理：位移贴图取 0.5 表示零位移
     liquifyTexRef.current = createPlaceholderTexture(gl, 128, 128, 0);
     lutTexRef.current = createPlaceholderTexture(gl, 0, 0, 0);
+    cutoutTexRef.current = createPlaceholderTexture(gl, 0, 0, 0, 0);
+    backgroundTexRef.current = createPlaceholderTexture(gl, 0, 0, 0);
+    localMaskTexRef.current = createPlaceholderTexture(gl, 0, 0, 0);
 
     const buf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -253,6 +337,10 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       gl.deleteProgram(prog);
       if (liquifyTexRef.current) gl.deleteTexture(liquifyTexRef.current);
       if (lutTexRef.current) gl.deleteTexture(lutTexRef.current);
+      if (cutoutTexRef.current) gl.deleteTexture(cutoutTexRef.current);
+      if (backgroundTexRef.current) gl.deleteTexture(backgroundTexRef.current);
+      if (localMaskTexRef.current) gl.deleteTexture(localMaskTexRef.current);
+      if (texRef.current) gl.deleteTexture(texRef.current);
     };
   }, []);
 
@@ -267,6 +355,14 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     img.onload = () => {
       if (cancelled) return;
       sizeRef.current = [img.naturalWidth, img.naturalHeight];
+      setSourceSize([img.naturalWidth, img.naturalHeight]);
+      const sourceCanvas = document.createElement("canvas");
+      const sampleScale = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+      sourceCanvas.width = Math.max(1, Math.round(img.naturalWidth * sampleScale));
+      sourceCanvas.height = Math.max(1, Math.round(img.naturalHeight * sampleScale));
+      sourceCanvas.getContext("2d", { willReadFrequently: true })
+        ?.drawImage(img, 0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceCanvasRef.current = sourceCanvas;
       resizeOutput(gl, img.naturalWidth, img.naturalHeight);
 
       if (texRef.current) gl.deleteTexture(texRef.current);
@@ -281,7 +377,9 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       texRef.current = tex;
 
       applyUniforms(gl, locsRef.current, settings, showOriginal,
-        img.naturalWidth, img.naturalHeight, facePoints, lut, liquifyPixels != null);
+        img.naturalWidth, img.naturalHeight, facePoints, lut, liquifyPixels != null,
+        cutoutReady, backgroundImageReady, backgroundImageSize,
+        selectedLocalMaskId, showLocalMaskOverlay);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     };
     img.onerror = () => {
@@ -321,6 +419,68 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     }
   }, [lut]);
 
+  useEffect(() => {
+    const gl = glRef.current;
+    if (!gl || !cutoutTexRef.current) return;
+    setCutoutReady(false);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_CUTOUT);
+    gl.bindTexture(gl.TEXTURE_2D, cutoutTexRef.current);
+    if (!cutoutUrl) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+      return;
+    }
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      if (cancelled) return;
+      gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_CUTOUT);
+      gl.bindTexture(gl.TEXTURE_2D, cutoutTexRef.current);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      setCutoutReady(true);
+    };
+    image.onerror = () => { if (!cancelled) onError?.("透明前景加载失败，请重新抠图"); };
+    image.src = cutoutUrl;
+    return () => { cancelled = true; };
+  }, [cutoutUrl]);
+
+  useEffect(() => {
+    const gl = glRef.current;
+    if (!gl || !backgroundTexRef.current) return;
+    setBackgroundImageReady(false);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_BACKGROUND);
+    gl.bindTexture(gl.TEXTURE_2D, backgroundTexRef.current);
+    if (!backgroundImageUrl) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+      setBackgroundImageSize([1, 1]);
+      return;
+    }
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      if (cancelled) return;
+      gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_BACKGROUND);
+      gl.bindTexture(gl.TEXTURE_2D, backgroundTexRef.current);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      setBackgroundImageSize([image.naturalWidth, image.naturalHeight]);
+      setBackgroundImageReady(true);
+    };
+    image.onerror = () => { if (!cancelled) onError?.("背景图片加载失败，请重新上传"); };
+    image.src = backgroundImageUrl;
+    return () => { cancelled = true; };
+  }, [backgroundImageUrl]);
+
+  useEffect(() => {
+    const gl = glRef.current;
+    if (!gl || !localMaskTexRef.current) return;
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LOCAL_MASK);
+    gl.bindTexture(gl.TEXTURE_2D, localMaskTexRef.current);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+      LOCAL_MASK_ATLAS_WIDTH, LOCAL_MASK_ATLAS_HEIGHT, 0,
+      gl.RGBA, gl.UNSIGNED_BYTE, localMaskPixels);
+  }, [localMaskPixels]);
+
   // 参数变化只更新 uniform + redraw，不重建 Shader 或纹理
   useEffect(() => {
     const gl = glRef.current;
@@ -334,9 +494,18 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     gl.bindTexture(gl.TEXTURE_2D, liquifyTexRef.current);
     gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LUT);
     gl.bindTexture(gl.TEXTURE_2D, lutTexRef.current);
-    applyUniforms(gl, locsRef.current, settings, showOriginal, w, h, facePoints, lut, liquifyPixels != null);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_CUTOUT);
+    gl.bindTexture(gl.TEXTURE_2D, cutoutTexRef.current);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_BACKGROUND);
+    gl.bindTexture(gl.TEXTURE_2D, backgroundTexRef.current);
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_LOCAL_MASK);
+    gl.bindTexture(gl.TEXTURE_2D, localMaskTexRef.current);
+    applyUniforms(gl, locsRef.current, settings, showOriginal, w, h, facePoints, lut, liquifyPixels != null,
+      cutoutReady, backgroundImageReady, backgroundImageSize,
+      selectedLocalMaskId, showLocalMaskOverlay);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-  }, [settings, showOriginal, facePoints, lut, liquifyPixels]);
+  }, [settings, showOriginal, facePoints, lut, liquifyPixels, cutoutReady, backgroundImageReady,
+    backgroundImageSize, localMaskPixels, selectedLocalMaskId, showLocalMaskOverlay]);
 
   return <canvas ref={canvasRef} className={className} />;
 });

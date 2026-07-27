@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"net/http"
@@ -84,6 +86,17 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 		if err != nil {
 			continue
 		}
+		if task.TaskType == "image_background_removal" {
+			if err := validateTransparentPNG(fileBytes); err != nil {
+				log.Printf("[TaskSucceeded] 抠图结果 %d/%d 不符合透明 PNG 契约: %v", idx+1, totalCount, err)
+				continue
+			}
+			if err := validateCutoutAspect(fileBytes, inputPayload); err != nil {
+				log.Printf("[TaskSucceeded] 抠图结果 %d/%d 宽高比不匹配: %v", idx+1, totalCount, err)
+				continue
+			}
+			contentType = "image/png"
+		}
 		if int64(len(fileBytes)) > maxUploadBytes() {
 			log.Printf("[TaskSucceeded] 结果文件超过允许大小")
 			continue
@@ -158,11 +171,18 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 
 		refImgURL, _ := inputPayload["ref_image_url"].(string)
 
+		title := "AI 创意生成结果"
+		if task.TaskType == "image_background_removal" {
+			title = "智能抠图结果"
+		} else if task.TaskType == "image_inpainting" {
+			title = "智能消除结果"
+		}
 		metaMap := map[string]any{
 			"task_id":       task.ID.String(),
+			"task_type":     task.TaskType,
 			"file_name":     storedName,
 			"url":           localURL,
-			"title":         "AI 创意生成结果",
+			"title":         title,
 			"size":          len(fileBytes),
 			"mime_type":     mimeType,
 			"prompt":        prompt,
@@ -246,6 +266,48 @@ func decodeImageDataURL(raw string) ([]byte, string, error) {
 		return nil, "", err
 	}
 	return decoded, mimeType, nil
+}
+
+func validateTransparentPNG(data []byte) error {
+	decoded, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("图片解码失败: %w", err)
+	}
+	if format != "png" {
+		return fmt.Errorf("结果格式为 %s，必须为 PNG", format)
+	}
+	bounds := decoded.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, alpha := decoded.At(x, y).RGBA()
+			if alpha < 0xffff {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("结果不包含透明像素")
+}
+
+func validateCutoutAspect(data []byte, inputPayload map[string]any) error {
+	sourceWidth, widthOK := inputPayload["source_width"].(float64)
+	sourceHeight, heightOK := inputPayload["source_height"].(float64)
+	if !widthOK || !heightOK || sourceWidth <= 0 || sourceHeight <= 0 {
+		return nil
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return fmt.Errorf("无法读取结果尺寸")
+	}
+	sourceRatio := sourceWidth / sourceHeight
+	resultRatio := float64(config.Width) / float64(config.Height)
+	difference := sourceRatio - resultRatio
+	if difference < 0 {
+		difference = -difference
+	}
+	if difference/sourceRatio > 0.03 {
+		return fmt.Errorf("源图比例 %.4f，结果比例 %.4f", sourceRatio, resultRatio)
+	}
+	return nil
 }
 
 func extensionForGeneratedContent(task model.GenerationTask, contentType string, fileBytes []byte) string {

@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const maxRetouchPresetSettingsBytes = 64 * 1024
@@ -88,29 +88,29 @@ func SaveRetouchPreset(c *gin.Context) {
 
 	userID := c.MustGet("user_id").(uuid.UUID)
 	now := time.Now()
-	var preset model.RetouchPreset
-	err = database.DB.Where("user_id = ? AND name = ?", userID, name).First(&preset).Error
-	status := http.StatusOK
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		preset = model.RetouchPreset{
-			ID: uuid.New(), UserID: userID, Name: name, SettingsJSON: settingsJSON,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		status = http.StatusCreated
-		if err := database.DB.Create(&preset).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "创建修图预设失败"})
-			return
-		}
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取修图预设失败"})
+	candidateID := uuid.New()
+	preset := model.RetouchPreset{
+		ID: candidateID, UserID: userID, Name: name, SettingsJSON: settingsJSON,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	// 单条 upsert 避免并发请求同时查不到记录后争抢唯一索引。
+	// RETURNING 会在冲突更新时把已有记录的 ID 与创建时间写回响应对象。
+	if err := database.DB.Clauses(
+		clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "name"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"settings_json": settingsJSON,
+				"updated_at":    now,
+			}),
+		},
+		clause.Returning{},
+	).Create(&preset).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "保存修图预设失败"})
 		return
-	} else {
-		preset.SettingsJSON = settingsJSON
-		preset.UpdatedAt = now
-		if err := database.DB.Save(&preset).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "更新修图预设失败"})
-			return
-		}
+	}
+	status := http.StatusOK
+	if preset.ID == candidateID {
+		status = http.StatusCreated
 	}
 	c.JSON(status, presetResponse(preset))
 }

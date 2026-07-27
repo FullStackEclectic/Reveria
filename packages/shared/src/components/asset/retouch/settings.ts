@@ -9,6 +9,55 @@ export type CurvePoints = [number, number, number, number, number];
 export type CurveKey = "curve_rgb" | "curve_red" | "curve_green" | "curve_blue";
 export interface HealingSpot { x: number; y: number; radius: number; strength: number }
 export interface CloneStamp { x: number; y: number; sourceX: number; sourceY: number; radius: number; strength: number }
+export type BackgroundMode = "original" | "transparent" | "solid" | "blur" | "image";
+export type LocalMaskType = "brush" | "linear" | "radial" | "color" | "luminance";
+
+export interface LocalMaskPoint {
+  x: number;
+  y: number;
+  radius: number;
+  opacity: number;
+  erase: boolean;
+}
+
+export interface LocalMaskAdjustments {
+  exposure: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  tint: number;
+}
+
+export interface LocalMask {
+  id: string;
+  name: string;
+  type: LocalMaskType;
+  enabled: boolean;
+  inverted: boolean;
+  opacity: number;
+  feather: number;
+  points: LocalMaskPoint[];
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  center_x: number;
+  center_y: number;
+  radius_x: number;
+  radius_y: number;
+  rotation: number;
+  color_hue: number;
+  color_range: number;
+  color_saturation_min: number;
+  luminance_min: number;
+  luminance_max: number;
+  edge_aware: boolean;
+  edge_tolerance: number;
+  sample_hue: number;
+  sample_saturation: number;
+  sample_luminance: number;
+  adjustments: LocalMaskAdjustments;
+}
 
 /** 液化笔画：0=推拉 1=收缩 2=膨胀，还原通过删除笔画实现 */
 export type LiquifyMode = 0 | 1 | 2;
@@ -25,6 +74,8 @@ export interface LiquifyStroke {
 export const IDENTITY_CURVE: CurvePoints = [0, 0.25, 0.5, 0.75, 1];
 export const MAX_HEALING_SPOTS = 16;
 export const MAX_CLONE_STAMPS = 12;
+export const MAX_LOCAL_MASKS = 6;
+export const MAX_LOCAL_MASK_POINTS = 1200;
 /** 液化经位移贴图叠加，笔画数不占 uniform，仅为控制存档体积设上限 */
 export const MAX_LIQUIFY_STROKES = 240;
 /** 位移贴图分辨率，兼顾精度与上传开销 */
@@ -84,6 +135,17 @@ export interface RetouchSettings extends PortraitSettings {
   healing_spots: HealingSpot[];
   clone_stamps: CloneStamp[];
   liquify_strokes: LiquifyStroke[];
+  // 局部蒙版调色：每个蒙版拥有独立选区参数与调色参数。
+  local_masks: LocalMask[];
+  // AI 抠图与背景合成。cutout_url 指向带 alpha 的前景 PNG，作为持久化蒙版来源。
+  background_cutout_url: string;
+  background_mode: BackgroundMode;
+  background_color: string;
+  background_blur: number;
+  background_image_url: string;
+  background_image_scale: number;
+  background_image_x: number;
+  background_image_y: number;
 }
 
 export const DEFAULT_SETTINGS: RetouchSettings = {
@@ -112,6 +174,15 @@ export const DEFAULT_SETTINGS: RetouchSettings = {
   healing_spots: [],
   clone_stamps: [],
   liquify_strokes: [],
+  local_masks: [],
+  background_cutout_url: "",
+  background_mode: "original",
+  background_color: "#ffffff",
+  background_blur: 18,
+  background_image_url: "",
+  background_image_scale: 1,
+  background_image_x: 0,
+  background_image_y: 0,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -172,6 +243,109 @@ function normalizeLiquifyStrokes(value: unknown): LiquifyStroke[] {
     }));
 }
 
+const LOCAL_MASK_TYPES = new Set<LocalMaskType>(["brush", "linear", "radial", "color", "luminance"]);
+
+function normalizeLocalMaskPoints(value: unknown): LocalMaskPoint[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((point): point is LocalMaskPoint => point != null && typeof point === "object"
+      && [point.x, point.y, point.radius, point.opacity]
+        .every((item) => typeof item === "number" && Number.isFinite(item)))
+    .slice(-MAX_LOCAL_MASK_POINTS)
+    .map((point) => ({
+      x: clamp(point.x, 0, 1),
+      y: clamp(point.y, 0, 1),
+      radius: clamp(point.radius, 0.002, 0.35),
+      opacity: clamp(point.opacity, 0, 1),
+      erase: point.erase === true,
+    }));
+}
+
+function normalizeLocalAdjustments(value: unknown): LocalMaskAdjustments {
+  const source = value != null && typeof value === "object"
+    ? value as Partial<LocalMaskAdjustments>
+    : {};
+  const read = (key: keyof LocalMaskAdjustments) => {
+    const raw = source[key];
+    return typeof raw === "number" && Number.isFinite(raw) ? clamp(raw, -100, 100) : 0;
+  };
+  return {
+    exposure: read("exposure"),
+    contrast: read("contrast"),
+    saturation: read("saturation"),
+    temperature: read("temperature"),
+    tint: read("tint"),
+  };
+}
+
+function normalizeLocalMasks(value: unknown): LocalMask[] {
+  if (!Array.isArray(value)) return [];
+  const usedIDs = new Set<string>();
+  return value
+    .filter((mask) => mask != null && typeof mask === "object")
+    .slice(-MAX_LOCAL_MASKS)
+    .map((raw, index) => {
+      const mask = raw as Partial<LocalMask>;
+      const rawID = typeof mask.id === "string" ? mask.id.trim().slice(0, 80) : "";
+      const id = rawID && !usedIDs.has(rawID) ? rawID : `local-mask-${index + 1}`;
+      usedIDs.add(id);
+      const type = typeof mask.type === "string" && LOCAL_MASK_TYPES.has(mask.type as LocalMaskType)
+        ? mask.type as LocalMaskType
+        : "brush";
+      const number = (key: keyof LocalMask, fallback: number, min: number, max: number) => {
+        const rawValue = mask[key];
+        return typeof rawValue === "number" && Number.isFinite(rawValue)
+          ? clamp(rawValue, min, max)
+          : fallback;
+      };
+      const luminanceMin = number("luminance_min", 0.2, 0, 1);
+      const luminanceMax = Math.max(luminanceMin, number("luminance_max", 0.8, 0, 1));
+      return {
+        id,
+        name: typeof mask.name === "string" && mask.name.trim() ? mask.name.trim().slice(0, 40) : `局部蒙版 ${index + 1}`,
+        type,
+        enabled: mask.enabled !== false,
+        inverted: mask.inverted === true,
+        opacity: number("opacity", 1, 0, 1),
+        feather: number("feather", 0.35, 0.001, 1),
+        points: type === "brush" ? normalizeLocalMaskPoints(mask.points) : [],
+        start_x: number("start_x", 0.25, 0, 1),
+        start_y: number("start_y", 0.5, 0, 1),
+        end_x: number("end_x", 0.75, 0, 1),
+        end_y: number("end_y", 0.5, 0, 1),
+        center_x: number("center_x", 0.5, 0, 1),
+        center_y: number("center_y", 0.5, 0, 1),
+        radius_x: number("radius_x", 0.3, 0.01, 1),
+        radius_y: number("radius_y", 0.3, 0.01, 1),
+        rotation: number("rotation", 0, -180, 180),
+        color_hue: number("color_hue", 0, 0, 360),
+        color_range: number("color_range", 30, 1, 180),
+        color_saturation_min: number("color_saturation_min", 0.1, 0, 1),
+        luminance_min: luminanceMin,
+        luminance_max: luminanceMax,
+        edge_aware: mask.edge_aware !== false,
+        edge_tolerance: number("edge_tolerance", 0.22, 0.02, 1),
+        sample_hue: number("sample_hue", 0, 0, 1),
+        sample_saturation: number("sample_saturation", 0, 0, 1),
+        sample_luminance: number("sample_luminance", 0.5, 0, 1),
+        adjustments: normalizeLocalAdjustments(mask.adjustments),
+      };
+    });
+}
+
+const BACKGROUND_MODES = new Set<BackgroundMode>(["original", "transparent", "solid", "blur", "image"]);
+
+function normalizeBackgroundMode(value: unknown, cutoutURL: string): BackgroundMode {
+  if (!cutoutURL) return "original";
+  return typeof value === "string" && BACKGROUND_MODES.has(value as BackgroundMode)
+    ? value as BackgroundMode
+    : "transparent";
+}
+
+function normalizeHexColor(value: unknown): string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : "#ffffff";
+}
+
 /** 人像参数按各自量程夹取，非法值回落到 0，避免脏数据被写进 shader */
 function normalizePortraitParams(merged: Partial<PortraitSettings>): PortraitSettings {
   const result: Record<string, number> = {};
@@ -190,6 +364,9 @@ export function normalizeRetouchSettings(
   settings?: Partial<RetouchSettings> | null,
 ): RetouchSettings {
   const merged = { ...DEFAULT_SETTINGS, ...(settings ?? {}) };
+  const backgroundCutoutURL = typeof merged.background_cutout_url === "string"
+    ? merged.background_cutout_url.trim()
+    : "";
   return {
     ...merged,
     ...normalizePortraitParams(merged),
@@ -202,5 +379,16 @@ export function normalizeRetouchSettings(
     healing_spots: normalizeHealingSpots(merged.healing_spots),
     clone_stamps: normalizeCloneStamps(merged.clone_stamps),
     liquify_strokes: normalizeLiquifyStrokes(merged.liquify_strokes),
+    local_masks: normalizeLocalMasks(merged.local_masks),
+    background_cutout_url: backgroundCutoutURL,
+    background_mode: normalizeBackgroundMode(merged.background_mode, backgroundCutoutURL),
+    background_color: normalizeHexColor(merged.background_color),
+    background_blur: Number.isFinite(merged.background_blur) ? clamp(merged.background_blur, 0, 40) : 18,
+    background_image_url: typeof merged.background_image_url === "string" ? merged.background_image_url.trim() : "",
+    background_image_scale: Number.isFinite(merged.background_image_scale)
+      ? clamp(merged.background_image_scale, 0.5, 3)
+      : 1,
+    background_image_x: Number.isFinite(merged.background_image_x) ? clamp(merged.background_image_x, -1, 1) : 0,
+    background_image_y: Number.isFinite(merged.background_image_y) ? clamp(merged.background_image_y, -1, 1) : 0,
   };
 }

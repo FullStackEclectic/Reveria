@@ -11,6 +11,6 @@ export function LoadAuthTokens():Promise<Record<string, string>>;
 
 export function SaveAuthTokens(arg1:string,arg2:string):Promise<void>;
 
-export function SelectSavePath(arg1:string):Promise<string>;
-
 export function SaveRenderedImage(arg1:string,arg2:string):Promise<void>;
+
+export function SelectSavePath(arg1:string):Promise<string>;

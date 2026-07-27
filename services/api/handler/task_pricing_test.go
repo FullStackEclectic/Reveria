@@ -106,3 +106,30 @@ func TestResolveEstimatedCreditsInpaintingRejectsMissingPricing(t *testing.T) {
 		t.Fatal("image_inpainting 缺少价格配置时不应返回代码内默认价格")
 	}
 }
+
+func TestResolveEstimatedCreditsBackgroundRemovalUsesGenericRule(t *testing.T) {
+	previousDB := database.DB
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.DB = db
+	t.Cleanup(func() { database.DB = previousDB })
+	if err := db.AutoMigrate(&model.PricingRule{}, &model.Model{}); err != nil {
+		t.Fatal(err)
+	}
+	taskType := "image_background_removal"
+	price := int64(6)
+	if err := db.Create(&model.PricingRule{
+		ID: uuid.New(), Name: "background-removal", TaskType: &taskType, MinCredits: &price, Enabled: true,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	credits, err := resolveEstimatedCredits(taskType, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credits != price {
+		t.Fatalf("background removal 通用定价 = %d, want %d", credits, price)
+	}
+}

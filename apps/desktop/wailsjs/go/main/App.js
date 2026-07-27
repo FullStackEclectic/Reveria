@@ -22,10 +22,10 @@ export function SaveAuthTokens(arg1, arg2) {
   return window['go']['main']['App']['SaveAuthTokens'](arg1, arg2);
 }
 
-export function SelectSavePath(arg1) {
-  return window['go']['main']['App']['SelectSavePath'](arg1);
-}
-
 export function SaveRenderedImage(arg1, arg2) {
   return window['go']['main']['App']['SaveRenderedImage'](arg1, arg2);
+}
+
+export function SelectSavePath(arg1) {
+  return window['go']['main']['App']['SelectSavePath'](arg1);
 }

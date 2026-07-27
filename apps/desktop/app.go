@@ -84,8 +84,8 @@ func (a *App) SelectSavePath(defaultFilename string) string {
 		DefaultFilename: defaultFilename,
 		Filters: []wailsRuntime.FileFilter{
 			{
-				DisplayName: "图片文件 (*.jpg;*.jpeg;*.png)",
-				Pattern:     "*.jpg;*.jpeg;*.png",
+				DisplayName: "图片文件 (*.jpg;*.jpeg;*.png;*.webp)",
+				Pattern:     "*.jpg;*.jpeg;*.png;*.webp",
 			},
 		},
 	})
@@ -116,7 +116,7 @@ func decodeRenderedImageDataURL(dataURL string) ([]byte, error) {
 		return nil, errors.New("无效的图片数据")
 	}
 	header := dataURL[:comma]
-	if header != "data:image/jpeg;base64" && header != "data:image/png;base64" {
+	if header != "data:image/jpeg;base64" && header != "data:image/png;base64" && header != "data:image/webp;base64" {
 		return nil, errors.New("不支持的图片格式")
 	}
 	encoded := dataURL[comma+1:]

@@ -58,7 +58,7 @@ interface ProjectsViewProps {
     assetId: string,
     settings: RetouchSettings,
     dataUrl: string,
-    format: "jpeg" | "png",
+    format: "jpeg" | "png" | "webp",
   ) => Promise<boolean>;
 }
 

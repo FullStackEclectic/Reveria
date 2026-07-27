@@ -3,7 +3,8 @@ import { buildFacePointDefines, FACE_POINT_VEC4_COUNT } from "./faceUniforms";
 import { GLSL_COMMON } from "./glsl/common";
 import { GLSL_PORTRAIT_WARP } from "./glsl/portraitWarp";
 import { GLSL_PORTRAIT_COLOR } from "./glsl/portraitColor";
-import { LIQUIFY_MAX_SHIFT, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS } from "./settings";
+import { LIQUIFY_MAX_SHIFT, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, MAX_LOCAL_MASKS } from "./settings";
+import { LOCAL_MASK_ATLAS_COLUMNS, LOCAL_MASK_ATLAS_ROWS, LOCAL_MASK_TILE_SIZE } from "./localMasks";
 
 export const VS_SOURCE = `
   attribute vec2 a_position;
@@ -87,6 +88,108 @@ const UNIFORM_DECLARATIONS = `
   uniform float u_lut_enabled;
   uniform float u_lut_size;
   uniform float u_lut_intensity;
+  // AI 抠图前景与背景合成
+  uniform sampler2D u_cutout;
+  uniform sampler2D u_background_image;
+  uniform float u_cutout_enabled;
+  uniform float u_background_mode;
+  uniform vec3 u_background_color;
+  uniform float u_background_blur;
+  uniform float u_background_image_ready;
+  uniform vec2 u_background_image_size;
+  uniform float u_background_image_scale;
+  uniform vec2 u_background_image_offset;
+  // 多局部蒙版：画笔选区使用图集，其余选区由几何或颜色范围实时计算。
+  uniform sampler2D u_local_mask_atlas;
+  uniform vec4 u_local_meta[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_geometry_a[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_geometry_b[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_range[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_sample[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_adjust_a[${MAX_LOCAL_MASKS}];
+  uniform vec4 u_local_adjust_b[${MAX_LOCAL_MASKS}];
+  uniform float u_local_preview_index;
+  uniform float u_local_preview_enabled;
+`;
+
+const GLSL_LOCAL_MASKS = `
+  float hueDistance(float a, float b) {
+    float distance = abs(a - b);
+    return min(distance, 1.0 - distance);
+  }
+
+  float sampleBrushMask(int index, vec2 coord) {
+    float maskIndex = float(index);
+    float column = mod(maskIndex, ${LOCAL_MASK_ATLAS_COLUMNS.toFixed(1)});
+    float row = floor(maskIndex / ${LOCAL_MASK_ATLAS_COLUMNS.toFixed(1)});
+    float inset = 0.5 / ${LOCAL_MASK_TILE_SIZE.toFixed(1)};
+    vec2 localCoord = clamp(coord, vec2(inset), vec2(1.0 - inset));
+    vec2 atlasCoord = (localCoord + vec2(column, row))
+      / vec2(${LOCAL_MASK_ATLAS_COLUMNS.toFixed(1)}, ${LOCAL_MASK_ATLAS_ROWS.toFixed(1)});
+    return texture2D(u_local_mask_atlas, atlasCoord).r;
+  }
+
+  float localMaskValue(
+    int index, vec2 coord, vec3 sourceRgb, float aspect,
+    vec4 meta, vec4 geometryA, vec4 geometryB, vec4 range,
+    vec4 sampleRange, vec4 adjustmentB
+  ) {
+    if (meta.y < 0.5 || meta.x < 0.5) return 0.0;
+    float feather = max(geometryB.y, 0.001);
+    float mask = 0.0;
+
+    if (meta.x < 1.5) {
+      mask = sampleBrushMask(index, coord);
+      if (sampleRange.w >= 0.0) {
+        vec3 sourceHsl = rgb2hsl(clamp(sourceRgb, 0.0, 1.0));
+        float difference = hueDistance(sourceHsl.x, sampleRange.x) * 1.8
+          + abs(sourceHsl.y - sampleRange.y) * 0.35
+          + abs(sourceHsl.z - sampleRange.z) * 0.65;
+        mask *= 1.0 - smoothstep(sampleRange.w * 0.45, sampleRange.w, difference);
+      }
+    } else if (meta.x < 2.5) {
+      vec2 direction = geometryA.zw - geometryA.xy;
+      direction.x *= aspect;
+      vec2 delta = coord - geometryA.xy;
+      delta.x *= aspect;
+      float projection = dot(delta, direction) / max(dot(direction, direction), 0.00001);
+      mask = smoothstep(0.5 - feather * 0.5, 0.5 + feather * 0.5, projection);
+    } else if (meta.x < 3.5) {
+      float angle = radians(geometryB.x);
+      float cosine = cos(angle);
+      float sine = sin(angle);
+      vec2 delta = coord - geometryA.xy;
+      vec2 rotated = vec2(cosine * delta.x + sine * delta.y, -sine * delta.x + cosine * delta.y);
+      float radialDistance = length(rotated / max(geometryA.zw, vec2(0.001)));
+      mask = 1.0 - smoothstep(1.0 - feather, 1.0, radialDistance);
+    } else if (meta.x < 4.5) {
+      vec3 sourceHsl = rgb2hsl(clamp(sourceRgb, 0.0, 1.0));
+      float colorWeight = 1.0 - smoothstep(range.y * 0.55, range.y, hueDistance(sourceHsl.x, range.x));
+      float saturationWeight = smoothstep(adjustmentB.y, min(1.0, adjustmentB.y + 0.12), sourceHsl.y);
+      mask = colorWeight * saturationWeight;
+    } else {
+      float sourceLuma = luma(sourceRgb);
+      float edge = feather * 0.25;
+      float lower = smoothstep(range.z - edge, range.z + edge, sourceLuma);
+      float upper = 1.0 - smoothstep(range.w - edge, range.w + edge, sourceLuma);
+      mask = lower * upper;
+    }
+
+    if (meta.w > 0.5) mask = 1.0 - mask;
+    return clamp(mask * meta.z, 0.0, 1.0);
+  }
+
+  vec3 applyLocalAdjustment(vec3 color, vec4 adjustmentA, vec4 adjustmentB) {
+    vec3 adjusted = color * (1.0 + adjustmentA.x * 0.01);
+    adjusted = (adjusted - 0.5) * (1.0 + adjustmentA.y * 0.01) + 0.5;
+    adjusted = adjustSat(adjusted, 1.0 + adjustmentA.z * 0.01);
+    adjusted.r += adjustmentA.w * 0.0008;
+    adjusted.b -= adjustmentA.w * 0.0008;
+    adjusted.g += adjustmentB.x * 0.0004;
+    adjusted.r -= adjustmentB.x * 0.0002;
+    adjusted.b -= adjustmentB.x * 0.0002;
+    return adjusted;
+  }
 `;
 
 const MAIN_SOURCE = `
@@ -261,13 +364,69 @@ const MAIN_SOURCE = `
     rgb.g = applyCurve(rgb.g, u_curve_green_a, u_curve_green_b);
     rgb.b = applyCurve(rgb.b, u_curve_blue_a, u_curve_blue_b);
 
+    // 局部蒙版依次叠加，每个蒙版拥有独立调色参数。
+    float previewMask = 0.0;
+    for (int localIndex = 0; localIndex < ${MAX_LOCAL_MASKS}; localIndex++) {
+      float mask = localMaskValue(
+        localIndex, sampleCoord, orig.rgb, aspect,
+        u_local_meta[localIndex], u_local_geometry_a[localIndex], u_local_geometry_b[localIndex],
+        u_local_range[localIndex], u_local_sample[localIndex], u_local_adjust_b[localIndex]
+      );
+      if (mask > 0.001) {
+        vec3 localAdjusted = applyLocalAdjustment(
+          rgb, u_local_adjust_a[localIndex], u_local_adjust_b[localIndex]
+        );
+        rgb = mix(rgb, localAdjusted, mask);
+      }
+      if (abs(float(localIndex) - u_local_preview_index) < 0.25) previewMask = mask;
+    }
+
+    if (u_local_preview_enabled > 0.5 && previewMask > 0.001) {
+      rgb = mix(rgb, vec3(1.0, 0.12, 0.08), previewMask * 0.38);
+    }
+
     // 3D LUT 位于管线末端，作为整体创意调色叠加。
     if (u_lut_enabled > 0.5) {
       vec3 graded = sampleLut(u_lut, clamp(rgb, 0.0, 1.0), u_lut_size);
       rgb = mix(rgb, graded, clamp(u_lut_intensity * 0.01, 0.0, 1.0));
     }
 
-    gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), orig.a);
+    vec3 finalRgb = clamp(rgb, 0.0, 1.0);
+    float finalAlpha = orig.a;
+    if (u_cutout_enabled > 0.5 && u_background_mode > 0.5) {
+      float subjectAlpha = texture2D(u_cutout, sampleCoord).a;
+      if (u_background_mode < 1.5) {
+        finalAlpha = subjectAlpha;
+      } else {
+        vec3 background = u_background_color;
+        if (u_background_mode > 2.5 && u_background_mode < 3.5) {
+          vec3 blurred = vec3(0.0);
+          float blurRadius = max(u_background_blur, 0.0);
+          for (int bx = -2; bx <= 2; bx++) {
+            for (int by = -2; by <= 2; by++) {
+              vec2 offset = vec2(float(bx), float(by)) * blurRadius / u_texSize;
+              blurred += texture2D(u_image, clamp(sampleCoord + offset, 0.0, 1.0)).rgb;
+            }
+          }
+          background = blurred / 25.0;
+        } else if (u_background_mode > 3.5 && u_background_image_ready > 0.5) {
+          float canvasAspect = u_texSize.x / max(u_texSize.y, 1.0);
+          float imageAspect = u_background_image_size.x / max(u_background_image_size.y, 1.0);
+          vec2 backgroundCoord = v_texCoord;
+          if (imageAspect > canvasAspect) {
+            backgroundCoord.x = 0.5 + (backgroundCoord.x - 0.5) * canvasAspect / imageAspect;
+          } else {
+            backgroundCoord.y = 0.5 + (backgroundCoord.y - 0.5) * imageAspect / canvasAspect;
+          }
+          backgroundCoord = (backgroundCoord - 0.5) / max(u_background_image_scale, 0.01)
+            + 0.5 - u_background_image_offset;
+          background = texture2D(u_background_image, clamp(backgroundCoord, 0.0, 1.0)).rgb;
+        }
+        finalRgb = mix(background, finalRgb, subjectAlpha);
+        finalAlpha = 1.0;
+      }
+    }
+    gl_FragColor = vec4(finalRgb, finalAlpha);
   }
 `;
 
@@ -292,6 +451,7 @@ export const FS_SOURCE = [
   `  ${buildFacePointDefines()}`,
   GLSL_COMMON,
   GLSL_HSL_CHANNEL,
+  GLSL_LOCAL_MASKS,
   GLSL_PORTRAIT_WARP,
   GLSL_PORTRAIT_COLOR,
   MAIN_SOURCE,
@@ -327,4 +487,10 @@ export const UNIFORM_NAMES = [
   "u_portrait[0]",
   "u_image", "u_liquify_map", "u_liquify_enabled",
   "u_lut", "u_lut_enabled", "u_lut_size", "u_lut_intensity",
+  "u_cutout", "u_background_image", "u_cutout_enabled", "u_background_mode",
+  "u_background_color", "u_background_blur", "u_background_image_ready",
+  "u_background_image_size", "u_background_image_scale", "u_background_image_offset",
+  "u_local_mask_atlas", "u_local_meta[0]", "u_local_geometry_a[0]", "u_local_geometry_b[0]",
+  "u_local_range[0]", "u_local_sample[0]", "u_local_adjust_a[0]", "u_local_adjust_b[0]",
+  "u_local_preview_index", "u_local_preview_enabled",
 ] as const;

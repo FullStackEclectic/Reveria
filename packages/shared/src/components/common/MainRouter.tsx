@@ -30,7 +30,7 @@ interface MainRouterProps {
     assetId: string,
     settings: RetouchSettings,
     dataUrl: string,
-    format: "jpeg" | "png",
+    format: "jpeg" | "png" | "webp",
   ) => Promise<any>;
   handleSaveCustomer: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteAsset: (assetId: string) => Promise<void>;

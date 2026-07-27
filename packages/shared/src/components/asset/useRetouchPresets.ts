@@ -38,8 +38,30 @@ function writeCachedPresets(presets: CustomRetouchPreset[]) {
   localStorage.setItem(PRESET_CACHE_KEY, JSON.stringify(presets));
 }
 
-function mergePreset(list: CustomRetouchPreset[], preset: CustomRetouchPreset) {
+export function mergePreset(list: CustomRetouchPreset[], preset: CustomRetouchPreset) {
   return [preset, ...list.filter((item) => item.id !== preset.id && item.name !== preset.name)];
+}
+
+export async function synchronizeCachedPresets(
+  cached: CustomRetouchPreset[],
+  remote: CustomRetouchPreset[],
+  saveRemote: (name: string, settings: RetouchSettings) => Promise<CustomRetouchPreset>,
+) {
+  const unsynced = cached.filter((item) => {
+    if (!item.id.startsWith("local-")) return false;
+    const isLegacyCache = item.id.startsWith("local-migrated-");
+    return !isLegacyCache || !remote.some((remoteItem) => remoteItem.name === item.name);
+  });
+  let merged = remote;
+  for (const item of unsynced) {
+    try {
+      merged = mergePreset(merged, await saveRemote(item.name, item.settings));
+    } catch {
+      // 上传失败时保留本地版本，下次加载继续同步。
+      merged = mergePreset(merged, item);
+    }
+  }
+  return merged;
 }
 
 async function saveRemotePreset(name: string, settings: RetouchSettings) {
@@ -60,19 +82,7 @@ export function useRetouchPresets() {
           name: item.name,
           settings: normalizeRetouchSettings(item.settings),
         }));
-        const unsynced = cached.filter((item) => {
-          if (!item.id.startsWith("local-")) return false;
-          const isLegacyCache = item.id.startsWith("local-migrated-");
-          return !isLegacyCache || !remote.some((remoteItem) => remoteItem.name === item.name);
-        });
-        let merged = remote;
-        for (const item of unsynced) {
-          try {
-            merged = mergePreset(merged, await saveRemotePreset(item.name, item.settings));
-          } catch {
-            merged = mergePreset(merged, item);
-          }
-        }
+        const merged = await synchronizeCachedPresets(cached, remote, saveRemotePreset);
         if (!cancelled) {
           setPresets(merged);
           writeCachedPresets(merged);

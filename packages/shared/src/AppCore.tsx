@@ -257,7 +257,7 @@ export function AppCore() {
     assetId: string,
     _settings: RetouchSettings,
     dataUrl: string,
-    format: "jpeg" | "png",
+    format: "jpeg" | "png" | "webp",
   ) => {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) {
@@ -265,7 +265,8 @@ export function AppCore() {
       return false;
     }
     const rawFilename = asset.metadata?.title || asset.metadata?.file_name || "retouched_image";
-    const filename = `${rawFilename.replace(/\.[^.]+$/, "")}_retouched.${format === "jpeg" ? "jpg" : "png"}`;
+    const extension = format === "jpeg" ? "jpg" : format;
+    const filename = `${rawFilename.replace(/\.[^.]+$/, "")}_retouched.${extension}`;
     const wailsApp = (window as any).go?.main?.App;
     try {
       if (wailsApp?.SaveRenderedImage) {

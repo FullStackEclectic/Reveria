@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { RetouchRenderer, RetouchRendererHandle } from "./RetouchRenderer";
-import {
-  Wand2, Sun, Droplet, Eye, ArrowLeft, Save, Download,
-  Sparkles, Sliders, Scissors, User, History, Camera,
-  RotateCcw, FolderOpen, Image as ImageIcon,
-  Eraser, Move, CheckSquare
-} from "lucide-react";
 import { AssetSummary } from "../../types";
-import { assetTitle, assetUrl, getJson, postJson } from "../../utils";
+import { assetTitle, assetUrl } from "../../utils";
 import { detectFacePoints, FacePoints } from "../../utils/faceMesh";
 import {
   RetouchSettings, DEFAULT_SETTINGS, PRESET_EFFECTS, normalizeRetouchSettings,
@@ -23,19 +17,26 @@ import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar";
 import { GuideOverlay, type GuideKind } from "./GuideOverlay";
 import { LiquifyOverlay, type LiquifyTool } from "./LiquifyOverlay";
 import { LiquifyPanel } from "./LiquifyPanel";
-import { EraseOverlay, generateMaskDataUrl, type EraseMaskCircle, type EraseMode } from "./EraseOverlay";
+import { EraseOverlay, type EraseMaskCircle, type EraseMode } from "./EraseOverlay";
 import { ErasePanel, type EraseIntent } from "./ErasePanel";
+import { BackgroundPanel } from "./BackgroundPanel";
+import { useBackgroundRemoval } from "./useBackgroundRemoval";
+import { useEraseTask } from "./useEraseTask";
 import { RetouchPresetPanel } from "./RetouchPresetPanel";
 import { HealingBrushOverlay } from "./HealingBrushOverlay";
 import { LocalHealingPanel } from "./LocalHealingPanel";
 import { CloneStampOverlay } from "./CloneStampOverlay";
 import { CloneStampPanel } from "./CloneStampPanel";
 import { AssetFilmstrip } from "./AssetFilmstrip";
+import { EditorHeader, type ExportFormat } from "./EditorHeader";
+import { EmptyAssetImporter } from "./EmptyAssetImporter";
+import { EditorTabBar, type EditorTab } from "./EditorTabBar";
+import { LocalMaskPanel } from "./LocalMaskPanel";
+import { LocalMaskOverlay } from "./LocalMaskOverlay";
+import { useLocalMasks } from "./useLocalMasks";
 import "./AssetEditorWorkbench.css";
 
 export type { RetouchSettings } from "./editorConstants";
-
-type EditorTab = "portrait" | "color" | "local" | "liquify" | "erase";
 
 interface AssetEditorProps {
   asset?: AssetSummary;
@@ -47,7 +48,7 @@ interface AssetEditorProps {
     assetId: string,
     settings: RetouchSettings,
     dataUrl: string,
-    format: "jpeg" | "png",
+    format: ExportFormat,
   ) => Promise<boolean>;
   initialSettings?: RetouchSettings;
   onUpload?: (file: File) => Promise<void>;
@@ -89,7 +90,7 @@ export function AssetEditorWorkbench({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [facePoints, setFacePoints] = useState<FacePoints | null>(null);
-  const [exportFormat, setExportFormat] = useState<"jpeg" | "png">("jpeg");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("jpeg");
   const [cropDraft, setCropDraft] = useState<CropRect | null>(null);
   const [activeCanvasTool, setActiveCanvasTool] = useState<CanvasTool>("move");
   const [healingBrushSize, setHealingBrushSize] = useState(32);
@@ -102,9 +103,6 @@ export function AssetEditorWorkbench({
   const [eraseMode, setEraseMode] = useState<EraseMode>("mark");
   const [eraseBrushSize, setEraseBrushSize] = useState(60);
   const [eraseIntent, setEraseIntent] = useState<EraseIntent>("erase");
-  const [eraseSubmitting, setEraseSubmitting] = useState(false);
-  const [eraseTaskStatus, setEraseTaskStatus] = useState<string | null>(null);
-  const eraseTaskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cloneSource, setCloneSource] = useState<{ x: number; y: number } | null>(null);
   const [cloneSampling, setCloneSampling] = useState(true);
   const rendererRef = useRef<RetouchRendererHandle>(null);
@@ -163,6 +161,7 @@ export function AssetEditorWorkbench({
       };
     }
   }, [currentAsset?.id, initialAsset?.id, initialSettings, onLoadSettings]);
+
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -280,81 +279,6 @@ export function AssetEditorWorkbench({
     handleAutoSave(next);
   };
 
-  const handleEraseSubmit = async () => {
-    if (!currentAsset || eraseMasks.length === 0 || eraseSubmitting) return;
-    setEraseSubmitting(true);
-    setEraseTaskStatus("preparing");
-
-    try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const el = new Image();
-        el.crossOrigin = "anonymous";
-        el.onload = () => resolve(el);
-        el.onerror = reject;
-        el.src = sourceUrl;
-      });
-
-      const maskDataUrl = generateMaskDataUrl(eraseMasks, img.naturalWidth, img.naturalHeight);
-      if (!maskDataUrl) throw new Error("生成遮罩失败");
-
-      const res = await postJson<{ success: boolean; data: any }>("/api/tasks", {
-        workspace_id: currentAsset.workspace_id,
-        project_id: currentAsset.project_id,
-        task_type: "image_inpainting",
-        input_payload: {
-          image_url: currentAsset.file_url,
-          mask_data: maskDataUrl,
-          prompt: eraseIntent === "watermark" ? "remove watermark" : "",
-          size: "1024x1024",
-        },
-      });
-
-      const taskData = res?.data ?? res;
-      const taskId: string | undefined = taskData?.id ?? taskData?.task?.id;
-      if (!taskId) throw new Error("创建任务失败");
-
-      setEraseMasks([]);
-      setEraseTaskStatus("pending");
-
-      if (eraseTaskPollRef.current) clearInterval(eraseTaskPollRef.current);
-      eraseTaskPollRef.current = setInterval(async () => {
-        try {
-          const pollRes = await getJson<any>(`/api/tasks/${taskId}`);
-          const task = pollRes?.data ?? pollRes;
-          const status: string | undefined = task?.status;
-          if (status === "succeeded") {
-            clearInterval(eraseTaskPollRef.current!);
-            eraseTaskPollRef.current = null;
-            setEraseTaskStatus("succeeded");
-            setEraseSubmitting(false);
-            onAssetsRefresh?.();
-          } else if (status === "failed") {
-            clearInterval(eraseTaskPollRef.current!);
-            eraseTaskPollRef.current = null;
-            setEraseTaskStatus("failed");
-            setEraseSubmitting(false);
-          } else {
-            setEraseTaskStatus(status ?? "running");
-          }
-        } catch {
-          // ignore transient poll errors
-        }
-      }, 3000);
-
-      setTimeout(() => {
-        if (eraseTaskPollRef.current) {
-          clearInterval(eraseTaskPollRef.current);
-          eraseTaskPollRef.current = null;
-          setEraseSubmitting(false);
-        }
-      }, 300_000);
-    } catch (e) {
-      console.error("消除任务提交失败:", e);
-      setEraseTaskStatus("error");
-      setEraseSubmitting(false);
-    }
-  };
-
   const handlePortraitParamChange = (key: PortraitParamKey, val: number) => {
     settingsDirtyRef.current = true;
     setSettings((prev) => ({ ...prev, [key]: val }));
@@ -388,6 +312,40 @@ export function AssetEditorWorkbench({
     }, 300);
   };
 
+  const localMasks = useLocalMasks({
+    settings,
+    onChange: (next) => { settingsDirtyRef.current = true; setSettings(next); },
+    onCommit: (next) => {
+      settingsDirtyRef.current = true;
+      setSettings(next);
+      setTimeout(() => handleAutoSave(next), 50);
+    },
+    onActivate: () => setActiveCanvasTool("mask"),
+  });
+
+  const commitBackground = (changes: Partial<RetouchSettings> = {}) => {
+    const next = normalizeRetouchSettings({ ...settings, ...changes });
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    if (next.background_mode === "transparent") setExportFormat("png");
+    setTimeout(() => handleAutoSave(next), 50);
+  };
+
+  const eraseTask = useEraseTask({
+    asset: currentAsset,
+    sourceUrl,
+    masks: eraseMasks,
+    intent: eraseIntent,
+    onMasksClear: () => setEraseMasks([]),
+    onAssetsRefresh,
+  });
+  const backgroundTask = useBackgroundRemoval({
+    asset: currentAsset,
+    settings,
+    onCommit: commitBackground,
+    onAssetsRefresh,
+  });
+
   const handleSave = async () => {
     if (!currentAsset) return;
     setIsSaving(true);
@@ -402,7 +360,7 @@ export function AssetEditorWorkbench({
     if (!currentAsset) return;
     setIsExporting(true);
     try {
-      const dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "jpeg" ? 0.95 : undefined);
+      const dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "png" ? undefined : 0.95);
       if (!dataUrl) throw new Error("无法读取渲染结果");
       await onExportImage(currentAsset.id, settings, dataUrl, exportFormat);
     } finally {
@@ -518,45 +476,17 @@ export function AssetEditorWorkbench({
 
   return (
     <div className="asset-editor-workbench professional-dark-workspace">
-      {/* 顶部专业工具条 */}
-      <header className="editor-header">
-        <div className="header-left-side">
-          <button className="back-btn" onClick={onClose}>
-            <ArrowLeft size={16} />
-          </button>
-          <div className="breadcrumb-path">
-            <span className="proj-name">批量照片精修</span>
-            <span className="separator">&gt;</span>
-            <span className="file-name" title={title || "导入图片"}>{title || "未导入图片"}</span>
-          </div>
-        </div>
-
-        <div className="header-center-tabs">
-          <button className="center-tab active">图像精修</button>
-          <button className="center-tab" disabled title="RAW 转片功能即将开放">RAW转片</button>
-          <button className="center-tab" disabled title="批量导出功能即将开放">批量导出</button>
-        </div>
-
-        <div className="editor-action-area">
-          <button className="btn-save" disabled={isSaving || !currentAsset} onClick={handleSave}>
-            <Save size={14} />
-            {isSaving ? "同步中..." : "保存参数"}
-          </button>
-          <button className="btn-export" disabled={isExporting || !currentAsset} onClick={handleExport}>
-            <Download size={14} />
-            {isExporting ? "导出中..." : "导出"}
-          </button>
-          <select
-            className="export-format-select"
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value as "jpeg" | "png")}
-            disabled={!currentAsset}
-          >
-            <option value="jpeg">JPEG</option>
-            <option value="png">PNG</option>
-          </select>
-        </div>
-      </header>
+      <EditorHeader
+        title={title}
+        hasAsset={Boolean(currentAsset)}
+        isSaving={isSaving}
+        isExporting={isExporting}
+        exportFormat={exportFormat}
+        onClose={onClose}
+        onSave={handleSave}
+        onExport={handleExport}
+        onExportFormatChange={setExportFormat}
+      />
 
       {/* 主体工作台 */}
       <div className="editor-body">
@@ -606,6 +536,11 @@ export function AssetEditorWorkbench({
                   showOriginal={showOriginal}
                   facePoints={facePoints}
                   lut={activeLut}
+                  cutoutUrl={assetUrl(settings.background_cutout_url)}
+                  backgroundImageUrl={assetUrl(settings.background_image_url)}
+                  selectedLocalMaskId={localMasks.selectedMaskId}
+                  showLocalMaskOverlay={activeTab === "mask" && localMasks.showOverlay}
+                  className={settings.background_mode === "transparent" ? "transparent-background" : undefined}
                   onError={setRenderError}
                 />
                 {cropDraft && (
@@ -671,54 +606,21 @@ export function AssetEditorWorkbench({
                     onCommit={setEraseMasks}
                   />
                 )}
+                {activeCanvasTool === "mask" && localMasks.selectedMask && !cropDraft && (
+                  <LocalMaskOverlay
+                    settings={settings}
+                    mask={localMasks.selectedMask}
+                    brushTool={localMasks.brushTool}
+                    brushSize={localMasks.brushSize}
+                    brushFlow={localMasks.brushFlow}
+                    sampleColor={(x, y) => rendererRef.current?.sampleColor(x, y) ?? null}
+                    onChange={localMasks.changeMask}
+                    onCommit={localMasks.commitMask}
+                  />
+                )}
                 <GuideOverlay kind={guide} />
               </div>
-            ) : (
-              <div className="retouch-empty-import-container">
-                <div className="import-cards-grid">
-                  <div className="import-card" onClick={() => document.getElementById("file-import-input")?.click()}>
-                    <div className="import-icon-container">
-                      <ImageIcon size={48} className="import-icon" />
-                    </div>
-                    <span className="import-label">导入图片</span>
-                    <input
-                      type="file"
-                      id="file-import-input"
-                      multiple
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      onChange={async (e) => {
-                        if (e.target.files && onUpload) {
-                          for (let i = 0; i < e.target.files.length; i++) {
-                            await onUpload(e.target.files[i]);
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="import-card" onClick={() => document.getElementById("folder-import-input")?.click()}>
-                    <div className="import-icon-container">
-                      <FolderOpen size={48} className="import-icon" />
-                    </div>
-                    <span className="import-label">导入整个目录</span>
-                    <input
-                      type="file"
-                      id="folder-import-input"
-                      {...({ webkitdirectory: "", directory: "" } as any)}
-                      multiple
-                      style={{ display: "none" }}
-                      onChange={async (e) => {
-                        if (e.target.files && onUpload) {
-                          for (let i = 0; i < e.target.files.length; i++) {
-                            await onUpload(e.target.files[i]);
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            ) : <EmptyAssetImporter onUpload={onUpload} />}
           </div>
         </main>
 
@@ -796,6 +698,26 @@ export function AssetEditorWorkbench({
                   />
                 )}
 
+                {activeTab === "mask" && (
+                  <LocalMaskPanel
+                    masks={settings.local_masks}
+                    selectedMaskId={localMasks.selectedMaskId}
+                    brushTool={localMasks.brushTool}
+                    brushSize={localMasks.brushSize}
+                    brushFlow={localMasks.brushFlow}
+                    showOverlay={localMasks.showOverlay}
+                    onAdd={localMasks.addMask}
+                    onSelect={(id) => { localMasks.setSelectedMaskId(id); setActiveCanvasTool("mask"); }}
+                    onChange={localMasks.changeMask}
+                    onCommit={localMasks.commitMask}
+                    onDelete={localMasks.deleteMask}
+                    onBrushToolChange={localMasks.setBrushTool}
+                    onBrushSizeChange={localMasks.setBrushSize}
+                    onBrushFlowChange={localMasks.setBrushFlow}
+                    onShowOverlayChange={localMasks.setShowOverlay}
+                  />
+                )}
+
                 {activeTab === "erase" && (
                   <ErasePanel
                     mode={eraseMode}
@@ -805,10 +727,28 @@ export function AssetEditorWorkbench({
                     onModeChange={setEraseMode}
                     onBrushSizeChange={setEraseBrushSize}
                     onIntentChange={setEraseIntent}
-                    onClear={() => { setEraseMasks([]); setEraseTaskStatus(null); }}
-                    onSubmit={handleEraseSubmit}
-                    isSubmitting={eraseSubmitting}
-                    taskStatus={eraseTaskStatus}
+                    onClear={() => { setEraseMasks([]); eraseTask.setTaskStatus(null); }}
+                    onSubmit={eraseTask.submit}
+                    isSubmitting={eraseTask.isSubmitting}
+                    taskStatus={eraseTask.taskStatus}
+                  />
+                )}
+
+                {activeTab === "background" && (
+                  <BackgroundPanel
+                    settings={settings}
+                    taskStatus={backgroundTask.taskStatus}
+                    errorMessage={backgroundTask.errorMessage}
+                    isSubmitting={backgroundTask.isSubmitting}
+                    isUploading={backgroundTask.isUploading}
+                    onSubmit={backgroundTask.submit}
+                    onUpload={backgroundTask.uploadBackground}
+                    onChange={(changes) => {
+                      settingsDirtyRef.current = true;
+                      setSettings((current) => normalizeRetouchSettings({ ...current, ...changes }));
+                    }}
+                    onCommit={commitBackground}
+                    onClear={() => commitBackground({ background_mode: "original" })}
                   />
                 )}
 
@@ -824,29 +764,15 @@ export function AssetEditorWorkbench({
             )}
           </div>
 
-          {/* 右侧垂直 icon 工具栏：每个入口都对应一个已实现的面板 */}
-          <div className="right-vertical-tabs-bar">
-            <button className={`vertical-tab-icon-btn ${activeTab === "color" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("color"); setActiveCanvasTool("move"); }} title="调色">
-              <Sun size={18} />
-              <span>调色</span>
-            </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "local" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("local"); setCropDraft(null); setActiveCanvasTool("healing"); }} title="局部">
-              <Scissors size={18} />
-              <span>局部</span>
-            </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "portrait" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("portrait"); setActiveCanvasTool("move"); }} title="人像">
-              <User size={18} />
-              <span>人像</span>
-            </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "liquify" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("liquify"); setCropDraft(null); setActiveCanvasTool("liquify"); }} title="液化">
-              <Sparkles size={18} />
-              <span>液化</span>
-            </button>
-            <button className={`vertical-tab-icon-btn ${activeTab === "erase" ? "active" : ""}`} disabled={!currentAsset} onClick={() => { setActiveTab("erase"); setCropDraft(null); setActiveCanvasTool("erase"); }} title="智能消除">
-              <Eraser size={18} />
-              <span>消除</span>
-            </button>
-          </div>
+          <EditorTabBar
+            activeTab={activeTab}
+            disabled={!currentAsset}
+            onSelect={(tab, tool) => {
+              setActiveTab(tab);
+              setCropDraft(null);
+              setActiveCanvasTool(tool);
+            }}
+          />
         </aside>
       </div>
 

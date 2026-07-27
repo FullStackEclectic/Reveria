@@ -11,25 +11,29 @@ import (
 )
 
 func TestSaveRenderedImageWritesDecodedBytes(t *testing.T) {
-	payload := []byte("rendered-image")
-	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(payload)
-	outputPath := filepath.Join(t.TempDir(), "exports", "result.png")
+	for _, format := range []string{"jpeg", "png", "webp"} {
+		t.Run(format, func(t *testing.T) {
+			payload := []byte("rendered-" + format)
+			dataURL := "data:image/" + format + ";base64," + base64.StdEncoding.EncodeToString(payload)
+			outputPath := filepath.Join(t.TempDir(), "exports", "result."+format)
 
-	if err := NewApp().SaveRenderedImage(dataURL, outputPath); err != nil {
-		t.Fatal(err)
-	}
-	actual, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(actual) != string(payload) {
-		t.Fatalf("导出内容 = %q, want %q", actual, payload)
+			if err := NewApp().SaveRenderedImage(dataURL, outputPath); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(actual) != string(payload) {
+				t.Fatalf("导出内容 = %q, want %q", actual, payload)
+			}
+		})
 	}
 }
 
 func TestSaveRenderedImageRejectsUnsupportedData(t *testing.T) {
-	outputPath := filepath.Join(t.TempDir(), "result.webp")
-	if err := NewApp().SaveRenderedImage("data:image/webp;base64,AAAA", outputPath); err == nil {
+	outputPath := filepath.Join(t.TempDir(), "result.gif")
+	if err := NewApp().SaveRenderedImage("data:image/gif;base64,AAAA", outputPath); err == nil {
 		t.Fatal("不支持的图片格式未返回错误")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"reveria/services/api/database"
@@ -96,5 +97,80 @@ func TestValidateRetouchPresetPayloadRejectsInvalidInput(t *testing.T) {
 		if _, _, err := validateRetouchPresetPayload(testCase); err == nil {
 			t.Fatalf("非法输入未被拒绝: name=%q", testCase.Name)
 		}
+	}
+}
+
+func TestRetouchPresetConcurrentSameNameUpserts(t *testing.T) {
+	previousDB := database.DB
+	t.Cleanup(func() { database.DB = previousDB })
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf(
+		"file:%s?mode=memory&cache=shared&_pragma=busy_timeout(5000)",
+		uuid.NewString(),
+	)), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.RetouchPreset{}); err != nil {
+		t.Fatal(err)
+	}
+	// 复用一个 SQLite 连接仍允许多个请求在查询与写入之间交错，且避免测试被锁等待干扰。
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	database.DB = db
+	gin.SetMode(gin.TestMode)
+
+	userID := uuid.New()
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user_id", userID)
+		c.Next()
+	})
+	router.POST("/retouch-presets", SaveRetouchPreset)
+
+	const requestCount = 12
+	start := make(chan struct{})
+	responses := make(chan *httptest.ResponseRecorder, requestCount)
+	var waitGroup sync.WaitGroup
+	for index := 0; index < requestCount; index++ {
+		waitGroup.Add(1)
+		go func(exposure int) {
+			defer waitGroup.Done()
+			<-start
+			body := fmt.Sprintf(`{"name":"并发清透","settings":{"exposure":%d}}`, exposure)
+			req := httptest.NewRequest(http.MethodPost, "/retouch-presets", bytes.NewBufferString(body))
+			req.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, req)
+			responses <- response
+		}(index)
+	}
+	close(start)
+	waitGroup.Wait()
+	close(responses)
+
+	createdCount := 0
+	for response := range responses {
+		if response.Code != http.StatusOK && response.Code != http.StatusCreated {
+			t.Fatalf("并发保存状态码 = %d, body=%s", response.Code, response.Body.String())
+		}
+		if response.Code == http.StatusCreated {
+			createdCount++
+		}
+	}
+	if createdCount != 1 {
+		t.Fatalf("创建响应数量 = %d, want 1", createdCount)
+	}
+
+	var count int64
+	if err := db.Model(&model.RetouchPreset{}).
+		Where("user_id = ? AND name = ?", userID, "并发清透").
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("同名预设记录数 = %d, want 1", count)
 	}
 }
