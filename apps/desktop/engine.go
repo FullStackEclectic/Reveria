@@ -11,13 +11,15 @@ import (
 )
 
 var (
-	nativeEngine    *syscall.LazyDLL
-	procAdd         *syscall.LazyProc
-	procGreetV2     *syscall.LazyProc
-	procExportImage *syscall.LazyProc
-	procExportV2    *syscall.LazyProc
-	procLastErrorV2 *syscall.LazyProc
-	dllLoaded       = false
+	nativeEngine     *syscall.LazyDLL
+	procAdd          *syscall.LazyProc
+	procGreetV2      *syscall.LazyProc
+	procExportImage  *syscall.LazyProc
+	procExportV2     *syscall.LazyProc
+	procLastErrorV2  *syscall.LazyProc
+	procConvertRaw   *syscall.LazyProc
+	dllLoaded        = false
+	convertRawLoaded = false
 )
 
 func init() {
@@ -38,6 +40,7 @@ func init() {
 	procExportImage = nativeEngine.NewProc("export_image")
 	procExportV2 = nativeEngine.NewProc("export_image_v2")
 	procLastErrorV2 = nativeEngine.NewProc("last_error_message_v2")
+	procConvertRaw = nativeEngine.NewProc("convert_raw_v2")
 	for name, proc := range map[string]*syscall.LazyProc{
 		"add":                   procAdd,
 		"greet_v2":              procGreetV2,
@@ -51,6 +54,11 @@ func init() {
 		}
 	}
 	dllLoaded = true
+	if err := procConvertRaw.Find(); err != nil {
+		log.Printf("当前 native_engine.dll 不含 RAW 转片，将回退内嵌 JPEG：%v", err)
+	} else {
+		convertRawLoaded = true
+	}
 }
 
 func findDLLPath() string {
@@ -160,6 +168,40 @@ func CallExportImageV2(inputPath, outputPath, settingsJSON string) (int32, strin
 		uintptr(unsafe.Pointer(cInput)),
 		uintptr(unsafe.Pointer(cOutput)),
 		uintptr(unsafe.Pointer(cSettings)),
+	)
+	code := int32(ret)
+	if code == 0 {
+		return 0, ""
+	}
+	detail := nativeEngineLastError()
+	if detail == "" && callErr != syscall.Errno(0) {
+		detail = callErr.Error()
+	}
+	return code, detail
+}
+
+func NativeRawConvertAvailable() bool {
+	return convertRawLoaded && procConvertRaw != nil
+}
+
+// CallConvertRaw 将相机 RAW 显影为 JPEG。成功返回 0。
+func CallConvertRaw(inputPath, outputPath string) (int32, string) {
+	if !convertRawLoaded || procConvertRaw == nil {
+		return -100, "当前桌面引擎不支持 RAW 传感器显影"
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	cInput, err := syscall.BytePtrFromString(inputPath)
+	if err != nil {
+		return -101, "输入路径包含非法字符"
+	}
+	cOutput, err := syscall.BytePtrFromString(outputPath)
+	if err != nil {
+		return -102, "输出路径包含非法字符"
+	}
+	ret, _, callErr := procConvertRaw.Call(
+		uintptr(unsafe.Pointer(cInput)),
+		uintptr(unsafe.Pointer(cOutput)),
 	)
 	code := int32(ret)
 	if code == 0 {

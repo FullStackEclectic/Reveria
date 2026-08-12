@@ -3,6 +3,8 @@
   inset: 0;
   z-index: 3;
   display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 3.5%;
   pointer-events: none;
   overflow: hidden;
@@ -17,6 +19,12 @@
   font-weight: 600;
   line-height: 1.2;
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+}
+
+.watermark-preview img {
+  max-height: 28%;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45));
 }
 
 .watermark-preview.top-left { align-items: flex-start; justify-content: flex-start; }

@@ -176,6 +176,8 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 			title = "智能抠图结果"
 		} else if task.TaskType == "image_inpainting" {
 			title = "智能消除结果"
+		} else if task.TaskType == "image_upscale" {
+			title = "AI 变清晰结果"
 		}
 		metaMap := map[string]any{
 			"task_id":       task.ID.String(),

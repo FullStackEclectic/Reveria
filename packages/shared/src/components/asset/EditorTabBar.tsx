@@ -1,8 +1,8 @@
 import React from "react";
-import { Blend, Eraser, ImageMinus, Scissors, SlidersHorizontal, Sparkles, Sun, User } from "lucide-react";
+import { Blend, Eraser, ImageMinus, Scissors, SlidersHorizontal, Sparkles, Sun, Type, User } from "lucide-react";
 import type { CanvasTool } from "./CanvasToolbar";
 
-export type EditorTab = "portrait" | "color" | "professional" | "local" | "mask" | "liquify" | "erase" | "background";
+export type EditorTab = "portrait" | "color" | "professional" | "local" | "mask" | "liquify" | "erase" | "background" | "overlay";
 
 interface Props {
   activeTab: EditorTab;
@@ -19,6 +19,7 @@ const TABS: Array<{ id: EditorTab; label: string; tool: CanvasTool; icon: React.
   { id: "liquify", label: "液化", tool: "liquify", icon: Sparkles },
   { id: "erase", label: "消除", tool: "erase", icon: Eraser },
   { id: "background", label: "背景", tool: "move", icon: ImageMinus },
+  { id: "overlay", label: "叠加", tool: "overlay", icon: Type },
 ];
 
 export function EditorTabBar({ activeTab, disabled, onSelect }: Props) {

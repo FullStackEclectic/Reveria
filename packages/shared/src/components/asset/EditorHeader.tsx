@@ -2,6 +2,13 @@ import React from "react";
 import { ArrowLeft, Download, Save } from "lucide-react";
 
 export type ExportFormat = "jpeg" | "png" | "webp";
+export type EditorCenterTab = "retouch" | "batch" | "raw";
+
+export interface ExportImageOptions {
+  filename?: string;
+  outputPath?: string;
+  silent?: boolean;
+}
 
 interface Props {
   title: string;
@@ -9,6 +16,8 @@ interface Props {
   isSaving: boolean;
   isExporting: boolean;
   exportFormat: ExportFormat;
+  centerTab: EditorCenterTab;
+  onCenterTabChange: (tab: EditorCenterTab) => void;
   onClose: () => void;
   onSave: () => void;
   onExport: () => void;
@@ -22,6 +31,8 @@ export function EditorHeader({
   isSaving,
   isExporting,
   exportFormat,
+  centerTab,
+  onCenterTabChange,
   onClose,
   onSave,
   onExport,
@@ -41,9 +52,12 @@ export function EditorHeader({
       </div>
 
       <div className="header-center-tabs">
-        <button className="center-tab active">图像精修</button>
-        <button className="center-tab" disabled title="RAW 转片功能即将开放">RAW转片</button>
-        <button className="center-tab" disabled title="批量导出功能即将开放">批量导出</button>
+        <button className={`center-tab ${centerTab === "retouch" ? "active" : ""}`}
+          onClick={() => onCenterTabChange("retouch")}>图像精修</button>
+        <button className={`center-tab ${centerTab === "raw" ? "active" : ""}`}
+          onClick={() => onCenterTabChange("raw")}>RAW转片</button>
+        <button className={`center-tab ${centerTab === "batch" ? "active" : ""}`}
+          onClick={() => onCenterTabChange("batch")}>批量导出</button>
       </div>
 
       <div className="editor-action-area">

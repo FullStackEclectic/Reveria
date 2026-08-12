@@ -5,6 +5,7 @@
 ## 已实现管线
 
 - JPEG、PNG、WebP 解码与编码，保留 PNG/WebP Alpha 通道
+- 相机 RAW 显影：`rawloader` 解码 Bayer/X-Trans 数据，双线性去马赛克、相机白平衡、sRGB 伽马；失败时回退最大内嵌 JPEG
 - Rayon 并行像素处理
 - 曝光、对比度、高光、阴影、白色、黑色
 - 饱和度、自然饱和度、色温、色调、去朦胧
@@ -20,6 +21,7 @@
 
 ```text
 export_image_v2(input_path, output_path, settings_json) -> i32
+convert_raw_v2(input_path, output_path) -> i32
 last_error_message_v2(output_buffer, capacity) -> usize
 greet_v2(name, output_buffer, capacity) -> usize
 ```

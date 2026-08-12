@@ -38,6 +38,12 @@ func TestSaveRenderedImageRejectsUnsupportedData(t *testing.T) {
 	}
 }
 
+func TestConvertRawFileRejectsEmptyPath(t *testing.T) {
+	if _, err := NewApp().ConvertRawFile("  "); err == nil {
+		t.Fatal("空路径未返回错误")
+	}
+}
+
 func TestDownloadAssetToCacheReusesLocalMaterial(t *testing.T) {
 	cacheRoot := t.TempDir()
 	t.Setenv("LOCALAPPDATA", cacheRoot)

@@ -96,6 +96,91 @@ func (a *App) SelectSavePath(defaultFilename string) string {
 	return path
 }
 
+// SelectDirectory 弹出目录选择对话框，供批量导出写入同一文件夹。
+func (a *App) SelectDirectory() string {
+	path, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "选择批量导出目录",
+	})
+	if err != nil || path == "" {
+		return ""
+	}
+	return path
+}
+
+func (a *App) NativeRawConvertAvailable() bool {
+	return NativeRawConvertAvailable()
+}
+
+func (a *App) SelectRawFiles() []string {
+	paths, err := wailsRuntime.OpenMultipleFilesDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "选择 RAW 文件",
+		Filters: []wailsRuntime.FileFilter{{
+			DisplayName: "相机 RAW (ARW/CR2/NEF/DNG…)",
+			Pattern:     "*.arw;*.cr2;*.cr3;*.nef;*.dng;*.raf;*.orf;*.rw2;*.pef;*.srw;*.raw",
+		}},
+	})
+	if err != nil || len(paths) == 0 {
+		return nil
+	}
+	return paths
+}
+
+func (a *App) ConvertRawFile(inputPath string) (string, error) {
+	inputPath = strings.TrimSpace(inputPath)
+	if inputPath == "" {
+		return "", errors.New("未选择 RAW 文件")
+	}
+	output, err := os.CreateTemp("", "reveria-raw-*.jpg")
+	if err != nil {
+		return "", err
+	}
+	outputPath := output.Name()
+	_ = output.Close()
+	defer func() { _ = os.Remove(outputPath) }()
+	code, detail := CallConvertRaw(inputPath, outputPath)
+	if code != 0 {
+		if detail == "" {
+			detail = "RAW 显影失败"
+		}
+		return "", errors.New(detail)
+	}
+	jpegBytes, err := os.ReadFile(outputPath)
+	if err != nil {
+		return "", err
+	}
+	if len(jpegBytes) == 0 {
+		return "", errors.New("RAW 显影结果为空")
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpegBytes), nil
+}
+
+func (a *App) ConvertRawBytes(rawBase64 string, filename string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rawBase64))
+	if err != nil || len(decoded) == 0 {
+		return "", errors.New("RAW 数据无效")
+	}
+	if int64(len(decoded)) > desktopCacheLimit() {
+		return "", errors.New("RAW 文件过大")
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		ext = ".raw"
+	}
+	input, err := os.CreateTemp("", "reveria-raw-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	inputPath := input.Name()
+	if _, err := input.Write(decoded); err != nil {
+		_ = input.Close()
+		_ = os.Remove(inputPath)
+		return "", err
+	}
+	_ = input.Close()
+	defer func() { _ = os.Remove(inputPath) }()
+	return a.ConvertRawFile(inputPath)
+}
+
 // SaveRenderedImage 将前端 WebGL 的最终渲染结果写入用户选择的路径。
 func (a *App) SaveRenderedImage(dataURL string, outputPath string) error {
 	if strings.TrimSpace(outputPath) == "" {

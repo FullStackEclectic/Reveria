@@ -608,6 +608,55 @@
 .crop-actions button:hover { background: #3f3f46; color: #ffffff; }
 .crop-actions button.primary { background: #4f46e5; color: #ffffff; }
 
+.free-transform-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.free-transform-mesh {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.free-transform-fill {
+  fill: rgba(79, 70, 229, 0.08);
+  stroke: none;
+}
+
+.free-transform-outline,
+.free-transform-mesh line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.free-transform-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 2px solid #ffffff;
+  background: #18181b;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.free-transform-handle:hover,
+.free-transform-handle:focus-visible {
+  background: #4f46e5;
+  outline: none;
+}
+
 /* 右侧参数面板 */
 .editor-right-adjustments {
   width: 320px;
@@ -2110,4 +2159,137 @@
 .center-tab:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.batch-export-runner {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  overflow: hidden;
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.batch-tools-nav {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 0;
+}
+
+.batch-tools-nav button {
+  flex: 1;
+  height: 28px;
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  background: #18181b;
+  color: #a1a1aa;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.batch-tools-nav button.active {
+  background: #27272a;
+  color: #ffffff;
+  border-color: #3f3f46;
+}
+
+.batch-tools-panel .professional-field {
+  margin: 8px 0;
+}
+
+.id-photo-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.id-photo-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  background: #18181b;
+  color: #d4d4d8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.id-photo-chip span {
+  color: #71717a;
+  font-size: 10px;
+}
+
+.id-photo-chip.active {
+  border-color: #6366f1;
+  color: #ffffff;
+}
+
+.overlay-preview-stack,
+.overlay-editor-hit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.overlay-preview-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.overlay-editor-hit {
+  pointer-events: auto;
+  z-index: 6;
+  cursor: crosshair;
+}
+
+.overlay-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.overlay-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.overlay-layer-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  background: #18181b;
+  color: #d4d4d8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.overlay-layer-item i {
+  color: #71717a;
+  font-style: normal;
+  font-size: 10px;
+}
+
+.overlay-layer-item.active {
+  border-color: #6366f1;
+  color: #ffffff;
+}
+
+.lut-import-btn.active {
+  border-color: #6366f1;
+  color: #ffffff;
 }

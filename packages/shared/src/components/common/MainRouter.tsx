@@ -1,6 +1,7 @@
 import React from "react";
 import { AppView, UserSummary, WorkspaceSummary, ProjectSummary, CustomerSummary, BrandKitSummary, AssetSummary, ProjectCanvasDocument, CreditTransactionSummary, GenerationTaskSummary, PlanSummary, RechargeRecordSummary, OrderSummary, ModelSummary, GenerationTaskDetail } from "../../types";
 import type { RetouchSettings } from "../asset/AssetEditorWorkbench";
+import type { ExportImageOptions } from "../asset/EditorHeader";
 
 const ModelSquare = React.lazy(() => import("../square/ModelSquare").then((module) => ({ default: module.ModelSquare })));
 const DashboardView = React.lazy(() => import("../dashboard/DashboardView").then((module) => ({ default: module.DashboardView })));
@@ -31,6 +32,7 @@ interface MainRouterProps {
     settings: RetouchSettings,
     dataUrl: string,
     format: "jpeg" | "png" | "webp",
+    options?: ExportImageOptions,
   ) => Promise<any>;
   handleSaveCustomer: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteAsset: (assetId: string) => Promise<void>;

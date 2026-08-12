@@ -52,6 +52,7 @@ import { ClientPortalView } from "./components/portal/ClientPortalView";
 import { Sidebar } from "./components/common/Sidebar";
 import { AssetEditorWorkbench } from "./components/asset/AssetEditorWorkbench";
 import type { RetouchSettings } from "./components/asset/AssetEditorWorkbench";
+import type { ExportImageOptions } from "./components/asset/EditorHeader";
 import { normalizeRetouchSettings } from "./components/asset/editorConstants";
 import { buildNativeExportSettings } from "./components/asset/retouch/nativeExport";
 const planBadgeLabel = (p?: PlanSummary) => !p ? "套餐" : p.badge_label?.trim() ? p.badge_label.trim().toUpperCase() : p.price_cents === 0 ? "FREE" : (p.name.includes("专业") || p.name.toLowerCase().includes("pro")) ? "PRO" : (p.name.includes("企业") || p.name.toLowerCase().includes("enterprise")) ? "ENT" : "PLAN";
@@ -260,21 +261,24 @@ export function AppCore() {
     settings: RetouchSettings,
     dataUrl: string,
     format: "jpeg" | "png" | "webp",
+    options?: ExportImageOptions,
   ) => {
     const asset = assets.find((a) => a.id === assetId);
     if (!asset) {
       alert("找不到要导出的素材");
       return false;
     }
-    const rawFilename = asset.metadata?.title || asset.metadata?.file_name || "retouched_image";
     const extension = format === "jpeg" ? "jpg" : format;
-    const filename = `${rawFilename.replace(/\.[^.]+$/, "")}_retouched.${extension}`;
+    const filename = options?.filename || `${(asset.metadata?.title || asset.metadata?.file_name || "retouched_image").replace(/\.[^.]+$/, "")}_retouched.${extension}`;
     const wailsApp = (window as any).go?.main?.App;
     try {
       if (wailsApp?.SaveRenderedImage) {
-        const savePath = await wailsApp.SelectSavePath(filename);
+        let savePath = options?.outputPath || "";
+        if (!savePath) {
+          savePath = await wailsApp.SelectSavePath(filename);
+        }
         if (!savePath) return false;
-        const nativeSettings = buildNativeExportSettings(settings, format);
+        const nativeSettings = options?.outputPath ? null : buildNativeExportSettings(settings, format);
         let nativeExported = false;
         if (nativeSettings && wailsApp.ExportRetouchedImageNative) {
           try {
@@ -293,7 +297,9 @@ export function AppCore() {
         if (!nativeExported) {
           await wailsApp.SaveRenderedImage(dataUrl, savePath);
         }
-        alert(`导出成功！已保存至：${savePath}`);
+        if (!options?.silent) {
+          alert(`导出成功！已保存至：${savePath}`);
+        }
         try {
           const recentListStr = localStorage.getItem("reveria.recentExports") || "[]";
           const recentList = JSON.parse(recentListStr);
@@ -321,7 +327,9 @@ export function AppCore() {
       return true;
     } catch (err: any) {
       console.error("Export error:", err);
-      alert(`导出过程中发生错误: ${err.message || err}`);
+      if (!options?.silent) {
+        alert(`导出过程中发生错误: ${err.message || err}`);
+      }
       return false;
     }
   };
@@ -350,6 +358,7 @@ export function AppCore() {
       const asset = await uploadAsset(formData);
       setAssets((current) => [asset, ...current]);
       setEditingAsset(asset);
+      return asset;
     } catch (err: any) {
       console.error("Failed to upload image for retouching:", err);
       alert(`上传失败: ${err.message || err}`);
@@ -743,6 +752,7 @@ export function AppCore() {
             onSaveSettings={handleSaveRetouchSettings}
             onLoadSettings={handleLoadRetouchSettings}
             onExportImage={handleExportRetouchImage}
+            onUpload={handleUploadAndEditQuick}
             initialSettings={retouchInitialSettings || undefined}
             onAssetsRefresh={() => { if (selectedProjectId) void loadProjectAssets(selectedProjectId); }}
           />

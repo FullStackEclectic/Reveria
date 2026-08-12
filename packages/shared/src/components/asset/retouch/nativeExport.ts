@@ -3,6 +3,8 @@ import {
   type PortraitParamKey,
 } from "./portraitParams";
 import type { RetouchSettings } from "./settings";
+import { hasBurnedWatermark, isFreeTransformActive } from "./settings";
+import { hasActiveOverlays } from "./overlays";
 
 export type NativeExportFormat = "jpeg" | "png" | "webp";
 
@@ -40,7 +42,8 @@ export interface NativeExportSettings extends Record<string, unknown> {
 
 /**
  * 返回 Rust 引擎可无损复现的参数；返回 null 时必须使用 WebGL 最终画面导出。
- * 人脸关键点、画笔纹理和浏览器内 LUT 当前无法跨 ABI 传递，因此不冒险生成不一致成品。
+ * 人脸关键点、画笔纹理、浏览器内 LUT，以及颗粒 / 暗角 / 畸变 / 透视 / 降噪 / 塑形 / 边框 / 水印
+ * 当前都不在 Rust 管线里，因此不冒险生成和预览不一致的成品。
  */
 export function buildNativeExportSettings(
   settings: RetouchSettings,
@@ -53,6 +56,23 @@ export function buildNativeExportSettings(
     || settings.local_masks.length > 0
     || settings.background_mode !== "original"
     || settings.lut_file !== ""
+    || Math.abs(settings.fringing_amount) > 0.0001
+    || isFreeTransformActive(settings.free_transform_points)
+    || Math.abs(settings.grain_amount) > 0.0001
+    || Math.abs(settings.vignette_amount) > 0.0001
+    || Math.abs(settings.lens_distortion) > 0.0001
+    || Math.abs(settings.perspective_horizontal) > 0.0001
+    || Math.abs(settings.perspective_vertical) > 0.0001
+    || Math.abs(settings.luma_denoise) > 0.0001
+    || Math.abs(settings.chroma_denoise) > 0.0001
+    || Math.abs(settings.body_waist) > 0.0001
+    || Math.abs(settings.body_shoulders) > 0.0001
+    || Math.abs(settings.body_hips) > 0.0001
+    || Math.abs(settings.body_legs) > 0.0001
+    || Math.abs(settings.body_leg_length) > 0.0001
+    || settings.border_enabled > 0
+    || hasBurnedWatermark(settings)
+    || hasActiveOverlays(settings.overlays)
   ) {
     return null;
   }

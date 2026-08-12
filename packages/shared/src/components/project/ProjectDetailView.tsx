@@ -28,6 +28,7 @@ import { TemplateSelectModal } from "./TemplateSelectModal";
 import { runTemplateGeneration } from "./templateWorkflowUtils";
 import { useProjectCanvasState } from "./useProjectCanvasState";
 import { AssetEditorWorkbench, type RetouchSettings } from "../asset/AssetEditorWorkbench";
+import type { ExportImageOptions } from "../asset/EditorHeader";
 import { FileText, FolderOpen, Link2, Maximize2, Settings, Sparkles, Trash2, Frame } from "lucide-react";
 // AI 画布样式目前与客户门户共用这份历史样式表。
 import "../portal/ClientPortalView.css";
@@ -66,6 +67,7 @@ interface ProjectDetailViewProps {
     settings: RetouchSettings,
     dataUrl: string,
     format: "jpeg" | "png" | "webp",
+    options?: ExportImageOptions,
   ) => Promise<boolean>;
 }
 
@@ -242,6 +244,7 @@ export function ProjectDetailView({
       const asset = await uploadAsset(formData);
       setAssets((current) => [asset, ...current]);
       setCurrentRetouchAsset(asset);
+      return asset;
     } catch (err) {
       alert("素材上传失败");
     }

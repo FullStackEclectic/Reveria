@@ -4,8 +4,9 @@ import { GeometryToolButtons } from "./GeometryToolButtons";
 import { CropRect } from "./CropOverlay";
 import { RetouchSettings } from "./editorConstants";
 import { GUIDE_OPTIONS, type GuideKind } from "./GuideOverlay";
+import type { EditorTab } from "./EditorTabBar";
 
-export type CanvasTool = "move" | "healing" | "clone" | "mask" | "liquify" | "erase";
+export type CanvasTool = "move" | "healing" | "clone" | "mask" | "liquify" | "erase" | "transform" | "overlay";
 
 interface Props {
   hasAsset: boolean;
@@ -18,7 +19,7 @@ interface Props {
   setActiveCanvasTool: (tool: CanvasTool) => void;
   cloneSource: { x: number; y: number } | null;
   setCloneSampling: (sampling: boolean) => void;
-  setActiveTab: (tab: "portrait" | "color" | "local" | "mask" | "liquify" | "erase" | "background") => void;
+  setActiveTab: (tab: EditorTab) => void;
   guide: GuideKind;
   setGuide: (guide: GuideKind) => void;
   onRotate: () => void;
@@ -59,7 +60,22 @@ export function CanvasToolbar({
       <div className="tool-divider" />
       <div className="photo-edit-tools">
         <button className={`tool-icon-btn ${activeCanvasTool === "move" ? "active" : ""}`} disabled={!hasAsset} onClick={() => setActiveCanvasTool("move")} title="移动工具 (M)"><Move size={15} /></button>
-        <GeometryToolButtons disabled={!hasAsset} cropping={cropDraft !== null} onToggleCrop={() => setCropDraft(cropDraft ? null : { x: settings.crop_x, y: settings.crop_y, width: settings.crop_width, height: settings.crop_height })} onRotate={onRotate} onFlipHorizontal={onFlipHorizontal} onFlipVertical={onFlipVertical} />
+        <GeometryToolButtons
+          disabled={!hasAsset}
+          cropping={cropDraft !== null}
+          transforming={activeCanvasTool === "transform"}
+          onToggleCrop={() => {
+            setActiveCanvasTool("move");
+            setCropDraft(cropDraft ? null : { x: settings.crop_x, y: settings.crop_y, width: settings.crop_width, height: settings.crop_height });
+          }}
+          onToggleTransform={() => {
+            setCropDraft(null);
+            setActiveCanvasTool(activeCanvasTool === "transform" ? "move" : "transform");
+          }}
+          onRotate={onRotate}
+          onFlipHorizontal={onFlipHorizontal}
+          onFlipVertical={onFlipVertical}
+        />
         <button className={`tool-icon-btn ${activeCanvasTool === "healing" ? "active" : ""}`} disabled={!hasAsset} title="污点修复画笔 (J)" onClick={selectHealing}><Wand2 size={15} /></button>
         <button className={`tool-icon-btn ${activeCanvasTool === "mask" ? "active" : ""}`} disabled={!hasAsset} title="局部蒙版 (K)" onClick={selectMask}><Blend size={15} /></button>
 

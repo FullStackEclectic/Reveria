@@ -149,13 +149,20 @@ describe("normalizeRetouchSettings", () => {
     const restored = normalizeRetouchSettings({
       grain_amount: 140,
       grain_size: 0,
+      grain_highlights: 140,
       lens_distortion: -140,
       vignette_amount: 120,
+      vignette_highlights: -10,
+      luma_denoise: 140,
+      chroma_denoise: -5,
+      perspective_horizontal: 180,
+      perspective_vertical: -180,
       body_center_x: -5,
       body_waist_y: 99,
       body_waist: -140,
       watermark_enabled: 0.8,
       watermark_text: `  ${"版权".repeat(80)}  `,
+      watermark_image_url: `  ${"x".repeat(10)}  `,
       watermark_opacity: -1,
       watermark_position: "invalid" as never,
       watermark_color: "white",
@@ -168,8 +175,14 @@ describe("normalizeRetouchSettings", () => {
     expect(restored).toMatchObject({
       grain_amount: 100,
       grain_size: 1,
+      grain_highlights: 100,
       lens_distortion: -100,
       vignette_amount: 100,
+      vignette_highlights: 0,
+      luma_denoise: 100,
+      chroma_denoise: 0,
+      perspective_horizontal: 100,
+      perspective_vertical: -100,
       body_center_x: 0,
       body_waist_y: 90,
       body_waist: -100,
@@ -183,6 +196,18 @@ describe("normalizeRetouchSettings", () => {
       preserve_exif: 0,
     });
     expect(restored.watermark_text.length).toBe(120);
+    expect(restored.watermark_image_url).toBe("x".repeat(10));
+  });
+
+  it("自由变形控制点必须为 8 个，并夹取到可视范围外延", () => {
+    const restored = normalizeRetouchSettings({
+      free_transform_points: [[-2, 0], [2, 0], [1, 3], [0, -3], [0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]],
+    });
+    expect(restored.free_transform_points).toEqual([
+      [-0.5, 0], [1.5, 0], [1, 1.5], [0, -0.5], [0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5],
+    ]);
+    expect(normalizeRetouchSettings({ free_transform_points: [[0, 0]] as never }).free_transform_points)
+      .toEqual(DEFAULT_SETTINGS.free_transform_points);
   });
 
   it("局部蒙版保留独立参数，并限制蒙版和画笔点存档体积", () => {
@@ -214,5 +239,12 @@ describe("normalizeRetouchSettings", () => {
     expect(restored.local_masks[0].luminance_max).toBe(0.9);
     expect(restored.local_masks[0].adjustments.exposure).toBe(100);
     expect(restored.local_masks[0].adjustments.contrast).toBe(-100);
+  });
+
+  it("fringing_amount 会被夹取到 ±100", () => {
+    expect(normalizeRetouchSettings({ fringing_amount: 150 }).fringing_amount).toBe(100);
+    expect(normalizeRetouchSettings({ fringing_amount: -150 }).fringing_amount).toBe(-100);
+    expect(normalizeRetouchSettings({ fringing_amount: 0 }).fringing_amount).toBe(0);
+    expect(normalizeRetouchSettings({ fringing_amount: NaN as never }).fringing_amount).toBe(0);
   });
 });

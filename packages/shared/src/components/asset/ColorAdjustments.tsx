@@ -15,6 +15,7 @@ interface Props {
   onSelectLut: (id: string) => void;
   onImportLut: (file: File) => Promise<void>;
   onDeleteLut: (id: string) => void;
+  onExportLut?: () => void;
 }
 
 function Slider({
@@ -42,7 +43,7 @@ function Slider({
 
 export function ColorAdjustments({
   settings, handleSliderChange, handleCurveChange, handleAutoSave,
-  lutEntries, onSelectLut, onImportLut, onDeleteLut,
+  lutEntries, onSelectLut, onImportLut, onDeleteLut, onExportLut,
 }: Props) {
   const bind = (key: keyof RetouchSettings, min = -100, max = 100) => ({
     value: settings[key] as number,
@@ -78,6 +79,8 @@ export function ColorAdjustments({
         <h4 className="group-header">细节</h4>
         <Slider label="清晰度" {...bind("clarity")} />
         <Slider label="锐化" {...bind("sharpness", 0, 100)} />
+        <Slider label="亮度降噪" {...bind("luma_denoise", 0, 100)} />
+        <Slider label="颜色降噪" {...bind("chroma_denoise", 0, 100)} />
       </section>
 
       <section className="adjustment-group curve-adjustment-group">
@@ -118,6 +121,7 @@ export function ColorAdjustments({
           onCommit={() => handleAutoSave()}
           onImport={onImportLut}
           onDelete={onDeleteLut}
+          onExport={onExportLut}
         />
       </section>
     </div>

@@ -6,6 +6,14 @@ export function ClearAuthTokens() {
   return window['go']['main']['App']['ClearAuthTokens']();
 }
 
+export function ConvertRawBytes(arg1, arg2) {
+  return window['go']['main']['App']['ConvertRawBytes'](arg1, arg2);
+}
+
+export function ConvertRawFile(arg1) {
+  return window['go']['main']['App']['ConvertRawFile'](arg1);
+}
+
 export function ExportRetouchedImage(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
   return window['go']['main']['App']['ExportRetouchedImage'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
 }
@@ -22,12 +30,24 @@ export function LoadAuthTokens() {
   return window['go']['main']['App']['LoadAuthTokens']();
 }
 
+export function NativeRawConvertAvailable() {
+  return window['go']['main']['App']['NativeRawConvertAvailable']();
+}
+
 export function SaveAuthTokens(arg1, arg2) {
   return window['go']['main']['App']['SaveAuthTokens'](arg1, arg2);
 }
 
 export function SaveRenderedImage(arg1, arg2) {
   return window['go']['main']['App']['SaveRenderedImage'](arg1, arg2);
+}
+
+export function SelectDirectory() {
+  return window['go']['main']['App']['SelectDirectory']();
+}
+
+export function SelectRawFiles() {
+  return window['go']['main']['App']['SelectRawFiles']();
 }
 
 export function SelectSavePath(arg1) {

@@ -20,7 +20,9 @@ import type { PortraitRole } from "./retouch/rolePresets";
 import type { useBackgroundRemoval } from "./useBackgroundRemoval";
 import type { useEraseTask } from "./useEraseTask";
 import type { useLocalMasks } from "./useLocalMasks";
-import type { useLutLibrary } from "./useLutLibrary";
+import { OverlayPanel } from "./OverlayPanel";
+import type { useOverlays } from "./useOverlays";
+import type { LutEntry } from "./useLutLibrary";
 
 interface Props {
   activeTab: EditorTab;
@@ -34,8 +36,9 @@ interface Props {
   onSliderChange: (key: keyof RetouchSettings, value: number) => void;
   onCurveChange: (key: CurveKey, value: CurvePoints) => void;
   onProfessionalChange: (key: keyof RetouchSettings, value: number | string) => void;
+  onProfessionalPatch: (changes: Partial<RetouchSettings>) => void;
   onCommit: (snapshot?: RetouchSettings) => void;
-  lutEntries: ReturnType<typeof useLutLibrary>["entries"];
+  lutEntries: LutEntry[];
   onSelectLut: (id: string) => void;
   onImportLut: (file: File) => Promise<void>;
   onDeleteLut: (id: string) => void;
@@ -71,12 +74,14 @@ interface Props {
   onBackgroundChange: (changes: Partial<RetouchSettings>) => void;
   onBackgroundCommit: (changes?: Partial<RetouchSettings>) => void;
   histogram: ImageHistogram | null;
+  onExportLut?: () => void;
+  overlayState: ReturnType<typeof useOverlays>;
 }
 
 export function EditorAdjustmentContent(props: Props) {
   const {
     activeTab, asset, sourceUrl, settings, facePoints, role, onSelectRole,
-    onPortraitParamChange, onSliderChange, onCurveChange, onProfessionalChange, onCommit,
+    onPortraitParamChange, onSliderChange, onCurveChange, onProfessionalChange, onProfessionalPatch, onCommit,
     lutEntries, onSelectLut, onImportLut, onDeleteLut, activeCanvasTool,
     healingBrushSize, healingStrength, cloneSource, cloneSampling,
     onHealingBrushSizeChange, onHealingStrengthChange, onCloneSamplingChange,
@@ -84,7 +89,8 @@ export function EditorAdjustmentContent(props: Props) {
     onLiquifyToolChange, onLiquifyBrushSizeChange, onLiquifyStrengthChange, onLiquifyClear,
     localMasks, onActivateMask, eraseMode, eraseBrushSize, eraseIntent, eraseMaskCount,
     onEraseModeChange, onEraseBrushSizeChange, onEraseIntentChange, onEraseClear,
-    eraseTask, backgroundTask, onBackgroundChange, onBackgroundCommit, histogram,
+    eraseTask, backgroundTask, onBackgroundChange, onBackgroundCommit, histogram, onExportLut,
+    overlayState,
   } = props;
 
   if (activeTab === "portrait") return (
@@ -94,11 +100,14 @@ export function EditorAdjustmentContent(props: Props) {
   if (activeTab === "color") return (
     <ColorAdjustments settings={settings} handleSliderChange={onSliderChange}
       handleCurveChange={onCurveChange} handleAutoSave={onCommit} lutEntries={lutEntries}
-      onSelectLut={onSelectLut} onImportLut={onImportLut} onDeleteLut={onDeleteLut} />
+      onSelectLut={onSelectLut} onImportLut={onImportLut} onDeleteLut={onDeleteLut}
+      onExportLut={onExportLut} />
   );
   if (activeTab === "professional") return (
     <ProfessionalAdjustments asset={asset} sourceUrl={sourceUrl} settings={settings}
-      histogram={histogram} onChange={onProfessionalChange} onCommit={() => onCommit()} />
+      histogram={histogram} onChange={onProfessionalChange} onPatch={onProfessionalPatch}
+      onCommit={() => onCommit()}
+      onExportLut={onExportLut} />
   );
   if (activeTab === "local") return activeCanvasTool === "clone" ? (
     <CloneStampPanel brushSize={healingBrushSize} strength={healingStrength}
@@ -138,6 +147,9 @@ export function EditorAdjustmentContent(props: Props) {
       isUploading={backgroundTask.isUploading} onSubmit={backgroundTask.submit}
       onUpload={backgroundTask.uploadBackground} onChange={onBackgroundChange}
       onCommit={onBackgroundCommit} onClear={() => onBackgroundCommit({ background_mode: "original" })} />
+  );
+  if (activeTab === "overlay") return (
+    <OverlayPanel overlays={settings.overlays} overlayState={overlayState} />
   );
   return null;
 }

@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { RetouchRenderer, RetouchRendererHandle } from "./RetouchRenderer";
+import { OverlayPreview } from "./OverlayPreview";
+import { CanvasToolOverlays } from "./CanvasToolOverlays";
+import { RawConvertPanel } from "./RawConvertPanel";
+import { useOverlays } from "./useOverlays";
 import { AssetSummary } from "../../types";
 import { assetTitle, assetUrl } from "../../utils";
 import { detectFacePoints, FacePoints } from "../../utils/faceMesh";
@@ -10,30 +14,35 @@ import {
 import { ROLE_PRESET_MAP, type PortraitRole } from "./retouch/rolePresets";
 import { useRetouchPresets } from "./useRetouchPresets";
 import { useLutLibrary } from "./useLutLibrary";
-import { CropOverlay, CropRect } from "./CropOverlay";
+import { CropRect } from "./CropOverlay";
 import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar";
-import { GuideOverlay, type GuideKind } from "./GuideOverlay";
-import { LiquifyOverlay, type LiquifyTool } from "./LiquifyOverlay";
-import { EraseOverlay, type EraseMaskCircle, type EraseMode } from "./EraseOverlay";
+import { type GuideKind } from "./GuideOverlay";
+import { type LiquifyTool } from "./LiquifyOverlay";
+import { type EraseMaskCircle, type EraseMode } from "./EraseOverlay";
 import { type EraseIntent } from "./ErasePanel";
 import { useBackgroundRemoval } from "./useBackgroundRemoval";
 import { useEraseTask } from "./useEraseTask";
+import { useLocalMasks } from "./useLocalMasks";
 import { RetouchPresetPanel } from "./RetouchPresetPanel";
-import { HealingBrushOverlay } from "./HealingBrushOverlay";
-import { CloneStampOverlay } from "./CloneStampOverlay";
 import { AssetFilmstrip } from "./AssetFilmstrip";
-import { EditorHeader, type ExportFormat } from "./EditorHeader";
+import { EditorHeader, type EditorCenterTab, type ExportFormat, type ExportImageOptions } from "./EditorHeader";
 import { EmptyAssetImporter } from "./EmptyAssetImporter";
 import { EditorTabBar, type EditorTab } from "./EditorTabBar";
-import { LocalMaskOverlay } from "./LocalMaskOverlay";
-import { useLocalMasks } from "./useLocalMasks";
 import { WatermarkPreview } from "./WatermarkPreview";
 import { EditorAdjustmentContent } from "./EditorAdjustmentContent";
 import { preserveExifInJpeg } from "./retouch/exif";
+import { downloadSettingsAsCube } from "./retouch/exportLut";
+import { fitIdPhotoCrop, type IdPhotoColor, type IdPhotoSpec } from "./retouch/idPhoto";
+import { resizeDataUrl } from "./retouch/batchExport";
+import { BatchToolsContent } from "./BatchToolsContent";
+import { BatchExportRunner } from "./BatchExportRunner";
+import { useBatchExport } from "./useBatchExport";
+import { useUpscaleTask } from "./useUpscaleTask";
 import type { ImageHistogram } from "./retouch/histogram";
 import "./AssetEditorWorkbench.css";
 
 export type { RetouchSettings } from "./editorConstants";
+export type { ExportFormat, ExportImageOptions } from "./EditorHeader";
 
 interface AssetEditorProps {
   asset?: AssetSummary;
@@ -46,9 +55,10 @@ interface AssetEditorProps {
     settings: RetouchSettings,
     dataUrl: string,
     format: ExportFormat,
+    options?: ExportImageOptions,
   ) => Promise<boolean>;
   initialSettings?: RetouchSettings;
-  onUpload?: (file: File) => Promise<void>;
+  onUpload?: (file: File) => Promise<AssetSummary | void>;
   onAssetsRefresh?: () => void;
 }
 
@@ -88,6 +98,8 @@ export function AssetEditorWorkbench({
   const [canRedo, setCanRedo] = useState(false);
   const [facePoints, setFacePoints] = useState<FacePoints | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("jpeg");
+  const [centerTab, setCenterTab] = useState<EditorCenterTab>("retouch");
+  const [idPhotoSpec, setIdPhotoSpec] = useState<IdPhotoSpec | null>(null);
   const [cropDraft, setCropDraft] = useState<CropRect | null>(null);
   const [activeCanvasTool, setActiveCanvasTool] = useState<CanvasTool>("move");
   const [healingBrushSize, setHealingBrushSize] = useState(32);
@@ -137,9 +149,11 @@ export function AssetEditorWorkbench({
       applyInitial(explicitInitial ?? DEFAULT_SETTINGS);
       setShowOriginal(false);
       setCropDraft(null);
+      setActiveCanvasTool("move");
       setCloneSource(null);
       setCloneSampling(true);
       setActivePresetIndex(null);
+      setIdPhotoSpec(null);
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
@@ -256,6 +270,15 @@ export function AssetEditorWorkbench({
     setSettings((prev) => normalizeRetouchSettings({ ...prev, [key]: value }));
   };
 
+  const handleProfessionalPatch = (changes: Partial<RetouchSettings>) => {
+    settingsDirtyRef.current = true;
+    setSettings((prev) => {
+      const next = normalizeRetouchSettings({ ...prev, ...changes });
+      setTimeout(() => handleAutoSave(next), 50);
+      return next;
+    });
+  };
+
   const handleCurveChange = (key: CurveKey, val: CurvePoints) => {
     settingsDirtyRef.current = true;
     setSettings((prev) => ({ ...prev, [key]: val }));
@@ -277,6 +300,13 @@ export function AssetEditorWorkbench({
 
   const handleLiquifyCommit = (strokes: RetouchSettings["liquify_strokes"]) => {
     const next = { ...settings, liquify_strokes: strokes };
+    settingsDirtyRef.current = true;
+    setSettings(next);
+    handleAutoSave(next);
+  };
+
+  const handleFreeTransformCommit = (points: RetouchSettings["free_transform_points"]) => {
+    const next = normalizeRetouchSettings({ ...settings, free_transform_points: points });
     settingsDirtyRef.current = true;
     setSettings(next);
     handleAutoSave(next);
@@ -315,6 +345,10 @@ export function AssetEditorWorkbench({
     }, 300);
   };
 
+  const handleExportLut = () => {
+    downloadSettingsAsCube(settings, `${currentAsset ? assetTitle(currentAsset) : "reveria"}-lut.cube`);
+  };
+
   const localMasks = useLocalMasks({
     settings,
     onChange: (next) => { settingsDirtyRef.current = true; setSettings(next); },
@@ -325,6 +359,17 @@ export function AssetEditorWorkbench({
     },
     onActivate: () => setActiveCanvasTool("mask"),
   });
+  const overlayState = useOverlays({
+    settings,
+    onChange: (next) => { settingsDirtyRef.current = true; setSettings(next); },
+    onCommit: (next) => {
+      settingsDirtyRef.current = true;
+      setSettings(next);
+      setTimeout(() => handleAutoSave(next), 50);
+    },
+    onActivate: () => { setActiveTab("overlay"); setActiveCanvasTool("overlay"); },
+  });
+  const [rawBusy, setRawBusy] = useState("");
 
   const commitBackground = (changes: Partial<RetouchSettings> = {}) => {
     const next = normalizeRetouchSettings({ ...settings, ...changes });
@@ -348,6 +393,11 @@ export function AssetEditorWorkbench({
     onCommit: commitBackground,
     onAssetsRefresh,
   });
+  const upscaleTask = useUpscaleTask({ asset: currentAsset, onAssetsRefresh });
+  const batch = useBatchExport({
+    projectAssets, selectedAssetIds, settings, onSaveSettings, onLoadSettings, onExportImage,
+    resolveLut,
+  });
 
   const handleSave = async () => {
     if (!currentAsset) return;
@@ -363,7 +413,7 @@ export function AssetEditorWorkbench({
     if (!currentAsset) return;
     setIsExporting(true);
     try {
-      let dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "png" ? undefined : 0.95);
+      let dataUrl = await rendererRef.current?.exportImage(exportFormat, exportFormat === "png" ? undefined : 0.95);
       if (!dataUrl) throw new Error("无法读取渲染结果");
       if (exportFormat === "jpeg" && settings.preserve_exif) {
         try {
@@ -371,6 +421,11 @@ export function AssetEditorWorkbench({
         } catch (error) {
           console.warn("保留 EXIF 失败，将导出不含 EXIF 的成片:", error);
         }
+      }
+      if (idPhotoSpec) {
+        dataUrl = await resizeDataUrl(dataUrl, {
+          width: idPhotoSpec.widthPx, height: idPhotoSpec.heightPx, format: exportFormat, quality: 0.95,
+        });
       }
       await onExportImage(currentAsset.id, settings, dataUrl, exportFormat);
     } finally {
@@ -410,22 +465,38 @@ export function AssetEditorWorkbench({
   };
 
   const handleSyncToSelected = async () => {
-    if (!currentAsset || selectedAssetIds.size === 0) {
-      alert("请先勾选需要同步的图片");
-      return;
-    }
-    const confirmed = window.confirm(`确定将当前调整参数同步到已选中的 ${selectedAssetIds.size} 张图片吗？`);
-    if (!confirmed) return;
+    if (await batch.applyCurrentToSelected()) setSelectedAssetIds(new Set());
+  };
 
+  const handleApplyIdPhoto = (spec: IdPhotoSpec, color: IdPhotoColor) => {
+    if (!sourceUrl) return;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      commitBackground({
+        ...fitIdPhotoCrop(image.naturalWidth, image.naturalHeight, spec),
+        background_mode: "solid",
+        background_color: color.color,
+      });
+      setIdPhotoSpec(spec);
+      setExportFormat("jpeg");
+    };
+    image.src = sourceUrl;
+  };
+
+  const handleRawImport = async (files: File[], applyCurrent: boolean) => {
+    if (!onUpload || files.length === 0) return;
+    setRawBusy(`正在转换 0/${files.length}`);
     try {
-      for (const assetId of selectedAssetIds) {
-        await onSaveSettings(assetId, settings);
+      for (let index = 0; index < files.length; index += 1) {
+        setRawBusy(`正在转换 ${index + 1}/${files.length}`);
+        const asset = await onUpload(files[index]);
+        if (applyCurrent && asset?.id) await onSaveSettings(asset.id, settings);
       }
-      alert(`已成功同步参数到 ${selectedAssetIds.size} 张图片`);
-      setSelectedAssetIds(new Set());
-    } catch (e) {
-      console.error("同步失败:", e);
-      alert("同步失败，请重试");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "RAW 转换失败");
+    } finally {
+      setRawBusy("");
     }
   };
 
@@ -496,18 +567,17 @@ export function AssetEditorWorkbench({
         title={title}
         hasAsset={Boolean(currentAsset)}
         isSaving={isSaving}
-        isExporting={isExporting}
+        isExporting={isExporting || batch.running}
         exportFormat={exportFormat}
+        centerTab={centerTab}
+        onCenterTabChange={(tab) => { if (!batch.running) setCenterTab(tab); }}
         onClose={onClose}
         onSave={handleSave}
         onExport={handleExport}
         onExportFormatChange={setExportFormat}
       />
 
-      {/* 主体工作台 */}
       <div className="editor-body">
-        
-        {/* 中间大画布预览区 / 空导入区 */}
         <main className="editor-center-canvas">
           <CanvasToolbar
             hasAsset={Boolean(currentAsset)}
@@ -560,87 +630,35 @@ export function AssetEditorWorkbench({
                   onError={setRenderError}
                 />
                 <WatermarkPreview settings={settings} hidden={showOriginal} />
-                {cropDraft && (
-                  <CropOverlay
-                    value={cropDraft}
-                    onChange={setCropDraft}
-                    onCancel={() => setCropDraft(null)}
-                    onApply={() => {
-                      commitGeometry({
-                        crop_x: cropDraft.x,
-                        crop_y: cropDraft.y,
-                        crop_width: cropDraft.width,
-                        crop_height: cropDraft.height,
-                      });
-                      setCropDraft(null);
-                    }}
-                  />
-                )}
-                {activeCanvasTool === "healing" && !cropDraft && (
-                  <HealingBrushOverlay
-                    settings={settings}
-                    brushSize={healingBrushSize}
-                    strength={healingStrength}
-                    onChange={(spots) => {
-                      settingsDirtyRef.current = true;
-                      setSettings((current) => ({ ...current, healing_spots: spots }));
-                    }}
-                    onCommit={handleHealingCommit}
-                  />
-                )}
-                {activeCanvasTool === "clone" && !cropDraft && (
-                  <CloneStampOverlay
-                    settings={settings} brushSize={healingBrushSize} strength={healingStrength}
-                    source={cloneSource} samplingSource={cloneSampling}
-                    onSourceChange={(source) => { setCloneSource(source); setCloneSampling(false); }}
-                    onChange={(stamps) => {
-                      settingsDirtyRef.current = true;
-                      setSettings((current) => ({ ...current, clone_stamps: stamps }));
-                    }}
-                    onCommit={handleCloneCommit}
-                  />
-                )}
-                {activeCanvasTool === "liquify" && !cropDraft && (
-                  <LiquifyOverlay
-                    settings={settings}
-                    tool={liquifyTool}
-                    brushSize={liquifyBrushSize}
-                    strength={liquifyStrength}
-                    onChange={(strokes) => {
-                      settingsDirtyRef.current = true;
-                      setSettings((current) => ({ ...current, liquify_strokes: strokes }));
-                    }}
-                    onCommit={handleLiquifyCommit}
-                  />
-                )}
-                {activeCanvasTool === "erase" && !cropDraft && (
-                  <EraseOverlay
-                    settings={settings}
-                    mode={eraseMode}
-                    brushSize={eraseBrushSize}
-                    masks={eraseMasks}
-                    onChange={setEraseMasks}
-                    onCommit={setEraseMasks}
-                  />
-                )}
-                {activeCanvasTool === "mask" && localMasks.selectedMask && !cropDraft && (
-                  <LocalMaskOverlay
-                    settings={settings}
-                    mask={localMasks.selectedMask}
-                    brushTool={localMasks.brushTool}
-                    brushSize={localMasks.brushSize}
-                    brushFlow={localMasks.brushFlow}
-                    sampleColor={(x, y) => rendererRef.current?.sampleColor(x, y) ?? null}
-                    onChange={localMasks.changeMask}
-                    onCommit={localMasks.commitMask}
-                  />
-                )}
-                <GuideOverlay kind={guide} />
+                <OverlayPreview settings={settings} hidden={showOriginal} />
+                <CanvasToolOverlays
+                  settings={settings} cropDraft={cropDraft} setCropDraft={setCropDraft}
+                  commitGeometry={commitGeometry} activeCanvasTool={activeCanvasTool}
+                  setActiveCanvasTool={setActiveCanvasTool} setSettings={setSettings}
+                  settingsDirtyRef={settingsDirtyRef} healingBrushSize={healingBrushSize}
+                  healingStrength={healingStrength} cloneSource={cloneSource} cloneSampling={cloneSampling}
+                  setCloneSource={setCloneSource} setCloneSampling={setCloneSampling}
+                  liquifyTool={liquifyTool} liquifyBrushSize={liquifyBrushSize}
+                  liquifyStrength={liquifyStrength} eraseMode={eraseMode} eraseBrushSize={eraseBrushSize}
+                  eraseMasks={eraseMasks} setEraseMasks={setEraseMasks} localMasks={localMasks}
+                  overlays={overlayState} rendererRef={rendererRef} guide={guide}
+                  onHealingCommit={handleHealingCommit} onCloneCommit={handleCloneCommit}
+                  onLiquifyCommit={handleLiquifyCommit} onFreeTransformCommit={handleFreeTransformCommit}
+                />
               </div>
             ) : <EmptyAssetImporter onUpload={onUpload} />}
           </div>
+          {batch.currentJob && (
+            <BatchExportRunner
+              job={batch.currentJob}
+              format={batch.format}
+              onComplete={batch.handleJobComplete}
+              onError={batch.handleJobError}
+            />
+          )}
         </main>
 
+        {centerTab === "retouch" && (
         <RetouchPresetPanel
           disabled={!currentAsset}
           activePresetIndex={activePresetIndex}
@@ -655,14 +673,28 @@ export function AssetEditorWorkbench({
           }}
           onDeleteCustom={(preset) => void handleDeletePreset(preset)}
         />
+        )}
 
-        {/* 右侧边栏：参数调节 */}
         <aside className="editor-right-adjustments">
           <div className="adjustments-container">
-            {!currentAsset ? (
+            {centerTab === "raw" ? (
+              <RawConvertPanel converting={Boolean(rawBusy)} progressLabel={rawBusy || "转换中…"}
+                onImport={(files, applyCurrent) => { void handleRawImport(files, applyCurrent); }} />
+            ) : !currentAsset ? (
               <div className="adjustments-empty-state">
                 <p>请先导入照片以调节美化参数</p>
               </div>
+            ) : centerTab === "batch" ? (
+              <BatchToolsContent
+                batch={batch} totalCount={projectAssets.length}
+                hasCutout={Boolean(settings.background_cutout_url)} upscale={upscaleTask}
+                onApplyIdPhoto={handleApplyIdPhoto}
+                onRequestCutout={() => {
+                  setCenterTab("retouch");
+                  setActiveTab("background");
+                  void backgroundTask.submit();
+                }}
+              />
             ) : (
               <>
                 <EditorAdjustmentContent
@@ -670,6 +702,7 @@ export function AssetEditorWorkbench({
                   facePoints={facePoints} role={role} onSelectRole={handleSelectRole}
                   onPortraitParamChange={handlePortraitParamChange} onSliderChange={handleSliderChange}
                   onCurveChange={handleCurveChange} onProfessionalChange={handleProfessionalChange}
+                  onProfessionalPatch={handleProfessionalPatch}
                   onCommit={handleAutoSave} lutEntries={lutEntries} onSelectLut={handleSelectLut}
                   onImportLut={handleImportLut} onDeleteLut={deleteLut} activeCanvasTool={activeCanvasTool}
                   healingBrushSize={healingBrushSize} healingStrength={healingStrength}
@@ -689,6 +722,7 @@ export function AssetEditorWorkbench({
                     settingsDirtyRef.current = true;
                     setSettings((current) => normalizeRetouchSettings({ ...current, ...changes }));
                   }} onBackgroundCommit={commitBackground} histogram={histogram}
+                  onExportLut={handleExportLut} overlayState={overlayState}
                 />
 
                 <div className="adjustments-footer-actions">
@@ -703,6 +737,7 @@ export function AssetEditorWorkbench({
             )}
           </div>
 
+          {centerTab === "retouch" && (
           <EditorTabBar
             activeTab={activeTab}
             disabled={!currentAsset}
@@ -712,6 +747,7 @@ export function AssetEditorWorkbench({
               setActiveCanvasTool(tool);
             }}
           />
+          )}
         </aside>
       </div>
 

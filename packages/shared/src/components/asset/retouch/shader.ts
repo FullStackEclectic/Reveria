@@ -4,6 +4,7 @@ import { GLSL_COMMON } from "./glsl/common";
 import { GLSL_PORTRAIT_WARP } from "./glsl/portraitWarp";
 import { GLSL_PORTRAIT_COLOR } from "./glsl/portraitColor";
 import { GLSL_BODY_WARP } from "./glsl/bodyWarp";
+import { GLSL_FREE_TRANSFORM } from "./glsl/freeTransform";
 import { LIQUIFY_MAX_SHIFT, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, MAX_LOCAL_MASKS } from "./settings";
 import { LOCAL_MASK_ATLAS_COLUMNS, LOCAL_MASK_ATLAS_ROWS, LOCAL_MASK_TILE_SIZE } from "./localMasks";
 
@@ -44,14 +45,21 @@ const UNIFORM_DECLARATIONS = `
   uniform float u_dehaze;
   uniform float u_clarity;
   uniform float u_sharpness;
+  uniform float u_luma_denoise;
+  uniform float u_chroma_denoise;
   uniform float u_grain_amount;
   uniform float u_grain_size;
   uniform float u_grain_roughness;
+  uniform float u_grain_highlights;
   uniform float u_lens_distortion;
+  uniform float u_fringing_amount;
+  uniform float u_perspective_horizontal;
+  uniform float u_perspective_vertical;
   uniform float u_vignette_amount;
   uniform float u_vignette_midpoint;
   uniform float u_vignette_feather;
   uniform float u_vignette_roundness;
+  uniform float u_vignette_highlights;
   uniform float u_body_center_x;
   uniform float u_body_waist_y;
   uniform float u_body_waist;
@@ -59,6 +67,10 @@ const UNIFORM_DECLARATIONS = `
   uniform float u_body_hips;
   uniform float u_body_legs;
   uniform float u_body_leg_length;
+  // 自由变形：8点（4角+4边中点），用于透视/仿射校正
+  uniform float u_free_transform_enabled;
+  uniform vec2 u_ft_tl;  uniform vec2 u_ft_tr;  uniform vec2 u_ft_br;  uniform vec2 u_ft_bl;
+  uniform vec2 u_ft_mt;  uniform vec2 u_ft_mr;  uniform vec2 u_ft_mb;  uniform vec2 u_ft_ml;
   uniform float u_border_enabled;
   uniform float u_border_size;
   uniform float u_border_radius;
@@ -218,10 +230,18 @@ const MAIN_SOURCE = `
     float sy = 1.0 / u_texSize.y;
     float aspect = u_texSize.x / u_texSize.y;
 
+    vec2 outputUV = v_texCoord;
+    float ftOutside = 0.0;
+    if (u_free_transform_enabled > 0.5) {
+      vec2 mapped = applyFreeTransform(v_texCoord);
+      if (mapped.x < 0.0) ftOutside = 1.0;
+      else outputUV = mapped;
+    }
+
     // 先从裁剪后的显示坐标逆映射到原始纹理坐标。
     vec2 displayCoord = vec2(
-      u_crop_x + v_texCoord.x * u_crop_width,
-      u_crop_y + v_texCoord.y * u_crop_height
+      u_crop_x + outputUV.x * u_crop_width,
+      u_crop_y + outputUV.y * u_crop_height
     );
     if (u_flip_horizontal > 0.5) displayCoord.x = 1.0 - displayCoord.x;
     if (u_flip_vertical > 0.5) displayCoord.y = 1.0 - displayCoord.y;
@@ -242,6 +262,21 @@ const MAIN_SOURCE = `
       sampleCoord = clamp(0.5 + lensDelta, 0.0, 1.0);
     }
 
+    // 垂直透视：上下边不等宽，用于校正仰拍/俯拍汇聚线。
+    if (abs(u_perspective_vertical) > 0.001) {
+      float px = sampleCoord.x - 0.5;
+      float py = sampleCoord.y - 0.5;
+      float vScale = 1.0 + u_perspective_vertical * 0.004 * py * 2.0;
+      sampleCoord.x = clamp(0.5 + px * vScale, 0.0, 1.0);
+    }
+    // 水平透视：左右边不等高，用于校正水平汇聚。
+    if (abs(u_perspective_horizontal) > 0.001) {
+      float px = sampleCoord.x - 0.5;
+      float py = sampleCoord.y - 0.5;
+      float hScale = 1.0 + u_perspective_horizontal * 0.004 * px * 2.0;
+      sampleCoord.y = clamp(0.5 + py * hScale, 0.0, 1.0);
+    }
+
     // 液化：手绘位移贴图，笔画数不受 uniform 数量限制
     if (u_liquify_enabled > 0.5) {
       vec2 shift = (texture2D(u_liquify_map, sampleCoord).rg - 0.5) * ${(LIQUIFY_MAX_SHIFT * 2).toFixed(4)};
@@ -251,7 +286,21 @@ const MAIN_SOURCE = `
     // 人脸形变（大眼 / 瘦脸 / 五官精调等）
     sampleCoord = clamp(applyFaceWarp(sampleCoord, aspect), 0.0, 1.0);
 
-    vec4 orig = texture2D(u_image, sampleCoord);
+    // 全身塑形：必须在主图像采样前完成坐标形变，否则腰腿等区域的颜色不会跟随位移
+    sampleCoord = clamp(applyBodyWarp(sampleCoord, aspect), 0.0, 1.0);
+
+    vec4 orig;
+    if (ftOutside > 0.5) {
+      orig = vec4(0.0);
+    } else if (abs(u_fringing_amount) > 0.001) {
+      vec2 fringe = (sampleCoord - 0.5) * u_fringing_amount * 0.003;
+      float red   = texture2D(u_image, clamp(sampleCoord + fringe, 0.0, 1.0)).r;
+      float green = texture2D(u_image, sampleCoord).g;
+      float blue  = texture2D(u_image, clamp(sampleCoord - fringe, 0.0, 1.0)).b;
+      orig = vec4(red, green, blue, texture2D(u_image, sampleCoord).a);
+    } else {
+      orig = texture2D(u_image, sampleCoord);
+    }
     vec3 rgb = orig.rgb;
 
     // 污点修复：取修复点外围四向纹理均值，并在笔刷边缘羽化融合。
@@ -294,6 +343,20 @@ const MAIN_SOURCE = `
 
     // 人像精修（祛瑕疵 / 祛纹 / 磨皮 / 肤色 / 五官润饰）
     rgb = applyPortraitColor(rgb, sampleCoord, aspect, sx, sy);
+
+    // 降噪：分离亮度与色度，先于锐化以免把噪声重新锐出来。
+    if (u_luma_denoise > 0.001 || u_chroma_denoise > 0.001) {
+      vec3 acc = rgb * 4.0;
+      acc += texture2D(u_image, clamp(sampleCoord + vec2( sx * 2.0, 0.0), 0.0, 1.0)).rgb;
+      acc += texture2D(u_image, clamp(sampleCoord + vec2(-sx * 2.0, 0.0), 0.0, 1.0)).rgb;
+      acc += texture2D(u_image, clamp(sampleCoord + vec2(0.0,  sy * 2.0), 0.0, 1.0)).rgb;
+      acc += texture2D(u_image, clamp(sampleCoord + vec2(0.0, -sy * 2.0), 0.0, 1.0)).rgb;
+      vec3 blurred = acc / 8.0;
+      float lumaOrig = luma(rgb);
+      float lumaBlur = luma(blurred);
+      rgb = vec3(mix(lumaOrig, lumaBlur, u_luma_denoise * 0.01))
+        + mix(rgb - vec3(lumaOrig), blurred - vec3(lumaBlur), u_chroma_denoise * 0.01);
+    }
 
     // 锐化：Laplacian 反锐化
     if (u_sharpness > 0.0) {
@@ -412,8 +475,6 @@ const MAIN_SOURCE = `
       if (abs(float(localIndex) - u_local_preview_index) < 0.25) previewMask = mask;
     }
 
-    sampleCoord = clamp(applyBodyWarp(sampleCoord, aspect), 0.0, 1.0);
-
     if (u_local_preview_enabled > 0.5 && previewMask > 0.001) {
       rgb = mix(rgb, vec3(1.0, 0.12, 0.08), previewMask * 0.38);
     }
@@ -468,7 +529,9 @@ const MAIN_SOURCE = `
       float midpoint = mix(0.12, 0.82, u_vignette_midpoint * 0.01);
       float feather = mix(0.02, 0.72, u_vignette_feather * 0.01);
       float vignetteMask = smoothstep(midpoint, midpoint + feather, vignetteDistance);
-      float amount = u_vignette_amount * 0.008 * vignetteMask;
+      float highlight = smoothstep(0.5, 0.95, luma(finalRgb));
+      float highlightKeep = mix(1.0 - highlight * 0.85, 1.0, u_vignette_highlights * 0.01);
+      float amount = u_vignette_amount * 0.008 * vignetteMask * highlightKeep;
       finalRgb = amount >= 0.0
         ? finalRgb * (1.0 - amount)
         : 1.0 - (1.0 - finalRgb) * (1.0 + amount);
@@ -481,8 +544,11 @@ const MAIN_SOURCE = `
       float fineNoise = fract(sin(dot(grainCoord, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
       float coarseNoise = fract(sin(dot(floor(grainCoord * 0.37), vec2(39.3468, 11.135))) * 24634.6345) - 0.5;
       float noise = mix(fineNoise, coarseNoise, u_grain_roughness * 0.01);
-      float midtoneProtection = 0.55 + 0.45 * (1.0 - abs(luma(finalRgb) - 0.5) * 2.0);
-      finalRgb += noise * u_grain_amount * 0.0032 * midtoneProtection;
+      float lumaVal = luma(finalRgb);
+      float highlight = smoothstep(0.5, 0.92, lumaVal);
+      float shadowProtect = 0.55 + 0.45 * smoothstep(0.05, 0.4, lumaVal);
+      float highlightKeep = mix(1.0 - highlight * 0.9, 1.0, u_grain_highlights * 0.01);
+      finalRgb += noise * u_grain_amount * 0.0032 * shadowProtect * highlightKeep;
     }
 
     if (u_border_enabled > 0.5 && u_border_size > 0.001) {
@@ -523,6 +589,7 @@ export const FS_SOURCE = [
   GLSL_HSL_CHANNEL,
   GLSL_LOCAL_MASKS,
   GLSL_BODY_WARP,
+  GLSL_FREE_TRANSFORM,
   GLSL_PORTRAIT_WARP,
   GLSL_PORTRAIT_COLOR,
   MAIN_SOURCE,
@@ -533,12 +600,18 @@ export const UNIFORM_NAMES = [
   "u_texSize",
   "u_exposure", "u_contrast", "u_highlights", "u_shadows", "u_whites", "u_blacks",
   "u_saturation", "u_vibrance", "u_temperature", "u_tint", "u_dehaze",
-  "u_clarity", "u_sharpness",
-  "u_grain_amount", "u_grain_size", "u_grain_roughness",
+  "u_clarity", "u_sharpness", "u_luma_denoise", "u_chroma_denoise",
+  "u_grain_amount", "u_grain_size", "u_grain_roughness", "u_grain_highlights",
   "u_lens_distortion",
+  "u_fringing_amount",
+  "u_perspective_horizontal", "u_perspective_vertical",
   "u_vignette_amount", "u_vignette_midpoint", "u_vignette_feather", "u_vignette_roundness",
+  "u_vignette_highlights",
   "u_body_center_x", "u_body_waist_y", "u_body_waist", "u_body_shoulders",
   "u_body_hips", "u_body_legs", "u_body_leg_length",
+  "u_free_transform_enabled",
+  "u_ft_tl", "u_ft_tr", "u_ft_br", "u_ft_bl",
+  "u_ft_mt", "u_ft_mr", "u_ft_mb", "u_ft_ml",
   "u_border_enabled", "u_border_size", "u_border_radius", "u_border_color",
   "u_rotation", "u_flip_horizontal", "u_flip_vertical",
   "u_crop_x", "u_crop_y", "u_crop_width", "u_crop_height",

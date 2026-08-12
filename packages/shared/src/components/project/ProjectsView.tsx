@@ -20,6 +20,7 @@ import { PageFrame } from "../common/PageFrame";
 import { ProjectDetailView } from "./ProjectDetailView";
 import { deleteJson } from "../../utils";
 import type { RetouchSettings } from "../asset/AssetEditorWorkbench";
+import type { ExportImageOptions } from "../asset/EditorHeader";
 
 interface ProjectsViewProps {
   projects: ProjectSummary[];
@@ -59,6 +60,7 @@ interface ProjectsViewProps {
     settings: RetouchSettings,
     dataUrl: string,
     format: "jpeg" | "png" | "webp",
+    options?: ExportImageOptions,
   ) => Promise<boolean>;
 }
 

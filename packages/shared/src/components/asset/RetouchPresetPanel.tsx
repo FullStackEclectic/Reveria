@@ -25,14 +25,6 @@ export function RetouchPresetPanel({
         <h3>预设</h3>
         <div className="header-icon-group"><span className="preset-count">{PRESET_EFFECTS.length}</span></div>
       </div>
-      <div className="filter-search-row">
-        <select className="preset-filter-select" disabled={disabled}>
-          <option>全部预设</option>
-          <option>人像美白</option>
-          <option>胶片复古</option>
-          <option>暖色调</option>
-        </select>
-      </div>
       <div className="presets-scroll-list">
         {PRESET_EFFECTS.map((preset, index) => (
           <button

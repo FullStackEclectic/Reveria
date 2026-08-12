@@ -3,6 +3,10 @@
 
 export function ClearAuthTokens():Promise<void>;
 
+export function ConvertRawBytes(arg1:string,arg2:string):Promise<string>;
+
+export function ConvertRawFile(arg1:string):Promise<string>;
+
 export function ExportRetouchedImage(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number,arg6:number,arg7:number,arg8:number,arg9:number,arg10:string):Promise<number>;
 
 export function ExportRetouchedImageNative(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
@@ -11,8 +15,14 @@ export function Greet(arg1:string):Promise<string>;
 
 export function LoadAuthTokens():Promise<Record<string, string>>;
 
+export function NativeRawConvertAvailable():Promise<boolean>;
+
 export function SaveAuthTokens(arg1:string,arg2:string):Promise<void>;
 
 export function SaveRenderedImage(arg1:string,arg2:string):Promise<void>;
+
+export function SelectDirectory():Promise<string>;
+
+export function SelectRawFiles():Promise<Array<string>>;
 
 export function SelectSavePath(arg1:string):Promise<string>;

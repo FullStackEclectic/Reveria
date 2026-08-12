@@ -1,5 +1,5 @@
 import React, { useId, useRef, useState } from "react";
-import { Trash2, Upload } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
 import type { LutEntry } from "./useLutLibrary";
 
 interface Props {
@@ -11,14 +11,16 @@ interface Props {
   onCommit: () => void;
   onImport: (file: File) => Promise<void>;
   onDelete: (id: string) => void;
+  onExport?: () => void;
 }
 
 /**
- * 3D LUT 面板：内置 LUT 由公式生成，用户可导入标准 .cube 文件。
+ * 3D LUT 面板：内置 LUT 由公式生成，用户可导入标准 .cube 文件，
+ * 也可把当前光影 / 色彩 / HSL / 曲线 / 色调映射导出为 .cube。
  * 选中的 LUT 会通过 `settings.lut_file` 保存，并在渲染管线末端按强度叠加。
  */
 export function LutPanel({
-  entries, activeId, intensity, onSelect, onIntensityChange, onCommit, onImport, onDelete,
+  entries, activeId, intensity, onSelect, onIntensityChange, onCommit, onImport, onDelete, onExport,
 }: Props) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +94,12 @@ export function LutPanel({
         <Upload size={12} />
         <span>{importing ? "导入中..." : "导入 .cube 文件"}</span>
       </label>
+      {onExport && (
+        <button type="button" className="lut-import-btn" onClick={onExport}>
+          <Download size={12} />
+          <span>导出当前调色为 .cube</span>
+        </button>
+      )}
       <input
         ref={inputRef}
         id={inputId}

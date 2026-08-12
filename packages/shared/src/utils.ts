@@ -589,6 +589,12 @@ export async function deleteJson<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export async function uploadAsset(formData: FormData): Promise<AssetSummary> {
+  const file = formData.get("file");
+  if (file instanceof File) {
+    const { fileForImageUpload } = await import("./rawConvert");
+    const prepared = await fileForImageUpload(file);
+    if (prepared !== file) formData.set("file", prepared);
+  }
   const response = await authorizedFetch("/api/assets/upload", {
     method: "POST",
     headers: withAuthHeaders(),

@@ -170,3 +170,13 @@ func TestCallExportImageV2ReportsDetailedError(t *testing.T) {
 		t.Fatal("Rust 引擎错误应包含可读详情")
 	}
 }
+
+func TestCallConvertRawMissingFile(t *testing.T) {
+	code, detail := CallConvertRaw("missing.arw", "output.jpg")
+	if code == 0 {
+		t.Fatal("缺失 RAW 不应显影成功")
+	}
+	if detail == "" {
+		t.Fatal("RAW 显影失败应包含可读详情")
+	}
+}

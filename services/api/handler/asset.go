@@ -79,6 +79,15 @@ func UploadAsset(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "读取文件失败"})
 		return
 	}
+	if isRawFilename(header.Filename) {
+		if preview := extractLargestJPEG(fileBytes); len(preview) > 0 {
+			fileBytes = preview
+			header.Filename = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)) + ".jpg"
+		} else {
+			c.JSON(http.StatusUnsupportedMediaType, gin.H{"success": false, "message": "无法转换该 RAW 文件：未找到可用预览，请在桌面端进行传感器显影"})
+			return
+		}
+	}
 	if int64(len(fileBytes)) > maxUploadBytes() {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"success": false, "message": "上传文件超过大小限制"})
 		return

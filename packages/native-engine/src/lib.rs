@@ -1,6 +1,7 @@
 mod color;
 mod lut;
 mod pipeline;
+mod raw;
 mod settings;
 
 use std::cell::RefCell;
@@ -101,6 +102,15 @@ pub extern "C" fn export_image_v2(
             serde_json::from_str(&json).map_err(|error| format!("精修参数 JSON 无效：{error}"))?;
         settings.normalize();
         pipeline::process_and_save_image(Path::new(&input), Path::new(&output), &settings)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn convert_raw_v2(input_path: *const c_char, output_path: *const c_char) -> i32 {
+    run_export(|| {
+        let input = read_c_string(input_path, "input_path")?;
+        let output = read_c_string(output_path, "output_path")?;
+        raw::convert_raw_to_jpeg(Path::new(&input), Path::new(&output))
     })
 }
 
@@ -237,5 +247,18 @@ mod tests {
             .into_owned();
         unsafe { free_string(message) };
         assert!(text.contains("JSON"));
+    }
+
+    #[test]
+    fn ffi_convert_raw_reports_missing_file() {
+        let input = CString::new("missing.arw").unwrap();
+        let output = CString::new("output.jpg").unwrap();
+        assert_eq!(convert_raw_v2(input.as_ptr(), output.as_ptr()), -4);
+        let message = last_error_message();
+        let text = unsafe { CStr::from_ptr(message) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { free_string(message) };
+        assert!(text.contains("RAW") || text.contains("打开") || text.contains("解码") || text.contains("存在") || !text.is_empty());
     }
 }

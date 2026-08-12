@@ -1,11 +1,10 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useState } from "react";
-import {
-  IDENTITY_CURVE, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, RetouchSettings,
+import { IDENTITY_CURVE, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, RetouchSettings,
   VS_SOURCE, FS_SOURCE, UNIFORM_NAMES, packPortraitParams,
   packFacePoints, packFaceScale, type CurvePoints,
 } from "./editorConstants";
 import { bakeLiquifyMap } from "./retouch/liquifyMap";
-import { LIQUIFY_MAP_SIZE } from "./retouch/settings";
+import { isFreeTransformActive, LIQUIFY_MAP_SIZE } from "./retouch/settings";
 import {
   bakeLocalMaskAtlas,
   LOCAL_MASK_ATLAS_HEIGHT,
@@ -18,7 +17,7 @@ import { calculateHistogram, type ImageHistogram } from "./retouch/histogram";
 import { exportDecoratedCanvas } from "./retouch/outputDecorations";
 
 export interface RetouchRendererHandle {
-  exportImage: (format?: "jpeg" | "png" | "webp", quality?: number) => string | null;
+  exportImage: (format?: "jpeg" | "png" | "webp", quality?: number) => Promise<string | null>;
   sampleColor: (x: number, y: number) => [number, number, number] | null;
   getHistogram: () => ImageHistogram | null;
 }
@@ -36,6 +35,7 @@ interface Props {
   showLocalMaskOverlay?: boolean;
   className?: string;
   onError?: (message: string) => void;
+  onRendered?: () => void;
 }
 
 const TEXTURE_UNIT_IMAGE = 0;
@@ -108,14 +108,21 @@ function applyUniforms(
   gl.uniform1f(locs["u_dehaze"],       z ? 0 : s.dehaze);
   gl.uniform1f(locs["u_clarity"],      z ? 0 : s.clarity);
   gl.uniform1f(locs["u_sharpness"],    z ? 0 : s.sharpness);
+  gl.uniform1f(locs["u_luma_denoise"], z ? 0 : s.luma_denoise);
+  gl.uniform1f(locs["u_chroma_denoise"], z ? 0 : s.chroma_denoise);
   gl.uniform1f(locs["u_grain_amount"], z ? 0 : s.grain_amount);
   gl.uniform1f(locs["u_grain_size"], s.grain_size);
   gl.uniform1f(locs["u_grain_roughness"], s.grain_roughness);
+  gl.uniform1f(locs["u_grain_highlights"], s.grain_highlights);
   gl.uniform1f(locs["u_lens_distortion"], z ? 0 : s.lens_distortion);
+  gl.uniform1f(locs["u_fringing_amount"], z ? 0 : s.fringing_amount);
+  gl.uniform1f(locs["u_perspective_horizontal"], z ? 0 : s.perspective_horizontal);
+  gl.uniform1f(locs["u_perspective_vertical"], z ? 0 : s.perspective_vertical);
   gl.uniform1f(locs["u_vignette_amount"], z ? 0 : s.vignette_amount);
   gl.uniform1f(locs["u_vignette_midpoint"], s.vignette_midpoint);
   gl.uniform1f(locs["u_vignette_feather"], s.vignette_feather);
   gl.uniform1f(locs["u_vignette_roundness"], s.vignette_roundness);
+  gl.uniform1f(locs["u_vignette_highlights"], s.vignette_highlights);
   gl.uniform1f(locs["u_body_center_x"], s.body_center_x);
   gl.uniform1f(locs["u_body_waist_y"], s.body_waist_y);
   gl.uniform1f(locs["u_body_waist"], z ? 0 : s.body_waist);
@@ -123,6 +130,17 @@ function applyUniforms(
   gl.uniform1f(locs["u_body_hips"], z ? 0 : s.body_hips);
   gl.uniform1f(locs["u_body_legs"], z ? 0 : s.body_legs);
   gl.uniform1f(locs["u_body_leg_length"], z ? 0 : s.body_leg_length);
+  const ftPoints = s.free_transform_points;
+  const ftActive = !z && isFreeTransformActive(ftPoints);
+  gl.uniform1f(locs["u_free_transform_enabled"], ftActive ? 1 : 0);
+  gl.uniform2f(locs["u_ft_tl"], ftPoints[0][0], ftPoints[0][1]);
+  gl.uniform2f(locs["u_ft_tr"], ftPoints[1][0], ftPoints[1][1]);
+  gl.uniform2f(locs["u_ft_br"], ftPoints[2][0], ftPoints[2][1]);
+  gl.uniform2f(locs["u_ft_bl"], ftPoints[3][0], ftPoints[3][1]);
+  gl.uniform2f(locs["u_ft_mt"], ftPoints[4][0], ftPoints[4][1]);
+  gl.uniform2f(locs["u_ft_mr"], ftPoints[5][0], ftPoints[5][1]);
+  gl.uniform2f(locs["u_ft_mb"], ftPoints[6][0], ftPoints[6][1]);
+  gl.uniform2f(locs["u_ft_ml"], ftPoints[7][0], ftPoints[7][1]);
   gl.uniform1f(locs["u_border_enabled"], !z && s.border_enabled ? 1 : 0);
   gl.uniform1f(locs["u_border_size"], s.border_size);
   gl.uniform1f(locs["u_border_radius"], s.border_radius);
@@ -250,7 +268,7 @@ function applyUniforms(
 export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
   function RetouchRenderer({
     imageUrl, settings, showOriginal, facePoints, lut, cutoutUrl, backgroundImageUrl,
-    selectedLocalMaskId, showLocalMaskOverlay, className, onError,
+    selectedLocalMaskId, showLocalMaskOverlay, className, onError, onRendered,
   }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -290,7 +308,7 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
   };
 
   useImperativeHandle(ref, () => ({
-    exportImage(format = "jpeg", quality = 0.95) {
+    async exportImage(format = "jpeg", quality = 0.95) {
       const canvas = canvasRef.current;
       if (!canvas) return null;
       return exportDecoratedCanvas(canvas, settings, format, quality);
@@ -416,6 +434,7 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
         cutoutReady, backgroundImageReady, backgroundImageSize,
         selectedLocalMaskId, showLocalMaskOverlay);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+      onRendered?.();
     };
     img.onerror = () => {
       if (!cancelled) onError?.("图片加载失败，请检查素材是否可访问");
@@ -539,8 +558,9 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       cutoutReady, backgroundImageReady, backgroundImageSize,
       selectedLocalMaskId, showLocalMaskOverlay);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    onRendered?.();
   }, [settings, showOriginal, facePoints, lut, liquifyPixels, cutoutReady, backgroundImageReady,
-    backgroundImageSize, localMaskPixels, selectedLocalMaskId, showLocalMaskOverlay]);
+    backgroundImageSize, localMaskPixels, selectedLocalMaskId, showLocalMaskOverlay, onRendered]);
 
   return <canvas ref={canvasRef} className={className} />;
 });

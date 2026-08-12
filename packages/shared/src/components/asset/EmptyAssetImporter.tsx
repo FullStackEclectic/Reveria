@@ -1,11 +1,12 @@
 import React from "react";
 import { FolderOpen, Image as ImageIcon } from "lucide-react";
+import { IMAGE_AND_RAW_ACCEPT } from "../../rawConvert";
 
 interface Props {
-  onUpload?: (file: File) => Promise<void>;
+  onUpload?: (file: File) => Promise<unknown>;
 }
 
-async function uploadFiles(files: FileList | null, onUpload?: (file: File) => Promise<void>) {
+async function uploadFiles(files: FileList | null, onUpload?: (file: File) => Promise<unknown>) {
   if (!files || !onUpload) return;
   for (const file of Array.from(files)) {
     await onUpload(file);
@@ -26,7 +27,7 @@ export function EmptyAssetImporter({ onUpload }: Props) {
             type="file"
             id="file-import-input"
             multiple
-            accept="image/*"
+            accept={IMAGE_AND_RAW_ACCEPT}
             style={{ display: "none" }}
             onChange={(event) => void uploadFiles(event.target.files, onUpload)}
           />

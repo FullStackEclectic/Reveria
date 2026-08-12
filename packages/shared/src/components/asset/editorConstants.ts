@@ -14,7 +14,10 @@ export {
   LIQUIFY_MAP_SIZE,
   LIQUIFY_MAX_SHIFT,
   DEFAULT_SETTINGS,
+  IDENTITY_FREE_TRANSFORM,
+  isFreeTransformActive,
   normalizeRetouchSettings,
+  MAX_OVERLAYS,
 } from "./retouch/settings";
 export type {
   CurvePoints,
@@ -30,6 +33,8 @@ export type {
   LiquifyMode,
   LiquifyStroke,
   RetouchSettings,
+  FreeTransformPoints,
+  OverlayLayer,
 } from "./retouch/settings";
 
 export {
