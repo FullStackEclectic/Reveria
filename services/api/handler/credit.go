@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -142,103 +143,56 @@ func ListRechargeRecords(c *gin.Context) {
 }
 
 func ensureDefaultPlans() []model.Plan {
-	var plans []model.Plan
-	database.DB.Find(&plans)
+	seedPlans := []model.Plan{
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+			Name: "体验版订阅 (包月)", BadgeLabel: "FREE", PriceCents: 0,
+			MonthlyCredits: 1000, MaxMembers: 3, StorageQuotaBytes: 2 * 1024 * 1024 * 1024,
+			Enabled: true, IsPointsPackage: false, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+			Name: "专业版订阅 (包月)", BadgeLabel: "PRO", PriceCents: 9900,
+			MonthlyCredits: 5000, MaxMembers: 10, StorageQuotaBytes: 50 * 1024 * 1024 * 1024,
+			Enabled: true, IsPointsPackage: false, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000003"),
+			Name: "企业版订阅 (包月)", BadgeLabel: "ENT", PriceCents: 29900,
+			MonthlyCredits: 20000, MaxMembers: 30, StorageQuotaBytes: 200 * 1024 * 1024 * 1024,
+			Enabled: true, IsPointsPackage: false, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000010"),
+			Name: "100点 基础点数直充", BadgeLabel: "100", PriceCents: 1000,
+			MonthlyCredits: 100, MaxMembers: 1, StorageQuotaBytes: 0,
+			Enabled: true, IsPointsPackage: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000011"),
+			Name: "550点 特惠点数直充 (送50)", BadgeLabel: "550", PriceCents: 5000,
+			MonthlyCredits: 550, MaxMembers: 1, StorageQuotaBytes: 0,
+			Enabled: true, IsPointsPackage: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+		{
+			ID:   uuid.MustParse("00000000-0000-0000-0000-000000000012"),
+			Name: "1200点 豪华点数直充 (送200)", BadgeLabel: "1200", PriceCents: 10000,
+			MonthlyCredits: 1200, MaxMembers: 1, StorageQuotaBytes: 0,
+			Enabled: true, IsPointsPackage: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		},
+	}
 
-	// 如果数据库中套餐过少，我们自动清空重写，Seed 完整的包月方案和纯点数包
-	if len(plans) <= 2 {
-		database.DB.Exec("DELETE FROM plans")
-		plans = nil
-
-		seedPlans := []model.Plan{
-			// 1. 订阅型套餐 (IsPointsPackage = false)
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-				Name:              "体验版订阅 (包月)",
-				BadgeLabel:        "FREE",
-				PriceCents:        0,
-				MonthlyCredits:    1000,
-				MaxMembers:        3,
-				StorageQuotaBytes: 2 * 1024 * 1024 * 1024, // 2GB
-				Enabled:           true,
-				IsPointsPackage:   false,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000002"),
-				Name:              "专业版订阅 (包月)",
-				BadgeLabel:        "PRO",
-				PriceCents:        9900, // ￥99
-				MonthlyCredits:    5000,
-				MaxMembers:        10,
-				StorageQuotaBytes: 50 * 1024 * 1024 * 1024, // 50GB
-				Enabled:           true,
-				IsPointsPackage:   false,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000003"),
-				Name:              "企业版订阅 (包月)",
-				BadgeLabel:        "ENT",
-				PriceCents:        29900, // ￥299
-				MonthlyCredits:    20000,
-				MaxMembers:        30,
-				StorageQuotaBytes: 200 * 1024 * 1024 * 1024, // 200GB
-				Enabled:           true,
-				IsPointsPackage:   false,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-			// 2. 纯点数直充包 (IsPointsPackage = true)
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000010"),
-				Name:              "100点 基础点数直充",
-				BadgeLabel:        "100",
-				PriceCents:        1000, // ￥10
-				MonthlyCredits:    100,  // 点数直充也是借用这个字段记录购买点数
-				MaxMembers:        1,
-				StorageQuotaBytes: 0,
-				Enabled:           true,
-				IsPointsPackage:   true,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000011"),
-				Name:              "550点 特惠点数直充 (送50)",
-				BadgeLabel:        "550",
-				PriceCents:        5000, // ￥50
-				MonthlyCredits:    550,
-				MaxMembers:        1,
-				StorageQuotaBytes: 0,
-				Enabled:           true,
-				IsPointsPackage:   true,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-			{
-				ID:                uuid.MustParse("00000000-0000-0000-0000-000000000012"),
-				Name:              "1200点 豪华点数直充 (送200)",
-				BadgeLabel:        "1200",
-				PriceCents:        10000, // ￥100
-				MonthlyCredits:    1200,
-				MaxMembers:        1,
-				StorageQuotaBytes: 0,
-				Enabled:           true,
-				IsPointsPackage:   true,
-				CreatedAt:         time.Now(),
-				UpdatedAt:         time.Now(),
-			},
-		}
-
-		for _, p := range seedPlans {
-			_ = database.DB.Create(&p)
-			plans = append(plans, p)
+	for _, seed := range seedPlans {
+		var existing model.Plan
+		if err := database.DB.Where("id = ?", seed.ID).First(&existing).Error; err != nil {
+			if err := database.DB.Create(&seed).Error; err != nil {
+				log.Printf("写入默认定价套餐 %s 失败: %v", seed.Name, err)
+			}
 		}
 	}
 
+	var plans []model.Plan
+	database.DB.Find(&plans)
 	return plans
 }
 

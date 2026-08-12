@@ -108,16 +108,32 @@ func main() {
 }
 
 func validateRuntimeConfig() {
-	production := os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release"
-	if !production {
-		return
+	if err := checkRuntimeConfig(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func isProductionEnv() bool {
+	return os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release"
+}
+
+func checkRuntimeConfig() error {
+	if !isProductionEnv() {
+		return nil
 	}
 	if os.Getenv("REVERIA_ENABLE_DEV_LOGIN") == "true" {
-		log.Fatal("生产环境禁止启用 REVERIA_ENABLE_DEV_LOGIN")
+		return errors.New("生产环境禁止启用 REVERIA_ENABLE_DEV_LOGIN")
 	}
 	if strings.TrimSpace(os.Getenv("REVERIA_ALLOWED_ORIGINS")) == "" {
-		log.Fatal("生产环境必须配置 REVERIA_ALLOWED_ORIGINS")
+		return errors.New("生产环境必须配置 REVERIA_ALLOWED_ORIGINS")
 	}
+	if strings.ToLower(strings.TrimSpace(os.Getenv("DATABASE_TYPE"))) != "postgres" {
+		return errors.New("生产环境必须设置 DATABASE_TYPE=postgres")
+	}
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		return errors.New("生产环境必须设置 DATABASE_URL")
+	}
+	return nil
 }
 
 func requestIDMiddleware() gin.HandlerFunc {
@@ -187,7 +203,7 @@ func initDefaultSettings() {
 			SiteAnnouncement:      strings.TrimSpace(os.Getenv("REVERIA_SITE_ANNOUNCEMENT")),
 			UpstreamAPIURL:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_URL")),
 			UpstreamAPIKey:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_KEY")),
-			AllowUserRegister:     true,
+			AllowUserRegister:     !isProductionEnv(),
 			GiftCreditsOnRegister: 0,
 			PriceRate:             1.00,
 		}

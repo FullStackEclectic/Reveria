@@ -92,7 +92,7 @@ func handleUpscaleTask(ctx context.Context, task model.GenerationTask, settings 
 	defer resp.Body.Close()
 	responseBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
 	if resp.StatusCode != http.StatusOK {
-		handleTaskFailure(task.ID, fmt.Sprintf("UPSCALE_GATEWAY_%d", resp.StatusCode), upstreamErrorMessage(responseBytes, "变清晰网关调用失败"))
+		failTaskFromUpstream(task.ID, resp.StatusCode, fmt.Sprintf("UPSCALE_GATEWAY_%d", resp.StatusCode), upstreamErrorMessage(responseBytes, "变清晰网关调用失败"))
 		return
 	}
 

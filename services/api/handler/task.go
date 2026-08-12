@@ -183,6 +183,9 @@ func CreateTask(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "系统计费配置不可用"})
 		return
 	}
+	if rejectIfUpstreamCircuitOpen(c) {
+		return
+	}
 
 	// 2. 估算与扣除/冻结积分。价格必须来自模型或定价规则，禁止使用代码内默认价格。
 	estCredits, err := resolveEstimatedCredits(req.TaskType, req.SelectedModel)

@@ -13,7 +13,8 @@ Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xA
 
 1. **后端 API 分站 (`services/api`)**：
    * 基于 **Gin (Go)** 构建的高并发 REST API 服务。
-   * 采用 **纯 Go 版本 SQLite (`github.com/glebarez/sqlite`)** 作为本地关系数据库，消除对 CGO 和 GCC 编译链的硬性依赖，支持开箱即用。
+   * **正式环境使用 PostgreSQL** 作为唯一业务主库。Web 与桌面端都不直连数据库，只调用这套 API。
+   * 本机开发默认使用纯 Go SQLite（`github.com/glebarez/sqlite`），免 CGO、开箱即用；这是开发便利，不是产品选型。
 2. **桌面视窗容器 (`apps/desktop`)**：
    * 基于 **Wails (Go)** 构建的轻量级云端客户端，通过系统原生 WebView2 渲染 React 前端。
    * 项目、任务、账户与协作数据统一访问云端 API；本机仅保存素材缓存、导出文件和确有必要的离线元数据。
@@ -67,7 +68,7 @@ pnpm env:init
 pnpm dev:all
 ```
 启动脚本会增量构建 Rust release DLL；未安装 Cargo 时桌面端仍可启动，但图像导出会回退到 WebGL。
-* **后端 API**：默认监听在 `http://127.0.0.1:4100`。首次启动会自动生成 SQLite 本地关系数据库 `reveria.db` 并完成表结构迁移。
+* **后端 API**：默认监听在 `http://127.0.0.1:4100`。本机开发未配置 `DATABASE_TYPE` 时会生成 SQLite 文件 `reveria.db` 并自动迁移；正式部署须改为 PostgreSQL。
 * **网页端与商业管理后台**：可通过浏览器访问主页 `http://localhost:3000` 以及超级管理员独立控制台 `http://localhost:3000/admin`。
 * **Wails 桌面端**：桌面上会自动弹出应用视窗，其对应的热重载调试地址为 `http://localhost:1420`。
 * **桌面端本地 API**：`wails dev` / `pnpm dev:all` 在未设置 `VITE_REVERIA_API_BASE` 时会自动连接 `http://localhost:4100`，与 Vite 开发页保持同站以正确携带认证 Cookie；生产构建仍必须显式设置云端 API 地址。
@@ -100,6 +101,12 @@ pnpm native:build
   ```powershell
   pnpm web:build
   ```
+
+---
+
+## 📄 文档
+
+设计与架构文档见 [docs/README.md](docs/README.md)。本地开发细节见 [docs/开发指南.md](docs/开发指南.md)。
 
 ---
 

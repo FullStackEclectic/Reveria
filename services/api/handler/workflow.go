@@ -49,6 +49,9 @@ func RunBriefAnalysis(c *gin.Context) {
 	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
 		return
 	}
+	if rejectIfUpstreamCircuitOpen(c) {
+		return
+	}
 	// 1. 扣减 2 个积分点数
 	var costCredits int64 = 2
 	var settings model.ClientSettings
@@ -119,6 +122,10 @@ func RunBrandStyleExtract(c *gin.Context) {
 		return
 	}
 
+	if rejectIfUpstreamCircuitOpen(c) {
+		return
+	}
+
 	var settings model.ClientSettings
 	_ = database.DB.First(&settings)
 
@@ -157,6 +164,10 @@ func RunCreativeDirections(c *gin.Context) {
 		return
 	}
 
+	if rejectIfUpstreamCircuitOpen(c) {
+		return
+	}
+
 	var settings model.ClientSettings
 	_ = database.DB.First(&settings)
 
@@ -192,6 +203,10 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 		return
 	}
 	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
+
+	if rejectIfUpstreamCircuitOpen(c) {
 		return
 	}
 
@@ -289,6 +304,7 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 	respBytes, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		recordUpstreamHTTPStatus(resp.StatusCode)
 		return fmt.Sprintf("主网关生成大模型文本错误，HTTP 状态码: %d", resp.StatusCode), 0, 0
 	}
 
@@ -339,6 +355,9 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 		return
 	}
 	if !requireProjectInWorkspace(c, req.ProjectID, req.WorkspaceID) {
+		return
+	}
+	if rejectIfUpstreamCircuitOpen(c) {
 		return
 	}
 

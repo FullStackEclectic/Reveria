@@ -28,7 +28,15 @@ func InitDatabase() {
 	dbType := strings.ToLower(os.Getenv("DATABASE_TYPE"))
 	dbURL := os.Getenv("DATABASE_URL")
 
-	// 默认使用 SQLite
+	production := os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release"
+	if production && dbType != "postgres" {
+		log.Fatal("生产环境必须设置 DATABASE_TYPE=postgres")
+	}
+	if production && strings.TrimSpace(dbURL) == "" {
+		log.Fatal("生产环境必须设置 DATABASE_URL")
+	}
+
+	// 默认使用 SQLite（仅非生产）
 	if dbType == "" {
 		dbType = "sqlite"
 	}
@@ -126,6 +134,7 @@ func AutoMigrate() {
 	}
 	log.Println("数据库自动表迁移完成。")
 	SeedTemplates()
+	SeedPricingRules()
 }
 
 // SeedTemplates 初始化内置模板数据

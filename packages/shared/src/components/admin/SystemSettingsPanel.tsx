@@ -11,6 +11,8 @@ interface ClientSettings {
   price_rate: number;
   upstream_api_url: string;
   upstream_api_key: string;
+  upstream_circuit_open?: boolean;
+  upstream_circuit_reason?: string;
 }
 
 interface SystemSettingsPanelProps {
@@ -39,6 +41,25 @@ export function SystemSettingsPanel({ onSettingsSaved }: SystemSettingsPanelProp
     loadSettings();
   }, []);
 
+  async function handleClearCircuit() {
+    if (!settings) return;
+    setIsSaving(true);
+    setMessage("");
+    try {
+      const res = await postJson<any>("/api/admin/settings", {
+        ...settings,
+        clear_upstream_circuit: true,
+      });
+      setSettings(res.data || settings);
+      setMessage("已恢复生成，上游欠费熔断已关闭。");
+      onSettingsSaved?.();
+    } catch (err) {
+      setMessage("恢复生成失败：" + (err as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function handleSaveSettings(e: FormEvent) {
     e.preventDefault();
     if (!settings) return;
@@ -46,7 +67,8 @@ export function SystemSettingsPanel({ onSettingsSaved }: SystemSettingsPanelProp
     setIsSaving(true);
     setMessage("");
     try {
-      await postJson("/api/admin/settings", settings);
+      const res = await postJson<any>("/api/admin/settings", settings);
+      setSettings(res.data || settings);
       setMessage("站点全局设置已保存成功！");
       if (onSettingsSaved) {
         onSettingsSaved();
@@ -94,6 +116,30 @@ export function SystemSettingsPanel({ onSettingsSaved }: SystemSettingsPanelProp
           <Laptop size={18} style={{ color: "var(--rv-color-primary)" }} />
           <span>站点运营与基本参数设置</span>
         </h3>
+
+        {settings?.upstream_circuit_open && (
+          <div style={{
+            padding: "12px 16px",
+            borderRadius: "8px",
+            background: "#fff7ed",
+            border: "1px solid #fdba74",
+            color: "#9a3412",
+            fontSize: "13px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}>
+            <span>上游网关欠费熔断已开启{settings.upstream_circuit_reason ? `：${settings.upstream_circuit_reason}` : ""}。散客生成已暂停。</span>
+            <button type="button" onClick={() => void handleClearCircuit()} disabled={isSaving} style={{
+              border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer",
+              background: "var(--rv-color-primary)", color: "#fff", fontSize: "12px",
+            }}>
+              恢复生成
+            </button>
+          </div>
+        )}
 
         {message && (
           <div style={{

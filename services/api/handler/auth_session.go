@@ -34,7 +34,13 @@ func tokenHash(token string) string {
 }
 
 func secureCookies(c *gin.Context) bool {
-	return c.Request.TLS != nil || os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release"
+	if os.Getenv("REVERIA_ENV") == "production" || os.Getenv("GIN_MODE") == "release" {
+		return true
+	}
+	if c.Request.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 }
 
 func setWebAuthCookies(c *gin.Context, accessToken, refreshToken string) {

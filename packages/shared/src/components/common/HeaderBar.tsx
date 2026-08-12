@@ -1,6 +1,6 @@
 import React from "react";
 import { 
-  Menu, Camera, Search, FileText, Bell, ClipboardList, 
+  Menu, Search, ClipboardList, 
   ChevronDown, History, Coins, Settings, LogOut 
 } from "lucide-react";
 import { AppView, UserSummary } from "../../types";
@@ -77,12 +77,12 @@ export function HeaderBar({
           <div className="search-input-wrapper">
             <input 
               type="text" 
-              placeholder="搜索感兴趣 of AI 绘图模板、模型或标签..." 
+              placeholder="搜索模板、模型或标签..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => handleViewChange("square")}
             />
             <div className="search-action-icons">
-              <Camera size={16} className="camera-icon" onClick={() => alert("以图搜图功能即将开放")} />
               <Search size={16} className="search-icon" />
             </div>
           </div>
@@ -91,26 +91,15 @@ export function HeaderBar({
       
       {/* 右侧：动作与用户状态 */}
       <div className="header-right">
-        {/* 文档入口 */}
-        <button 
-          type="button" 
-          className="icon-btn-item"
-          onClick={() => {
-            alert("文档中心功能即将开放，敬请期待！");
-          }}
-          title="文档中心"
-        >
-          <FileText size={18} />
-        </button>
-
         {currentUser ? (
           <>
-            {/* 消息与任务图标 */}
             <div className="header-icon-actions">
-              <button type="button" className="icon-btn-item" title="消息通知" onClick={() => alert("暂无新通知")}>
-                <Bell size={18} />
-              </button>
-              <button type="button" className="icon-btn-item" title="任务列表" onClick={() => alert("当前无正在进行的算力任务")}>
+              <button
+                type="button"
+                className="icon-btn-item"
+                title="生成历史"
+                onClick={() => handleViewChange("history")}
+              >
                 <ClipboardList size={18} />
               </button>
             </div>
@@ -171,7 +160,7 @@ export function HeaderBar({
                     <span>点数中心</span>
                   </button>
 
-                  {currentUser.is_platform_admin && !(typeof window !== "undefined" && (window as any).go) && (
+                  {currentUser.is_platform_admin && (
                     <button
                       className="dropdown-item admin"
                       type="button"

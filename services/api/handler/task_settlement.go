@@ -251,7 +251,7 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	}
 	billingSvc := service.GetBillingService()
 	if err := billingSvc.SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, consumeReason, &task); err != nil {
-		log.Printf("[TaskSucceeded] 任务 %s 结算事务失败: %v", task.ID, err)
+		log.Printf("[TaskSucceeded] 任务 %s 结算事务失败，将保持 settling 并重试: %v", task.ID, err)
 		return
 	}
 	log.Printf("[TaskSucceeded] 任务 %s 结算完成，已归档资产。", task.ID)
@@ -344,9 +344,6 @@ func handleTaskFailure(taskID uuid.UUID, errorCode string, errorMsg string) {
 }
 
 func failClaimedTask(task model.GenerationTask, errorCode string, errorMsg string) {
-	cleanupTaskAssets(task.ID)
-
-	// 统一账务接口进行退额/退款
 	billingSvc := service.GetBillingService()
 	actorID := uuid.Nil
 	if task.UserID != nil {
@@ -356,10 +353,16 @@ func failClaimedTask(task model.GenerationTask, errorCode string, errorMsg strin
 	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", task.ID.String())
 	err := billingSvc.RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, refundReason, &task)
 	if err != nil {
-		log.Printf("[TaskFailed] 积分退回失败: %v", err)
+		log.Printf("[TaskFailed] 积分退回失败，任务保持 refunding: %v", err)
+		task.Status = "refunding"
+		task.ErrorCode = &errorCode
+		task.ErrorMessage = &errorMsg
+		database.DB.Save(&task)
+		return
 	}
 
-	// 更新任务状态为失败
+	cleanupTaskAssets(task.ID)
+
 	task.Status = "failed"
 	task.ErrorCode = &errorCode
 	task.ErrorMessage = &errorMsg

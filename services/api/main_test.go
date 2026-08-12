@@ -33,3 +33,25 @@ func TestProductionCORSOnlyAllowsConfiguredOrigins(t *testing.T) {
 		t.Fatalf("显式来源未被允许，实际为 %q", origin)
 	}
 }
+
+func TestCheckRuntimeConfigRequiresPostgresInProduction(t *testing.T) {
+	t.Setenv("REVERIA_ENV", "production")
+	t.Setenv("REVERIA_ENABLE_DEV_LOGIN", "")
+	t.Setenv("REVERIA_ALLOWED_ORIGINS", "https://app.example.com")
+	t.Setenv("DATABASE_TYPE", "sqlite")
+	t.Setenv("DATABASE_URL", "reveria.db")
+	if err := checkRuntimeConfig(); err == nil {
+		t.Fatal("生产环境使用 SQLite 应被拒绝")
+	}
+
+	t.Setenv("DATABASE_TYPE", "postgres")
+	t.Setenv("DATABASE_URL", "")
+	if err := checkRuntimeConfig(); err == nil {
+		t.Fatal("生产环境缺少 DATABASE_URL 应被拒绝")
+	}
+
+	t.Setenv("DATABASE_URL", "host=127.0.0.1 user=reveria password=secret dbname=reveria port=5432 sslmode=disable")
+	if err := checkRuntimeConfig(); err != nil {
+		t.Fatal(err)
+	}
+}

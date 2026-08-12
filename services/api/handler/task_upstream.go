@@ -434,6 +434,10 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 						msg = m
 					}
 				}
+				if batchResp.StatusCode == http.StatusPaymentRequired {
+					failTaskFromUpstream(task.ID, batchResp.StatusCode, fmt.Sprintf("GATEWAY_%d", batchResp.StatusCode), msg)
+					return
+				}
 				lastErr = fmt.Errorf("GATEWAY_%d: %s", batchResp.StatusCode, msg)
 				log.Printf("[callUpstreamGateway] 批次 %d/%d 返回错误: %s", batchIdx+1, len(batches), msg)
 				continue // 跳过此批次，尝试下一批
@@ -593,7 +597,7 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 					msg = m
 				}
 			}
-			handleTaskFailure(task.ID, fmt.Sprintf("INPAINTING_GATEWAY_%d", inpaintResp.StatusCode), msg)
+			failTaskFromUpstream(task.ID, inpaintResp.StatusCode, fmt.Sprintf("INPAINTING_GATEWAY_%d", inpaintResp.StatusCode), msg)
 			return
 		}
 
@@ -673,7 +677,7 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 				msg = m
 			}
 		}
-		handleTaskFailure(task.ID, fmt.Sprintf("GATEWAY_%d", resp.StatusCode), msg)
+		failTaskFromUpstream(task.ID, resp.StatusCode, fmt.Sprintf("GATEWAY_%d", resp.StatusCode), msg)
 		return
 	}
 
@@ -865,6 +869,10 @@ func pollUpstreamTask(ctx context.Context, task model.GenerationTask, upstreamTa
 			resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
+				if resp.StatusCode == http.StatusPaymentRequired {
+					failTaskFromUpstream(task.ID, resp.StatusCode, fmt.Sprintf("GATEWAY_%d", resp.StatusCode), upstreamCircuitMessage)
+					return
+				}
 				continue
 			}
 

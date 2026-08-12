@@ -96,7 +96,7 @@ func handleBackgroundRemovalTask(ctx context.Context, task model.GenerationTask,
 	defer resp.Body.Close()
 	responseBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes()+1))
 	if resp.StatusCode != http.StatusOK {
-		handleTaskFailure(task.ID, fmt.Sprintf("BACKGROUND_GATEWAY_%d", resp.StatusCode), upstreamErrorMessage(responseBytes, "抠图网关调用失败"))
+		failTaskFromUpstream(task.ID, resp.StatusCode, fmt.Sprintf("BACKGROUND_GATEWAY_%d", resp.StatusCode), upstreamErrorMessage(responseBytes, "抠图网关调用失败"))
 		return
 	}
 

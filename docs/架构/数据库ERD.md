@@ -1,8 +1,17 @@
 # 数据库ERD
 
+本文件描述 **Go API（业务分站）** 的业务表结构。正式环境使用 PostgreSQL；本机开发可用 SQLite。网页端和桌面端不持有这些表，只通过 API 读写。运行时以 `services/api/model` 与 `database/migrations.go` 为准，本文件是对照图。
+
+## 设计原则
+
+- 用户、项目、画布、素材、积分、订单只存在分站 API。
+- 真正的模型渠道适配、上游熔断在 `12ZX-AI`。分站用 `client_settings` 保存网关地址和站长 Key。
+- 分站仍有 `providers` / `models` / `pricing_rules`，这是给散客看的目录和定价，不是上游渠道实现。
+- 生成任务记录 `upstream_task_id` 与批发额度，供站长对账。
+
 ## 总体实体关系
 
-在 Go 业务分站中，移除了所有与大模型渠道直接关联的网关底层表（这些已在 12ZX-AI 中管理），引入了 `client_settings` 用于分站的网关密钥配置：
+核心业务关系如下（目录与定价表见 GORM 模型，未全部画入）：
 
 ```mermaid
 erDiagram

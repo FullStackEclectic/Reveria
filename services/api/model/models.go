@@ -208,16 +208,18 @@ type AuditLog struct {
 
 // ClientSettings 业务分站配置表
 type ClientSettings struct {
-	ID                    uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	SiteTitle             string    `gorm:"type:varchar(160);default:'Reveria AI 算力中心';not null" json:"site_title"`
-	SiteAnnouncement      string    `gorm:"type:text;default:'';not null" json:"site_announcement"`
-	UpstreamAPIURL        string    `gorm:"type:varchar(255);not null" json:"upstream_api_url"`
-	UpstreamAPIKey        string    `gorm:"type:text;not null" json:"upstream_api_key"`
-	AllowUserRegister     bool      `gorm:"default:true;not null" json:"allow_user_register"`
-	GiftCreditsOnRegister int64     `gorm:"default:0;not null" json:"gift_credits_on_register"`
-	PriceRate             float64   `gorm:"type:numeric(4,2);default:1.00;not null" json:"price_rate"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ID                      uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	SiteTitle               string     `gorm:"type:varchar(160);default:'Reveria AI 算力中心';not null" json:"site_title"`
+	SiteAnnouncement        string     `gorm:"type:text;default:'';not null" json:"site_announcement"`
+	UpstreamAPIURL          string     `gorm:"type:varchar(255);not null" json:"upstream_api_url"`
+	UpstreamAPIKey          string     `gorm:"type:text;not null" json:"upstream_api_key"`
+	AllowUserRegister       bool       `gorm:"default:true;not null" json:"allow_user_register"`
+	GiftCreditsOnRegister   int64      `gorm:"default:0;not null" json:"gift_credits_on_register"`
+	PriceRate               float64    `gorm:"type:numeric(4,2);default:1.00;not null" json:"price_rate"`
+	UpstreamCircuitOpenedAt *time.Time `gorm:"index" json:"upstream_circuit_opened_at"`
+	UpstreamCircuitReason   string     `gorm:"type:varchar(255);default:'';not null" json:"upstream_circuit_reason"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 // Plan 订阅套餐表

@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"reveria/services/api/database"
 	"reveria/services/api/model"
+	"reveria/services/api/service"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -39,6 +41,7 @@ func StartTaskWorker(ctx context.Context) {
 				dispatchPendingTasks(ctx)
 				recoverPollingTasks(ctx)
 				recoverStaleSettlements()
+				recoverRefundingTasks()
 			}
 		}()
 	})
@@ -117,22 +120,85 @@ func renewTaskLease(taskID uuid.UUID) bool {
 }
 
 func recoverStaleSettlements() {
-	cutoff := time.Now().Add(-5 * time.Minute)
 	var tasks []model.GenerationTask
-	if err := database.DB.Where("status = ? AND started_at < ?", "settling", cutoff).Limit(20).Find(&tasks).Error; err != nil {
+	if err := database.DB.Where("status = ?", "settling").Limit(20).Find(&tasks).Error; err != nil {
 		return
 	}
 	for _, task := range tasks {
-		if task.TaskType == "text" && task.FrozenCredits == 0 && task.OutputPayload != nil {
-			if err := completeSettledTextTask(task); err != nil {
-				log.Printf("[TaskWorker] 恢复文本任务 %s 终态失败: %v", task.ID, err)
-			}
-			continue
+		retrySettlingTask(task)
+	}
+}
+
+func retrySettlingTask(task model.GenerationTask) {
+	if task.TaskType == "text" && task.FrozenCredits == 0 && task.OutputPayload != nil {
+		if err := completeSettledTextTask(task); err != nil {
+			log.Printf("[TaskWorker] 恢复文本任务 %s 终态失败: %v", task.ID, err)
 		}
+		return
+	}
+	var assetCount int64
+	if err := database.DB.Model(&model.Asset{}).Where("task_id = ?", task.ID).Count(&assetCount).Error; err != nil {
+		return
+	}
+	if assetCount == 0 {
 		result := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Update("status", "running")
 		if result.Error == nil && result.RowsAffected == 1 {
-			handleTaskFailure(task.ID, "SETTLEMENT_INTERRUPTED", "任务结算中断，已执行补偿处理")
+			handleTaskFailure(task.ID, "SETTLEMENT_INTERRUPTED", "任务结算中断且未保存生成结果，已执行补偿退款")
 		}
+		return
+	}
+	if task.FrozenCredits == 0 {
+		now := time.Now()
+		_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
+			Updates(map[string]any{"status": "succeeded", "completed_at": now}).Error
+		return
+	}
+	if task.UserID == nil {
+		log.Printf("[TaskWorker] 结算任务 %s 缺少用户，无法重试扣费", task.ID)
+		return
+	}
+	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
+	if err := service.GetBillingService().SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, consumeReason, &task); err != nil {
+		log.Printf("[TaskWorker] 重试结算任务 %s 失败: %v", task.ID, err)
+		return
+	}
+	now := time.Now()
+	if err := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
+		Updates(map[string]any{"status": "succeeded", "completed_at": now}).Error; err != nil {
+		log.Printf("[TaskWorker] 结算成功但回写任务 %s 终态失败: %v", task.ID, err)
+	}
+}
+
+func recoverRefundingTasks() {
+	var tasks []model.GenerationTask
+	if err := database.DB.Where("status = ?", "refunding").Limit(20).Find(&tasks).Error; err != nil {
+		return
+	}
+	for _, task := range tasks {
+		if task.FrozenCredits > 0 {
+			actorID := uuid.Nil
+			if task.UserID != nil {
+				actorID = *task.UserID
+			}
+			reason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", task.ID.String())
+			if err := service.GetBillingService().RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, reason, &task); err != nil {
+				log.Printf("[TaskWorker] 重试退款任务 %s 失败: %v", task.ID, err)
+				continue
+			}
+		}
+		cleanupTaskAssets(task.ID)
+		errorCode := "REFUND_RECOVERED"
+		errorMsg := "任务失败后的退款已补齐"
+		if task.ErrorCode != nil {
+			errorCode = *task.ErrorCode
+		}
+		if task.ErrorMessage != nil {
+			errorMsg = *task.ErrorMessage
+		}
+		now := time.Now()
+		_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "refunding").Updates(map[string]any{
+			"status": "failed", "error_code": errorCode, "error_message": errorMsg, "completed_at": now,
+		}).Error
 	}
 }
 
@@ -185,6 +251,11 @@ func dispatchPendingTasks(ctx context.Context) {
 		if err := database.DB.First(&settings).Error; err != nil {
 			<-taskSlots
 			handleTaskFailure(task.ID, "SETTINGS_UNAVAILABLE", "无法加载上游配置")
+			continue
+		}
+		if settings.UpstreamCircuitOpenedAt != nil {
+			<-taskSlots
+			handleTaskFailure(task.ID, "UPSTREAM_CIRCUIT_OPEN", upstreamCircuitMessage)
 			continue
 		}
 		task.Status = "dispatching"

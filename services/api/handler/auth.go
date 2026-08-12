@@ -170,10 +170,10 @@ func RegisterUser(c *gin.Context) {
 		UpdatedAt:    time.Now(),
 	}
 
-	// 若系统是第一个注册的用户，则默认设为平台超管
+	// 仅开发环境，或显式允许引导时，才把首位注册用户升为平台超管。
 	var totalUsers int64
 	tx.Model(&model.User{}).Count(&totalUsers)
-	if totalUsers == 0 {
+	if totalUsers == 0 && shouldBootstrapFirstAdmin() {
 		user.IsPlatformAdmin = true
 	}
 
@@ -421,4 +421,11 @@ func LogoutUser(c *gin.Context) {
 // RefreshSession 刷新登录态 Token (POST /auth/refresh)
 func RefreshSession(c *gin.Context) {
 	rotateAuthSession(c)
+}
+
+func shouldBootstrapFirstAdmin() bool {
+	if os.Getenv("REVERIA_BOOTSTRAP_FIRST_ADMIN") == "true" {
+		return true
+	}
+	return os.Getenv("REVERIA_ENV") != "production" && os.Getenv("GIN_MODE") != "release"
 }

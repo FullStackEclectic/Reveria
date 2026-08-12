@@ -1,6 +1,7 @@
 import React, { FormEvent, useState } from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
 import { API_BASE } from "../../utils";
+import { PRIVACY_POLICY, TERMS_OF_SERVICE } from "../../legalTexts";
 import "./LoginView.css";
 
 interface LoginViewProps {
@@ -34,6 +35,7 @@ export function LoginView({
 }: LoginViewProps) {
   // 服务条款勾选状态（仿美图设计室大厂合规规范）
   const [agreementChecked, setAgreementChecked] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<null | "terms" | "privacy">(null);
 
   const overlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && onClose) {
@@ -200,8 +202,11 @@ export function LoginView({
                   style={{ width: "14px", height: "14px" }}
                 />
                 <span>
-                  我已阅读并同意 <a href="#" onClick={(e) => { e.preventDefault(); alert("《Reveria用户协议》：在此为您提供安全合规的创意服务。"); }}>用户协议</a>、
-                  <a href="#" onClick={(e) => { e.preventDefault(); alert("《Reveria隐私保护政策》：我们承诺保护您的账户隐私安全。"); }}>隐私政策</a> 和账号规则
+                  我已阅读并同意{" "}
+                  <button type="button" className="legal-link" onClick={() => setLegalDoc("terms")}>用户协议</button>
+                  、
+                  <button type="button" className="legal-link" onClick={() => setLegalDoc("privacy")}>隐私政策</button>
+                  {" "}和账号规则
                 </span>
               </label>
 
@@ -228,6 +233,19 @@ export function LoginView({
         </div>
         
       </section>
+      {legalDoc && (
+        <div className="legal-modal-overlay" onClick={() => setLegalDoc(null)}>
+          <div className="legal-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="legal-modal-header">
+              <h2>{legalDoc === "terms" ? "用户协议" : "隐私政策"}</h2>
+              <button type="button" className="legal-modal-close" onClick={() => setLegalDoc(null)} aria-label="关闭">
+                <X size={16} />
+              </button>
+            </div>
+            <pre className="legal-modal-body">{legalDoc === "terms" ? TERMS_OF_SERVICE : PRIVACY_POLICY}</pre>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

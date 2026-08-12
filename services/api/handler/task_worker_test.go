@@ -85,3 +85,47 @@ func TestSettlementClaimClearsWorkerLease(t *testing.T) {
 		t.Fatalf("结算抢占后租约未清理: %#v", claimed)
 	}
 }
+
+func TestRetrySettlingTaskKeepsAssetsWhenAlreadyCharged(t *testing.T) {
+	previousDB, previousSQLite := database.DB, database.IsSQLite
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.DB, database.IsSQLite = db, true
+	t.Cleanup(func() { database.DB, database.IsSQLite = previousDB, previousSQLite })
+	if err := db.AutoMigrate(&model.GenerationTask{}, &model.Asset{}); err != nil {
+		t.Fatal(err)
+	}
+
+	userID := uuid.New()
+	task := model.GenerationTask{
+		ID: uuid.New(), WorkspaceID: uuid.New(), ProjectID: uuid.New(), UserID: &userID,
+		TaskType: "image_generation", InputPayload: `{}`, Status: "settling", FrozenCredits: 0,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	asset := model.Asset{
+		ID: uuid.New(), WorkspaceID: task.WorkspaceID, ProjectID: task.ProjectID,
+		TaskID: &task.ID, FileURL: "/api/files/demo.jpg", AssetType: "image", Source: "generated",
+	}
+	if err := db.Create(&asset).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	retrySettlingTask(task)
+	if err := db.First(&task, "id = ?", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != "succeeded" {
+		t.Fatalf("已落盘且已扣费的 settling 任务应标为 succeeded，实际 %s", task.Status)
+	}
+	var assetCount int64
+	if err := db.Model(&model.Asset{}).Where("task_id = ?", task.ID).Count(&assetCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if assetCount != 1 {
+		t.Fatalf("成片不应被删除，实际 %d", assetCount)
+	}
+}

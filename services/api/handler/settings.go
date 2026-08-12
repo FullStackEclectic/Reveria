@@ -16,7 +16,10 @@ func sanitizedClientSettings(settings model.ClientSettings) gin.H {
 		"allow_user_register": settings.AllowUserRegister, "gift_credits_on_register": settings.GiftCreditsOnRegister,
 		"price_rate": settings.PriceRate, "upstream_api_url": settings.UpstreamAPIURL,
 		"upstream_api_key": "", "upstream_api_key_configured": strings.TrimSpace(settings.UpstreamAPIKey) != "",
-		"created_at": settings.CreatedAt, "updated_at": settings.UpdatedAt,
+		"upstream_circuit_open":      settings.UpstreamCircuitOpenedAt != nil,
+		"upstream_circuit_reason":    settings.UpstreamCircuitReason,
+		"upstream_circuit_opened_at": settings.UpstreamCircuitOpenedAt,
+		"created_at":                 settings.CreatedAt, "updated_at": settings.UpdatedAt,
 	}
 }
 
@@ -35,7 +38,10 @@ func GetClientSettings(c *gin.Context) {
 
 // UpdateClientSettings 更新站长配置 (POST /api/admin/settings)
 func UpdateClientSettings(c *gin.Context) {
-	var req model.ClientSettings
+	var req struct {
+		model.ClientSettings
+		ClearUpstreamCircuit bool `json:"clear_upstream_circuit"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "输入格式有误"})
 		return
@@ -47,16 +53,22 @@ func UpdateClientSettings(c *gin.Context) {
 		return
 	}
 
-	// 更新字段
+	keyChanged := strings.TrimSpace(req.UpstreamAPIKey) != ""
+	urlChanged := strings.TrimSpace(req.UpstreamAPIURL) != "" && req.UpstreamAPIURL != settings.UpstreamAPIURL
+
 	settings.SiteTitle = req.SiteTitle
 	settings.SiteAnnouncement = req.SiteAnnouncement
 	settings.UpstreamAPIURL = req.UpstreamAPIURL
-	if strings.TrimSpace(req.UpstreamAPIKey) != "" {
+	if keyChanged {
 		settings.UpstreamAPIKey = strings.TrimSpace(req.UpstreamAPIKey)
 	}
 	settings.AllowUserRegister = req.AllowUserRegister
 	settings.GiftCreditsOnRegister = req.GiftCreditsOnRegister
 	settings.PriceRate = req.PriceRate
+	if req.ClearUpstreamCircuit || keyChanged || urlChanged {
+		settings.UpstreamCircuitOpenedAt = nil
+		settings.UpstreamCircuitReason = ""
+	}
 
 	if err := database.DB.Save(&settings).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "保存失败: " + err.Error()})
