@@ -16,13 +16,13 @@
 | `packages/shared`（React 共享层） | 可用 | admin / asset / auth / credits / customer / dashboard / history / portal / project / square 十个域，无限画布、工作流控制台、模型广场均已打通 |
 | `apps/desktop`（Wails） | 可用 | 开发模式默认连本地 `http://localhost:4100`，生产构建需显式指定云端 API |
 | `apps/web-next`（Next.js） | 可用 | Web 主站 + `/admin` 独立控制台 |
-| `packages/native-engine`（Rust DLL） | 骨架 | `lib.rs` 仅 4KB，release DLL 已产出，尚未承载实际精修算法 |
+| `packages/native-engine`（Rust DLL） | 可用 | 已实现真实图片解码/编码、并行调色、肤色保护双边磨皮、中性灰磨皮、HSL/曲线/分离色调、几何裁剪与 `.cube` LUT；桌面端按能力自动走 Rust 全分辨率导出 |
 | 图像精修工作台 | 主开发线 | 详见第二节 |
 
 ### 全局技术债
 
 - [ ] **数据库与路线图不一致**：路线图定义云端主库为 PostgreSQL，当前实际运行在 SQLite（`services/api/reveria.db`）。需明确是保留 SQLite 作为单机形态、还是补齐 PostgreSQL 迁移路径
-- [ ] **Rust 原生引擎空转**：高精度磨皮、批量导出等重算力任务仍在前端 WebGL / WASM 完成，`packages/native-engine` 未通过 syscall 承接任何生产逻辑
+- [x] **Rust 原生引擎接入**：采用 JSON C ABI 避免 Windows x64 浮点调用约定问题；支持全局调色、肤色磨皮、HSL、曲线、分离色调、几何与 `.cube` LUT，桌面端对支持的设置从原始素材执行全分辨率导出，复杂 Face Mesh / 局部蒙版 / 背景合成自动回退 WebGL
 - [x] **仓库清理**：已确认 `*.exe` 受 `.gitignore` 保护，并移除 `services/api` 下 `api.exe` / `main.exe` / `reveria_api.exe` / `test_bin.exe` 共约 180MB 编译产物；同时忽略 TypeScript 增量构建缓存
 - [x] **调试文件收敛**：已删除位于 Go module 外且无法直接构建的根目录 `debug_db.go`，保留带 `//go:build ignore` 的 `services/api/debug_db.go` 作为按需诊断工具
 
@@ -82,7 +82,7 @@
 
 ### 2.6 P2 — 人像精修进阶（对标像素蛋糕）
 
-- [ ] 中性灰磨皮模式（保留皮肤纹理的专业级磨皮），评估是否下沉到 `packages/native-engine`
+- [x] 中性灰磨皮模式（保留皮肤纹理的专业级磨皮），WebGL 实时预览与 Rust 全分辨率导出均已实现
 - [x] 液化工具：推拉 / 收缩 / 膨胀 / 还原（`LiquifyOverlay` 采集笔画并烘焙位移贴图，参数随精修设置持久化）
 - [ ] 面部精调：皮肤色调 / 纹理 / 高光独立参数
 - [ ] 五官精调：下巴宽度、鼻子宽度与长度、嘴巴宽度

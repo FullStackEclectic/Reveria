@@ -14,10 +14,13 @@ import {
 } from "./retouch/localMasks";
 import type { LutData } from "./retouch/lut";
 import { FacePoints } from "../../utils/faceMesh";
+import { calculateHistogram, type ImageHistogram } from "./retouch/histogram";
+import { exportDecoratedCanvas } from "./retouch/outputDecorations";
 
 export interface RetouchRendererHandle {
   exportImage: (format?: "jpeg" | "png" | "webp", quality?: number) => string | null;
   sampleColor: (x: number, y: number) => [number, number, number] | null;
+  getHistogram: () => ImageHistogram | null;
 }
 
 interface Props {
@@ -105,6 +108,26 @@ function applyUniforms(
   gl.uniform1f(locs["u_dehaze"],       z ? 0 : s.dehaze);
   gl.uniform1f(locs["u_clarity"],      z ? 0 : s.clarity);
   gl.uniform1f(locs["u_sharpness"],    z ? 0 : s.sharpness);
+  gl.uniform1f(locs["u_grain_amount"], z ? 0 : s.grain_amount);
+  gl.uniform1f(locs["u_grain_size"], s.grain_size);
+  gl.uniform1f(locs["u_grain_roughness"], s.grain_roughness);
+  gl.uniform1f(locs["u_lens_distortion"], z ? 0 : s.lens_distortion);
+  gl.uniform1f(locs["u_vignette_amount"], z ? 0 : s.vignette_amount);
+  gl.uniform1f(locs["u_vignette_midpoint"], s.vignette_midpoint);
+  gl.uniform1f(locs["u_vignette_feather"], s.vignette_feather);
+  gl.uniform1f(locs["u_vignette_roundness"], s.vignette_roundness);
+  gl.uniform1f(locs["u_body_center_x"], s.body_center_x);
+  gl.uniform1f(locs["u_body_waist_y"], s.body_waist_y);
+  gl.uniform1f(locs["u_body_waist"], z ? 0 : s.body_waist);
+  gl.uniform1f(locs["u_body_shoulders"], z ? 0 : s.body_shoulders);
+  gl.uniform1f(locs["u_body_hips"], z ? 0 : s.body_hips);
+  gl.uniform1f(locs["u_body_legs"], z ? 0 : s.body_legs);
+  gl.uniform1f(locs["u_body_leg_length"], z ? 0 : s.body_leg_length);
+  gl.uniform1f(locs["u_border_enabled"], !z && s.border_enabled ? 1 : 0);
+  gl.uniform1f(locs["u_border_size"], s.border_size);
+  gl.uniform1f(locs["u_border_radius"], s.border_radius);
+  const [borderRed, borderGreen, borderBlue] = parseHexColor(s.border_color);
+  gl.uniform3f(locs["u_border_color"], borderRed, borderGreen, borderBlue);
   gl.uniform1f(locs["u_rotation"], s.rotation);
   gl.uniform1f(locs["u_flip_horizontal"], s.flip_horizontal);
   gl.uniform1f(locs["u_flip_vertical"], s.flip_vertical);
@@ -270,7 +293,7 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
     exportImage(format = "jpeg", quality = 0.95) {
       const canvas = canvasRef.current;
       if (!canvas) return null;
-      return canvas.toDataURL(`image/${format}`, quality);
+      return exportDecoratedCanvas(canvas, settings, format, quality);
     },
     sampleColor(x, y) {
       const sourceCanvas = sourceCanvasRef.current;
@@ -280,6 +303,18 @@ export const RetouchRenderer = forwardRef<RetouchRendererHandle, Props>(
       const py = Math.min(sourceCanvas.height - 1, Math.max(0, Math.round(y * (sourceCanvas.height - 1))));
       const pixel = context.getImageData(px, py, 1, 1).data;
       return [pixel[0] / 255, pixel[1] / 255, pixel[2] / 255];
+    },
+    getHistogram() {
+      const canvas = canvasRef.current;
+      if (!canvas || canvas.width <= 0 || canvas.height <= 0) return null;
+      const sample = document.createElement("canvas");
+      const scale = Math.min(1, 256 / Math.max(canvas.width, canvas.height));
+      sample.width = Math.max(1, Math.round(canvas.width * scale));
+      sample.height = Math.max(1, Math.round(canvas.height * scale));
+      const context = sample.getContext("2d", { willReadFrequently: true });
+      if (!context) return null;
+      context.drawImage(canvas, 0, 0, sample.width, sample.height);
+      return calculateHistogram(context.getImageData(0, 0, sample.width, sample.height).data);
     },
   }));
 

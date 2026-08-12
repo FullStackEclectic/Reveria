@@ -10,6 +10,10 @@ export function ExportRetouchedImage(arg1, arg2, arg3, arg4, arg5, arg6, arg7, a
   return window['go']['main']['App']['ExportRetouchedImage'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
 }
 
+export function ExportRetouchedImageNative(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ExportRetouchedImageNative'](arg1, arg2, arg3, arg4);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

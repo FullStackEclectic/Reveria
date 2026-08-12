@@ -1,4 +1,4 @@
-Write-Host "==================================================" -ForegroundColor Cyan
+﻿Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "           Reveria 本地环境初始化脚本             " -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
@@ -40,6 +40,14 @@ if (Get-Command wails -ErrorAction SilentlyContinue) {
     } else {
         Write-Host "[!] 请确保 Go bin 目录（通常为 `$HOME/go/bin` 或 `%USERPROFILE%\go\bin`）已加入系统环境变量 PATH 中。" -ForegroundColor Yellow
     }
+}
+
+# Rust 原生图像引擎缺失时桌面端仍可回退 WebGL，但无法使用全分辨率本地处理。
+if (Get-Command cargo -ErrorAction SilentlyContinue) {
+    $cargoVer = cargo --version
+    Write-Host "[✓] 找到 Rust 工具链: $cargoVer" -ForegroundColor Green
+} else {
+    Write-Host "[!] 未找到 Cargo，桌面端将无法启用 Rust 全分辨率导出" -ForegroundColor Yellow
 }
 
 # 4. 初始化环境变量文件

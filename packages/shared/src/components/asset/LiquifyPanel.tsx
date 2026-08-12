@@ -2,6 +2,8 @@ import React from "react";
 import { Hand, Maximize2, Minimize2, Undo2 } from "lucide-react";
 import { MAX_LIQUIFY_STROKES } from "./editorConstants";
 import type { LiquifyTool } from "./LiquifyOverlay";
+import { SliderItem } from "./SliderItem";
+import type { RetouchSettings } from "./editorConstants";
 
 interface Props {
   tool: LiquifyTool;
@@ -12,6 +14,9 @@ interface Props {
   onBrushSizeChange: (size: number) => void;
   onStrengthChange: (strength: number) => void;
   onClear: () => void;
+  settings: RetouchSettings;
+  onBodyChange: (key: keyof RetouchSettings, value: number) => void;
+  onBodyCommit: () => void;
 }
 
 const TOOLS: { id: LiquifyTool; label: string; icon: React.ReactNode; hint: string }[] = [
@@ -24,6 +29,7 @@ const TOOLS: { id: LiquifyTool; label: string; icon: React.ReactNode; hint: stri
 export function LiquifyPanel({
   tool, brushSize, strength, strokeCount,
   onToolChange, onBrushSizeChange, onStrengthChange, onClear,
+  settings, onBodyChange, onBodyCommit,
 }: Props) {
   return (
     <div className="adjustment-subview">
@@ -72,6 +78,25 @@ export function LiquifyPanel({
       <button className="panel-clear-btn" disabled={strokeCount === 0} onClick={onClear}>
         清除全部液化
       </button>
+
+      <section className="adjustment-group body-shape-group">
+        <h4 className="group-header">身体塑形</h4>
+        <p className="professional-help-text">先用主体中心与腰线适配构图，再调节塑形参数；复杂姿态可继续使用上方液化笔刷精修。</p>
+        <SliderItem label="主体中心" value={settings.body_center_x} min={0} max={100}
+          onChange={(value) => onBodyChange("body_center_x", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="腰线位置" value={settings.body_waist_y} min={10} max={90}
+          onChange={(value) => onBodyChange("body_waist_y", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="瘦腰" value={settings.body_waist} min={-100} max={100}
+          onChange={(value) => onBodyChange("body_waist", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="肩宽" value={settings.body_shoulders} min={-100} max={100}
+          onChange={(value) => onBodyChange("body_shoulders", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="胯宽" value={settings.body_hips} min={-100} max={100}
+          onChange={(value) => onBodyChange("body_hips", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="瘦腿" value={settings.body_legs} min={-100} max={100}
+          onChange={(value) => onBodyChange("body_legs", value)} onAutoSave={onBodyCommit} />
+        <SliderItem label="腿长" value={settings.body_leg_length} min={-100} max={100}
+          onChange={(value) => onBodyChange("body_leg_length", value)} onAutoSave={onBodyCommit} />
+      </section>
     </div>
   );
 }

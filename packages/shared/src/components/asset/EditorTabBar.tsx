@@ -1,8 +1,8 @@
 import React from "react";
-import { Blend, Eraser, ImageMinus, Scissors, Sparkles, Sun, User } from "lucide-react";
+import { Blend, Eraser, ImageMinus, Scissors, SlidersHorizontal, Sparkles, Sun, User } from "lucide-react";
 import type { CanvasTool } from "./CanvasToolbar";
 
-export type EditorTab = "portrait" | "color" | "local" | "mask" | "liquify" | "erase" | "background";
+export type EditorTab = "portrait" | "color" | "professional" | "local" | "mask" | "liquify" | "erase" | "background";
 
 interface Props {
   activeTab: EditorTab;
@@ -12,6 +12,7 @@ interface Props {
 
 const TABS: Array<{ id: EditorTab; label: string; tool: CanvasTool; icon: React.ElementType }> = [
   { id: "color", label: "调色", tool: "move", icon: Sun },
+  { id: "professional", label: "专业", tool: "move", icon: SlidersHorizontal },
   { id: "local", label: "修复", tool: "healing", icon: Scissors },
   { id: "mask", label: "蒙版", tool: "mask", icon: Blend },
   { id: "portrait", label: "人像", tool: "move", icon: User },

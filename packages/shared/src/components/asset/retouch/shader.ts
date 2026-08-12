@@ -3,6 +3,7 @@ import { buildFacePointDefines, FACE_POINT_VEC4_COUNT } from "./faceUniforms";
 import { GLSL_COMMON } from "./glsl/common";
 import { GLSL_PORTRAIT_WARP } from "./glsl/portraitWarp";
 import { GLSL_PORTRAIT_COLOR } from "./glsl/portraitColor";
+import { GLSL_BODY_WARP } from "./glsl/bodyWarp";
 import { LIQUIFY_MAX_SHIFT, MAX_CLONE_STAMPS, MAX_HEALING_SPOTS, MAX_LOCAL_MASKS } from "./settings";
 import { LOCAL_MASK_ATLAS_COLUMNS, LOCAL_MASK_ATLAS_ROWS, LOCAL_MASK_TILE_SIZE } from "./localMasks";
 
@@ -43,6 +44,25 @@ const UNIFORM_DECLARATIONS = `
   uniform float u_dehaze;
   uniform float u_clarity;
   uniform float u_sharpness;
+  uniform float u_grain_amount;
+  uniform float u_grain_size;
+  uniform float u_grain_roughness;
+  uniform float u_lens_distortion;
+  uniform float u_vignette_amount;
+  uniform float u_vignette_midpoint;
+  uniform float u_vignette_feather;
+  uniform float u_vignette_roundness;
+  uniform float u_body_center_x;
+  uniform float u_body_waist_y;
+  uniform float u_body_waist;
+  uniform float u_body_shoulders;
+  uniform float u_body_hips;
+  uniform float u_body_legs;
+  uniform float u_body_leg_length;
+  uniform float u_border_enabled;
+  uniform float u_border_size;
+  uniform float u_border_radius;
+  uniform vec3 u_border_color;
   // 几何
   uniform float u_rotation;
   uniform float u_flip_horizontal;
@@ -210,6 +230,17 @@ const MAIN_SOURCE = `
     else if (u_rotation < 1.5) sampleCoord = vec2(displayCoord.y, 1.0 - displayCoord.x);
     else if (u_rotation < 2.5) sampleCoord = vec2(1.0 - displayCoord.x, 1.0 - displayCoord.y);
     else sampleCoord = vec2(1.0 - displayCoord.y, displayCoord.x);
+
+    // 镜头畸变校正：负值校正桶形，正值校正枕形。
+    if (abs(u_lens_distortion) > 0.001) {
+      vec2 lensDelta = sampleCoord - 0.5;
+      lensDelta.x *= aspect;
+      float radius2 = dot(lensDelta, lensDelta);
+      float lensScale = 1.0 + u_lens_distortion * 0.004 * radius2;
+      lensDelta *= lensScale;
+      lensDelta.x /= aspect;
+      sampleCoord = clamp(0.5 + lensDelta, 0.0, 1.0);
+    }
 
     // 液化：手绘位移贴图，笔画数不受 uniform 数量限制
     if (u_liquify_enabled > 0.5) {
@@ -381,6 +412,8 @@ const MAIN_SOURCE = `
       if (abs(float(localIndex) - u_local_preview_index) < 0.25) previewMask = mask;
     }
 
+    sampleCoord = clamp(applyBodyWarp(sampleCoord, aspect), 0.0, 1.0);
+
     if (u_local_preview_enabled > 0.5 && previewMask > 0.001) {
       rgb = mix(rgb, vec3(1.0, 0.12, 0.08), previewMask * 0.38);
     }
@@ -426,7 +459,44 @@ const MAIN_SOURCE = `
         finalAlpha = 1.0;
       }
     }
-    gl_FragColor = vec4(finalRgb, finalAlpha);
+    // 暗角在背景合成后执行，使替换后的背景与主体保持统一光学观感。
+    if (abs(u_vignette_amount) > 0.001) {
+      vec2 vignetteCoord = abs(v_texCoord - 0.5) * 2.0;
+      float roundness = u_vignette_roundness * 0.005;
+      vignetteCoord.x *= mix(1.0, u_texSize.x / max(u_texSize.y, 1.0), roundness);
+      float vignetteDistance = length(vignetteCoord) / 1.41421356;
+      float midpoint = mix(0.12, 0.82, u_vignette_midpoint * 0.01);
+      float feather = mix(0.02, 0.72, u_vignette_feather * 0.01);
+      float vignetteMask = smoothstep(midpoint, midpoint + feather, vignetteDistance);
+      float amount = u_vignette_amount * 0.008 * vignetteMask;
+      finalRgb = amount >= 0.0
+        ? finalRgb * (1.0 - amount)
+        : 1.0 - (1.0 - finalRgb) * (1.0 + amount);
+    }
+
+    // 胶片颗粒由输出像素坐标生成，不随缩放预览改变颗粒密度。
+    if (u_grain_amount > 0.001) {
+      float grainScale = mix(1.8, 0.18, u_grain_size * 0.01);
+      vec2 grainCoord = floor(gl_FragCoord.xy * grainScale);
+      float fineNoise = fract(sin(dot(grainCoord, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+      float coarseNoise = fract(sin(dot(floor(grainCoord * 0.37), vec2(39.3468, 11.135))) * 24634.6345) - 0.5;
+      float noise = mix(fineNoise, coarseNoise, u_grain_roughness * 0.01);
+      float midtoneProtection = 0.55 + 0.45 * (1.0 - abs(luma(finalRgb) - 0.5) * 2.0);
+      finalRgb += noise * u_grain_amount * 0.0032 * midtoneProtection;
+    }
+
+    if (u_border_enabled > 0.5 && u_border_size > 0.001) {
+      float borderWidth = u_border_size * 0.005;
+      float radius = u_border_radius * 0.004;
+      vec2 innerHalf = vec2(max(0.01, 0.5 - borderWidth));
+      vec2 rounded = abs(v_texCoord - 0.5) - innerHalf + radius;
+      float innerDistance = length(max(rounded, 0.0)) + min(max(rounded.x, rounded.y), 0.0) - radius;
+      float borderMask = smoothstep(-0.0025, 0.0025, innerDistance);
+      finalRgb = mix(finalRgb, u_border_color, borderMask);
+      finalAlpha = mix(finalAlpha, 1.0, borderMask);
+    }
+
+    gl_FragColor = vec4(clamp(finalRgb, 0.0, 1.0), finalAlpha);
   }
 `;
 
@@ -452,6 +522,7 @@ export const FS_SOURCE = [
   GLSL_COMMON,
   GLSL_HSL_CHANNEL,
   GLSL_LOCAL_MASKS,
+  GLSL_BODY_WARP,
   GLSL_PORTRAIT_WARP,
   GLSL_PORTRAIT_COLOR,
   MAIN_SOURCE,
@@ -463,6 +534,12 @@ export const UNIFORM_NAMES = [
   "u_exposure", "u_contrast", "u_highlights", "u_shadows", "u_whites", "u_blacks",
   "u_saturation", "u_vibrance", "u_temperature", "u_tint", "u_dehaze",
   "u_clarity", "u_sharpness",
+  "u_grain_amount", "u_grain_size", "u_grain_roughness",
+  "u_lens_distortion",
+  "u_vignette_amount", "u_vignette_midpoint", "u_vignette_feather", "u_vignette_roundness",
+  "u_body_center_x", "u_body_waist_y", "u_body_waist", "u_body_shoulders",
+  "u_body_hips", "u_body_legs", "u_body_leg_length",
+  "u_border_enabled", "u_border_size", "u_border_radius", "u_border_color",
   "u_rotation", "u_flip_horizontal", "u_flip_vertical",
   "u_crop_x", "u_crop_y", "u_crop_width", "u_crop_height",
   "u_hsl_red_h",     "u_hsl_red_s",     "u_hsl_red_l",

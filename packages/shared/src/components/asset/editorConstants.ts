@@ -26,6 +26,7 @@ export type {
   LocalMaskAdjustments,
   LocalMask,
   BackgroundMode,
+  WatermarkPosition,
   LiquifyMode,
   LiquifyStroke,
   RetouchSettings,

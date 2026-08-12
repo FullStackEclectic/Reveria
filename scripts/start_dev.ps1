@@ -1,4 +1,4 @@
-$ProjectRoot = $PWD.Path
+﻿$ProjectRoot = $PWD.Path
 if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\pnpm-workspace.yaml")) {
     $ProjectRoot = (Get-Item "$PSScriptRoot\..").FullName
 }
@@ -33,6 +33,17 @@ if (Test-Path $EnvFile) {
 if ([string]::IsNullOrWhiteSpace($env:DATABASE_TYPE)) {
     $env:DATABASE_TYPE = "sqlite"
     $env:DATABASE_URL = "reveria.db"
+}
+
+if (Get-Command cargo -ErrorAction SilentlyContinue) {
+    Write-Host "Building Rust native image engine..."
+    & cargo build --release --manifest-path (Join-Path $ProjectRoot "packages/native-engine/Cargo.toml")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Rust 原生图像引擎构建失败。"
+        exit 1
+    }
+} else {
+    Write-Warning "未找到 Cargo，桌面端将回退到 WebGL 导出。"
 }
 
 Write-Host "Starting Go Backend..."

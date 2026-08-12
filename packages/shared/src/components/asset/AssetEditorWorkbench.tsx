@@ -8,32 +8,29 @@ import {
   type CurveKey, type CurvePoints, type PortraitParamKey
 } from "./editorConstants";
 import { ROLE_PRESET_MAP, type PortraitRole } from "./retouch/rolePresets";
-import { PortraitAdjustments } from "./PortraitAdjustments";
-import { ColorAdjustments } from "./ColorAdjustments";
 import { useRetouchPresets } from "./useRetouchPresets";
 import { useLutLibrary } from "./useLutLibrary";
 import { CropOverlay, CropRect } from "./CropOverlay";
 import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar";
 import { GuideOverlay, type GuideKind } from "./GuideOverlay";
 import { LiquifyOverlay, type LiquifyTool } from "./LiquifyOverlay";
-import { LiquifyPanel } from "./LiquifyPanel";
 import { EraseOverlay, type EraseMaskCircle, type EraseMode } from "./EraseOverlay";
-import { ErasePanel, type EraseIntent } from "./ErasePanel";
-import { BackgroundPanel } from "./BackgroundPanel";
+import { type EraseIntent } from "./ErasePanel";
 import { useBackgroundRemoval } from "./useBackgroundRemoval";
 import { useEraseTask } from "./useEraseTask";
 import { RetouchPresetPanel } from "./RetouchPresetPanel";
 import { HealingBrushOverlay } from "./HealingBrushOverlay";
-import { LocalHealingPanel } from "./LocalHealingPanel";
 import { CloneStampOverlay } from "./CloneStampOverlay";
-import { CloneStampPanel } from "./CloneStampPanel";
 import { AssetFilmstrip } from "./AssetFilmstrip";
 import { EditorHeader, type ExportFormat } from "./EditorHeader";
 import { EmptyAssetImporter } from "./EmptyAssetImporter";
 import { EditorTabBar, type EditorTab } from "./EditorTabBar";
-import { LocalMaskPanel } from "./LocalMaskPanel";
 import { LocalMaskOverlay } from "./LocalMaskOverlay";
 import { useLocalMasks } from "./useLocalMasks";
+import { WatermarkPreview } from "./WatermarkPreview";
+import { EditorAdjustmentContent } from "./EditorAdjustmentContent";
+import { preserveExifInJpeg } from "./retouch/exif";
+import type { ImageHistogram } from "./retouch/histogram";
 import "./AssetEditorWorkbench.css";
 
 export type { RetouchSettings } from "./editorConstants";
@@ -105,6 +102,7 @@ export function AssetEditorWorkbench({
   const [eraseIntent, setEraseIntent] = useState<EraseIntent>("erase");
   const [cloneSource, setCloneSource] = useState<{ x: number; y: number } | null>(null);
   const [cloneSampling, setCloneSampling] = useState(true);
+  const [histogram, setHistogram] = useState<ImageHistogram | null>(null);
   const rendererRef = useRef<RetouchRendererHandle>(null);
 
   // 当外部传入的 asset 改变时
@@ -253,6 +251,11 @@ export function AssetEditorWorkbench({
     }));
   };
 
+  const handleProfessionalChange = (key: keyof RetouchSettings, value: number | string) => {
+    settingsDirtyRef.current = true;
+    setSettings((prev) => normalizeRetouchSettings({ ...prev, [key]: value }));
+  };
+
   const handleCurveChange = (key: CurveKey, val: CurvePoints) => {
     settingsDirtyRef.current = true;
     setSettings((prev) => ({ ...prev, [key]: val }));
@@ -360,8 +363,15 @@ export function AssetEditorWorkbench({
     if (!currentAsset) return;
     setIsExporting(true);
     try {
-      const dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "png" ? undefined : 0.95);
+      let dataUrl = rendererRef.current?.exportImage(exportFormat, exportFormat === "png" ? undefined : 0.95);
       if (!dataUrl) throw new Error("无法读取渲染结果");
+      if (exportFormat === "jpeg" && settings.preserve_exif) {
+        try {
+          dataUrl = await preserveExifInJpeg(sourceUrl, dataUrl);
+        } catch (error) {
+          console.warn("保留 EXIF 失败，将导出不含 EXIF 的成片:", error);
+        }
+      }
       await onExportImage(currentAsset.id, settings, dataUrl, exportFormat);
     } finally {
       setIsExporting(false);
@@ -472,6 +482,12 @@ export function AssetEditorWorkbench({
 
   const activeLut = resolveLut(settings.lut_file);
 
+  useEffect(() => {
+    if (activeTab !== "professional" || !currentAsset) return;
+    const timer = window.setTimeout(() => setHistogram(rendererRef.current?.getHistogram() ?? null), 80);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, currentAsset?.id, settings, showOriginal]);
+
   const title = currentAsset ? assetTitle(currentAsset) : "";
 
   return (
@@ -543,6 +559,7 @@ export function AssetEditorWorkbench({
                   className={settings.background_mode === "transparent" ? "transparent-background" : undefined}
                   onError={setRenderError}
                 />
+                <WatermarkPreview settings={settings} hidden={showOriginal} />
                 {cropDraft && (
                   <CropOverlay
                     value={cropDraft}
@@ -648,109 +665,31 @@ export function AssetEditorWorkbench({
               </div>
             ) : (
               <>
-                {activeTab === "portrait" && (
-                  <PortraitAdjustments
-                    role={role}
-                    onSelectRole={handleSelectRole}
-                    settings={settings}
-                    faceDetected={facePoints !== null}
-                    onParamChange={handlePortraitParamChange}
-                    onCommit={() => handleAutoSave()}
-                  />
-                )}
-
-                {activeTab === "color" && (
-                  <ColorAdjustments
-                    settings={settings}
-                    handleSliderChange={handleSliderChange}
-                    handleCurveChange={handleCurveChange}
-                    handleAutoSave={handleAutoSave}
-                    lutEntries={lutEntries}
-                    onSelectLut={handleSelectLut}
-                    onImportLut={handleImportLut}
-                    onDeleteLut={deleteLut}
-                  />
-                )}
-
-                {activeTab === "local" && (
-                  activeCanvasTool === "clone" ? (
-                    <CloneStampPanel brushSize={healingBrushSize} strength={healingStrength}
-                      stampCount={settings.clone_stamps.length} hasSource={cloneSource !== null} samplingSource={cloneSampling}
-                      onBrushSizeChange={setHealingBrushSize} onStrengthChange={setHealingStrength}
-                      onSample={() => setCloneSampling(true)} onClear={() => handleCloneCommit([])} />
-                  ) : (
-                    <LocalHealingPanel brushSize={healingBrushSize} strength={healingStrength}
-                      spotCount={settings.healing_spots.length} onBrushSizeChange={setHealingBrushSize}
-                      onStrengthChange={setHealingStrength} onClear={() => handleHealingCommit([])} />
-                  )
-                )}
-
-                {activeTab === "liquify" && (
-                  <LiquifyPanel
-                    tool={liquifyTool}
-                    brushSize={liquifyBrushSize}
-                    strength={liquifyStrength}
-                    strokeCount={settings.liquify_strokes.length}
-                    onToolChange={setLiquifyTool}
-                    onBrushSizeChange={setLiquifyBrushSize}
-                    onStrengthChange={setLiquifyStrength}
-                    onClear={() => handleLiquifyCommit([])}
-                  />
-                )}
-
-                {activeTab === "mask" && (
-                  <LocalMaskPanel
-                    masks={settings.local_masks}
-                    selectedMaskId={localMasks.selectedMaskId}
-                    brushTool={localMasks.brushTool}
-                    brushSize={localMasks.brushSize}
-                    brushFlow={localMasks.brushFlow}
-                    showOverlay={localMasks.showOverlay}
-                    onAdd={localMasks.addMask}
-                    onSelect={(id) => { localMasks.setSelectedMaskId(id); setActiveCanvasTool("mask"); }}
-                    onChange={localMasks.changeMask}
-                    onCommit={localMasks.commitMask}
-                    onDelete={localMasks.deleteMask}
-                    onBrushToolChange={localMasks.setBrushTool}
-                    onBrushSizeChange={localMasks.setBrushSize}
-                    onBrushFlowChange={localMasks.setBrushFlow}
-                    onShowOverlayChange={localMasks.setShowOverlay}
-                  />
-                )}
-
-                {activeTab === "erase" && (
-                  <ErasePanel
-                    mode={eraseMode}
-                    brushSize={eraseBrushSize}
-                    maskCount={eraseMasks.length}
-                    intent={eraseIntent}
-                    onModeChange={setEraseMode}
-                    onBrushSizeChange={setEraseBrushSize}
-                    onIntentChange={setEraseIntent}
-                    onClear={() => { setEraseMasks([]); eraseTask.setTaskStatus(null); }}
-                    onSubmit={eraseTask.submit}
-                    isSubmitting={eraseTask.isSubmitting}
-                    taskStatus={eraseTask.taskStatus}
-                  />
-                )}
-
-                {activeTab === "background" && (
-                  <BackgroundPanel
-                    settings={settings}
-                    taskStatus={backgroundTask.taskStatus}
-                    errorMessage={backgroundTask.errorMessage}
-                    isSubmitting={backgroundTask.isSubmitting}
-                    isUploading={backgroundTask.isUploading}
-                    onSubmit={backgroundTask.submit}
-                    onUpload={backgroundTask.uploadBackground}
-                    onChange={(changes) => {
-                      settingsDirtyRef.current = true;
-                      setSettings((current) => normalizeRetouchSettings({ ...current, ...changes }));
-                    }}
-                    onCommit={commitBackground}
-                    onClear={() => commitBackground({ background_mode: "original" })}
-                  />
-                )}
+                <EditorAdjustmentContent
+                  activeTab={activeTab} asset={currentAsset} sourceUrl={sourceUrl} settings={settings}
+                  facePoints={facePoints} role={role} onSelectRole={handleSelectRole}
+                  onPortraitParamChange={handlePortraitParamChange} onSliderChange={handleSliderChange}
+                  onCurveChange={handleCurveChange} onProfessionalChange={handleProfessionalChange}
+                  onCommit={handleAutoSave} lutEntries={lutEntries} onSelectLut={handleSelectLut}
+                  onImportLut={handleImportLut} onDeleteLut={deleteLut} activeCanvasTool={activeCanvasTool}
+                  healingBrushSize={healingBrushSize} healingStrength={healingStrength}
+                  cloneSource={cloneSource} cloneSampling={cloneSampling}
+                  onHealingBrushSizeChange={setHealingBrushSize} onHealingStrengthChange={setHealingStrength}
+                  onCloneSamplingChange={setCloneSampling} onHealingClear={() => handleHealingCommit([])}
+                  onCloneClear={() => handleCloneCommit([])} liquifyTool={liquifyTool}
+                  liquifyBrushSize={liquifyBrushSize} liquifyStrength={liquifyStrength}
+                  onLiquifyToolChange={setLiquifyTool} onLiquifyBrushSizeChange={setLiquifyBrushSize}
+                  onLiquifyStrengthChange={setLiquifyStrength} onLiquifyClear={() => handleLiquifyCommit([])}
+                  localMasks={localMasks} onActivateMask={() => setActiveCanvasTool("mask")}
+                  eraseMode={eraseMode} eraseBrushSize={eraseBrushSize} eraseIntent={eraseIntent}
+                  eraseMaskCount={eraseMasks.length} onEraseModeChange={setEraseMode}
+                  onEraseBrushSizeChange={setEraseBrushSize} onEraseIntentChange={setEraseIntent}
+                  onEraseClear={() => { setEraseMasks([]); eraseTask.setTaskStatus(null); }} eraseTask={eraseTask}
+                  backgroundTask={backgroundTask} onBackgroundChange={(changes) => {
+                    settingsDirtyRef.current = true;
+                    setSettings((current) => normalizeRetouchSettings({ ...current, ...changes }));
+                  }} onBackgroundCommit={commitBackground} histogram={histogram}
+                />
 
                 <div className="adjustments-footer-actions">
                   <button className="sync-btn" disabled={!currentAsset || selectedAssetIds.size === 0} onClick={handleSyncToSelected}>

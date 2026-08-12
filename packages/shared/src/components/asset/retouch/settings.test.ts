@@ -145,6 +145,46 @@ describe("normalizeRetouchSettings", () => {
     expect(withCutout.background_mode).toBe("transparent");
   });
 
+  it("专业效果、身体塑形和输出参数会被完整归一化", () => {
+    const restored = normalizeRetouchSettings({
+      grain_amount: 140,
+      grain_size: 0,
+      lens_distortion: -140,
+      vignette_amount: 120,
+      body_center_x: -5,
+      body_waist_y: 99,
+      body_waist: -140,
+      watermark_enabled: 0.8,
+      watermark_text: `  ${"版权".repeat(80)}  `,
+      watermark_opacity: -1,
+      watermark_position: "invalid" as never,
+      watermark_color: "white",
+      border_enabled: 2,
+      border_size: 99,
+      border_color: "#ABCDEF",
+      preserve_exif: 0.2,
+    });
+
+    expect(restored).toMatchObject({
+      grain_amount: 100,
+      grain_size: 1,
+      lens_distortion: -100,
+      vignette_amount: 100,
+      body_center_x: 0,
+      body_waist_y: 90,
+      body_waist: -100,
+      watermark_enabled: 1,
+      watermark_opacity: 0,
+      watermark_position: "bottom-right",
+      watermark_color: "#ffffff",
+      border_enabled: 1,
+      border_size: 20,
+      border_color: "#abcdef",
+      preserve_exif: 0,
+    });
+    expect(restored.watermark_text.length).toBe(120);
+  });
+
   it("局部蒙版保留独立参数，并限制蒙版和画笔点存档体积", () => {
     const masks = Array.from({ length: MAX_LOCAL_MASKS + 2 }, (_, maskIndex) => ({
       id: maskIndex < 2 ? "duplicate" : `mask-${maskIndex}`,

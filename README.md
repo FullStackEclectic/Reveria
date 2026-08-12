@@ -26,7 +26,8 @@ Reveria 的核心判断是：基础大模型由 Google、OpenAI、Anthropic、xA
    * 通过 Vite/Next.js 转译，实现双端 100% 的业务代码重用，并支持开发模式下的即时热重载（HMR）。
 5. **原生图像处理引擎 (`packages/native-engine`)**：
    * 基于 **Rust** 构建的高性能图像算法引擎，负责高精磨皮、调色等核心图像处理算法。
-   * 编译后以动态链接库（如 Windows 下的 DLL）的形式存在，由 Go 桌面端通过系统调用（syscall）进行动态加载和执行，保证核心算法的极致处理速度。
+   * 已实现 JPEG / PNG / WebP 解码编码、Rayon 并行调色、肤色保护双边磨皮、中性灰磨皮、HSL、曲线、分离色调、裁剪旋转与 `.cube` LUT。
+   * 编译后以动态链接库（如 Windows 下的 DLL）的形式存在，由 Go 桌面端通过 JSON C ABI 动态加载。桌面端对受支持设置执行原始分辨率导出，依赖 Face Mesh 或画笔纹理的复杂效果自动回退 WebGL 成品导出。
 
 ---
 
@@ -65,6 +66,7 @@ pnpm env:init
 ```powershell
 pnpm dev:all
 ```
+启动脚本会增量构建 Rust release DLL；未安装 Cargo 时桌面端仍可启动，但图像导出会回退到 WebGL。
 * **后端 API**：默认监听在 `http://127.0.0.1:4100`。首次启动会自动生成 SQLite 本地关系数据库 `reveria.db` 并完成表结构迁移。
 * **网页端与商业管理后台**：可通过浏览器访问主页 `http://localhost:3000` 以及超级管理员独立控制台 `http://localhost:3000/admin`。
 * **Wails 桌面端**：桌面上会自动弹出应用视窗，其对应的热重载调试地址为 `http://localhost:1420`。
@@ -75,6 +77,12 @@ pnpm dev:all
 ---
 
 ## 🧪 生产环境打包发布
+
+可单独验证或构建原生引擎：
+```powershell
+pnpm native:test
+pnpm native:build
+```
 
 * **打包桌面端可执行程序 (Reveria.exe)**：
   ```powershell
@@ -87,6 +95,7 @@ pnpm dev:all
   wails build
   # 打包完成后，将在 apps/desktop/build/bin 下产出单体 EXE 运行文件
   ```
+  推荐发布时运行 `pnpm smoke:build`。脚本会先测试并构建 Rust 引擎，再生成 Wails 程序，并将 `native_engine.dll` 放到 `Reveria.exe` 同目录；发布时两者必须一起分发。
 * **打包网页端静态资源**：
   ```powershell
   pnpm web:build

@@ -11,6 +11,7 @@ export interface HealingSpot { x: number; y: number; radius: number; strength: n
 export interface CloneStamp { x: number; y: number; sourceX: number; sourceY: number; radius: number; strength: number }
 export type BackgroundMode = "original" | "transparent" | "solid" | "blur" | "image";
 export type LocalMaskType = "brush" | "linear" | "radial" | "color" | "luminance";
+export type WatermarkPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
 
 export interface LocalMaskPoint {
   x: number;
@@ -100,6 +101,23 @@ export interface RetouchSettings extends PortraitSettings {
   // 细节
   clarity: number;       // -100 ~ 100
   sharpness: number;     // 0 ~ 100
+  grain_amount: number;  // 0 ~ 100
+  grain_size: number;    // 1 ~ 100
+  grain_roughness: number; // 0 ~ 100
+  // 镜头与画面效果
+  lens_distortion: number; // -100 ~ 100，负=桶形，正=枕形
+  vignette_amount: number; // -100 ~ 100，正=压暗，负=提亮
+  vignette_midpoint: number; // 0 ~ 100
+  vignette_feather: number; // 0 ~ 100
+  vignette_roundness: number; // -100 ~ 100
+  // 身体塑形：位置参数使全身塑形适配不同构图，而非依赖固定人像位置
+  body_center_x: number;  // 0 ~ 100
+  body_waist_y: number;   // 0 ~ 100
+  body_waist: number;     // -100 ~ 100
+  body_shoulders: number; // -100 ~ 100
+  body_hips: number;      // -100 ~ 100
+  body_legs: number;      // -100 ~ 100
+  body_leg_length: number; // -100 ~ 100
   // 几何（裁剪坐标基于旋转后的显示图像，范围 0 ~ 1）
   rotation: number;      // 0/1/2/3，对应顺时针 0/90/180/270 度
   flip_horizontal: number;
@@ -146,6 +164,18 @@ export interface RetouchSettings extends PortraitSettings {
   background_image_scale: number;
   background_image_x: number;
   background_image_y: number;
+  // 输出装饰
+  watermark_enabled: number;
+  watermark_text: string;
+  watermark_opacity: number;
+  watermark_size: number;
+  watermark_position: WatermarkPosition;
+  watermark_color: string;
+  border_enabled: number;
+  border_size: number;
+  border_radius: number;
+  border_color: string;
+  preserve_exif: number;
 }
 
 export const DEFAULT_SETTINGS: RetouchSettings = {
@@ -153,6 +183,11 @@ export const DEFAULT_SETTINGS: RetouchSettings = {
   exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
   saturation: 0, vibrance: 0, temperature: 0, tint: 0, dehaze: 0,
   clarity: 0, sharpness: 0,
+  grain_amount: 0, grain_size: 35, grain_roughness: 50,
+  lens_distortion: 0,
+  vignette_amount: 0, vignette_midpoint: 50, vignette_feather: 65, vignette_roundness: 0,
+  body_center_x: 50, body_waist_y: 52,
+  body_waist: 0, body_shoulders: 0, body_hips: 0, body_legs: 0, body_leg_length: 0,
   rotation: 0, flip_horizontal: 0, flip_vertical: 0,
   crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1,
   lut_file: "", lut_intensity: 100,
@@ -183,6 +218,17 @@ export const DEFAULT_SETTINGS: RetouchSettings = {
   background_image_scale: 1,
   background_image_x: 0,
   background_image_y: 0,
+  watermark_enabled: 0,
+  watermark_text: "",
+  watermark_opacity: 65,
+  watermark_size: 4,
+  watermark_position: "bottom-right",
+  watermark_color: "#ffffff",
+  border_enabled: 0,
+  border_size: 3,
+  border_radius: 0,
+  border_color: "#ffffff",
+  preserve_exif: 1,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -334,6 +380,9 @@ function normalizeLocalMasks(value: unknown): LocalMask[] {
 }
 
 const BACKGROUND_MODES = new Set<BackgroundMode>(["original", "transparent", "solid", "blur", "image"]);
+const WATERMARK_POSITIONS = new Set<WatermarkPosition>([
+  "top-left", "top-right", "bottom-left", "bottom-right", "center",
+]);
 
 function normalizeBackgroundMode(value: unknown, cutoutURL: string): BackgroundMode {
   if (!cutoutURL) return "original";
@@ -344,6 +393,10 @@ function normalizeBackgroundMode(value: unknown, cutoutURL: string): BackgroundM
 
 function normalizeHexColor(value: unknown): string {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : "#ffffff";
+}
+
+function finiteClamped(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? clamp(value, min, max) : fallback;
 }
 
 /** 人像参数按各自量程夹取，非法值回落到 0，避免脏数据被写进 shader */
@@ -390,5 +443,34 @@ export function normalizeRetouchSettings(
       : 1,
     background_image_x: Number.isFinite(merged.background_image_x) ? clamp(merged.background_image_x, -1, 1) : 0,
     background_image_y: Number.isFinite(merged.background_image_y) ? clamp(merged.background_image_y, -1, 1) : 0,
+    grain_amount: finiteClamped(merged.grain_amount, 0, 0, 100),
+    grain_size: finiteClamped(merged.grain_size, 35, 1, 100),
+    grain_roughness: finiteClamped(merged.grain_roughness, 50, 0, 100),
+    lens_distortion: finiteClamped(merged.lens_distortion, 0, -100, 100),
+    vignette_amount: finiteClamped(merged.vignette_amount, 0, -100, 100),
+    vignette_midpoint: finiteClamped(merged.vignette_midpoint, 50, 0, 100),
+    vignette_feather: finiteClamped(merged.vignette_feather, 65, 0, 100),
+    vignette_roundness: finiteClamped(merged.vignette_roundness, 0, -100, 100),
+    body_center_x: finiteClamped(merged.body_center_x, 50, 0, 100),
+    body_waist_y: finiteClamped(merged.body_waist_y, 52, 10, 90),
+    body_waist: finiteClamped(merged.body_waist, 0, -100, 100),
+    body_shoulders: finiteClamped(merged.body_shoulders, 0, -100, 100),
+    body_hips: finiteClamped(merged.body_hips, 0, -100, 100),
+    body_legs: finiteClamped(merged.body_legs, 0, -100, 100),
+    body_leg_length: finiteClamped(merged.body_leg_length, 0, -100, 100),
+    watermark_enabled: finiteClamped(merged.watermark_enabled, 0, 0, 1) >= 0.5 ? 1 : 0,
+    watermark_text: typeof merged.watermark_text === "string" ? merged.watermark_text.trim().slice(0, 120) : "",
+    watermark_opacity: finiteClamped(merged.watermark_opacity, 65, 0, 100),
+    watermark_size: finiteClamped(merged.watermark_size, 4, 1, 15),
+    watermark_position: typeof merged.watermark_position === "string"
+      && WATERMARK_POSITIONS.has(merged.watermark_position as WatermarkPosition)
+      ? merged.watermark_position as WatermarkPosition
+      : "bottom-right",
+    watermark_color: normalizeHexColor(merged.watermark_color),
+    border_enabled: finiteClamped(merged.border_enabled, 0, 0, 1) >= 0.5 ? 1 : 0,
+    border_size: finiteClamped(merged.border_size, 3, 0, 20),
+    border_radius: finiteClamped(merged.border_radius, 0, 0, 50),
+    border_color: normalizeHexColor(merged.border_color),
+    preserve_exif: finiteClamped(merged.preserve_exif, 1, 0, 1) >= 0.5 ? 1 : 0,
   };
 }

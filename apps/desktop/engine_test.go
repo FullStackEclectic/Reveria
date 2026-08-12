@@ -2,10 +2,45 @@ package main
 
 import (
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"sync"
 	"testing"
 )
+
+func writeTestPNG(t *testing.T, path string, value uint8) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("创建测试图片失败：%v", err)
+	}
+	defer file.Close()
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: value, G: 90, B: 70, A: 255})
+		}
+	}
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("编码测试图片失败：%v", err)
+	}
+}
+
+func readTestPixel(t *testing.T, path string) color.RGBA {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("打开导出图片失败：%v", err)
+	}
+	defer file.Close()
+	img, err := png.Decode(file)
+	if err != nil {
+		t.Fatalf("解码导出图片失败：%v", err)
+	}
+	return color.RGBAModel.Convert(img.At(0, 0)).(color.RGBA)
+}
 
 func TestCallAdd(t *testing.T) {
 	result := CallAdd(2, 3)
@@ -27,30 +62,24 @@ func TestCallGreet(t *testing.T) {
 }
 
 func TestCallExportImage(t *testing.T) {
-	// 1. 准备测试文件
-	inputPath := "test_input.txt"
-	outputPath := "test_output.txt"
-	
-	err := os.WriteFile(inputPath, []byte("Test Image Raw Data"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test input file: %v", err)
-	}
+	inputPath := "test_input.png"
+	outputPath := "test_output.png"
+	writeTestPNG(t, inputPath, 120)
 	defer func() {
 		_ = os.Remove(inputPath)
 		_ = os.Remove(outputPath)
 	}()
 
-	// 2. 调用 Rust 导出算法
 	ret := CallExportImage(
 		inputPath,
 		outputPath,
-		10.0,  // exposure
-		15.0,  // contrast
-		-5.0,  // saturation
-		50.0,  // blurStrength
-		0.0,   // eyeEnlarge
-		0.0,   // slimFace
-		"film.cube",
+		20.0, // exposure
+		15.0, // contrast
+		-5.0, // saturation
+		50.0, // blurStrength
+		0.0,  // eyeEnlarge
+		0.0,  // slimFace
+		"",
 	)
 
 	if ret != 0 {
@@ -58,44 +87,30 @@ func TestCallExportImage(t *testing.T) {
 		return
 	}
 
-	// 3. 验证输出文件是否生成并正确拷贝
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		t.Error("Output file was not created by Rust DLL")
+		t.Error("Rust DLL 未生成输出图片")
 		return
 	}
-
-	outBytes, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Errorf("Failed to read output file: %v", err)
-		return
-	}
-
-	if string(outBytes) != "Test Image Raw Data" {
-		t.Errorf("Expected output file content to be 'Test Image Raw Data', got '%s'", string(outBytes))
-	} else {
-		t.Log("CallExportImage completed successfully, output file matches input!")
+	pixel := readTestPixel(t, outputPath)
+	if pixel.R == 120 && pixel.G == 90 && pixel.B == 70 {
+		t.Fatalf("Rust 导出仍然只是复制原图，像素未发生变化：%v", pixel)
 	}
 }
 
 func TestBatchExportImages(t *testing.T) {
-	// 1. 创建多个测试原图
 	numTasks := 4
 	tasks := make([]ExportTask, numTasks)
-	
+
 	for i := 0; i < numTasks; i++ {
-		inPath := fmt.Sprintf("batch_in_%d.txt", i)
-		outPath := fmt.Sprintf("batch_out_%d.txt", i)
-		
-		err := os.WriteFile(inPath, []byte(fmt.Sprintf("Raw Image Content %d", i)), 0644)
-		if err != nil {
-			t.Fatalf("Failed to create batch input %d: %v", i, err)
-		}
-		
+		inPath := fmt.Sprintf("batch_in_%d.png", i)
+		outPath := fmt.Sprintf("batch_out_%d.png", i)
+		writeTestPNG(t, inPath, uint8(100+i*10))
+
 		tasks[i] = ExportTask{
 			AssetID:      fmt.Sprintf("asset-uuid-%d", i),
 			InputPath:    inPath,
 			OutputPath:   outPath,
-			Exposure:     float64(i * 10),
+			Exposure:     float64(10 + i*10),
 			Contrast:     5.0,
 			Saturation:   0.0,
 			BlurStrength: 30.0,
@@ -103,7 +118,6 @@ func TestBatchExportImages(t *testing.T) {
 		}
 	}
 
-	// 确保测试结束清理所有临时文件
 	defer func() {
 		for i := 0; i < numTasks; i++ {
 			_ = os.Remove(tasks[i].InputPath)
@@ -111,7 +125,6 @@ func TestBatchExportImages(t *testing.T) {
 		}
 	}()
 
-	// 2. 多线程并发执行
 	var mu sync.Mutex
 	completedCount := 0
 	results := make(map[string]int32)
@@ -123,7 +136,6 @@ func TestBatchExportImages(t *testing.T) {
 		results[assetID] = errCode
 	})
 
-	// 3. 验证并发控制和执行结果
 	if completedCount != numTasks {
 		t.Errorf("Expected %d tasks to complete, got %d", numTasks, completedCount)
 	}
@@ -139,17 +151,22 @@ func TestBatchExportImages(t *testing.T) {
 			t.Errorf("Task %s failed with error code: %d", assetID, errCode)
 		}
 
-		// 验证文件导出
-		outBytes, err := os.ReadFile(tasks[i].OutputPath)
-		if err != nil {
-			t.Errorf("Failed to read output file for task %d: %v", i, err)
-			continue
-		}
-		expectedContent := fmt.Sprintf("Raw Image Content %d", i)
-		if string(outBytes) != expectedContent {
-			t.Errorf("Task %d output file content mismatch: expected '%s', got '%s'", i, expectedContent, string(outBytes))
+		pixel := readTestPixel(t, tasks[i].OutputPath)
+		originalRed := uint8(100 + i*10)
+		if pixel.R == originalRed && pixel.G == 90 && pixel.B == 70 {
+			t.Errorf("批量任务 %d 未改变图片像素", i)
 		}
 	}
-	
-	t.Logf("BatchExportImages success! All %d tasks ran through Worker Pool and successfully exported.", numTasks)
+
+	t.Logf("BatchExportImages 成功：%d 个任务均由 Rust 引擎处理并导出", numTasks)
+}
+
+func TestCallExportImageV2ReportsDetailedError(t *testing.T) {
+	code, detail := CallExportImageV2("missing.png", "output.png", "{")
+	if code == 0 {
+		t.Fatal("无效 JSON 不应导出成功")
+	}
+	if detail == "" {
+		t.Fatal("Rust 引擎错误应包含可读详情")
+	}
 }

@@ -644,6 +644,8 @@
   padding-top: 12px;
   gap: 8px;
   flex-shrink: 0;
+  overflow-y: auto;
+  padding-bottom: 12px;
 }
 
 .vertical-tab-icon-btn {

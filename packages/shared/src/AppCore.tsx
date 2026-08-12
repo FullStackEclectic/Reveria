@@ -28,6 +28,7 @@ import {
   putJson,
   deleteJson,
   formatCredits,
+  assetUrl,
   uploadAsset,
   fetchDashboardData,
   handleExportProject,
@@ -52,6 +53,7 @@ import { Sidebar } from "./components/common/Sidebar";
 import { AssetEditorWorkbench } from "./components/asset/AssetEditorWorkbench";
 import type { RetouchSettings } from "./components/asset/AssetEditorWorkbench";
 import { normalizeRetouchSettings } from "./components/asset/editorConstants";
+import { buildNativeExportSettings } from "./components/asset/retouch/nativeExport";
 const planBadgeLabel = (p?: PlanSummary) => !p ? "套餐" : p.badge_label?.trim() ? p.badge_label.trim().toUpperCase() : p.price_cents === 0 ? "FREE" : (p.name.includes("专业") || p.name.toLowerCase().includes("pro")) ? "PRO" : (p.name.includes("企业") || p.name.toLowerCase().includes("enterprise")) ? "ENT" : "PLAN";
 export function AppCore() {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -255,7 +257,7 @@ export function AppCore() {
 
   const handleExportRetouchImage = async (
     assetId: string,
-    _settings: RetouchSettings,
+    settings: RetouchSettings,
     dataUrl: string,
     format: "jpeg" | "png" | "webp",
   ) => {
@@ -272,7 +274,25 @@ export function AppCore() {
       if (wailsApp?.SaveRenderedImage) {
         const savePath = await wailsApp.SelectSavePath(filename);
         if (!savePath) return false;
-        await wailsApp.SaveRenderedImage(dataUrl, savePath);
+        const nativeSettings = buildNativeExportSettings(settings, format);
+        let nativeExported = false;
+        if (nativeSettings && wailsApp.ExportRetouchedImageNative) {
+          try {
+            const fileURL = assetUrl(asset.file_url ?? asset.thumbnail_url ?? "");
+            await wailsApp.ExportRetouchedImageNative(
+              fileURL,
+              "",
+              savePath,
+              JSON.stringify(nativeSettings),
+            );
+            nativeExported = true;
+          } catch (error) {
+            console.warn("Rust 原生导出失败，回退到 WebGL 最终画面：", error);
+          }
+        }
+        if (!nativeExported) {
+          await wailsApp.SaveRenderedImage(dataUrl, savePath);
+        }
         alert(`导出成功！已保存至：${savePath}`);
         try {
           const recentListStr = localStorage.getItem("reveria.recentExports") || "[]";

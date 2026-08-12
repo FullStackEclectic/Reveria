@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -217,6 +218,46 @@ func downloadAssetToCache(rawURL string) (string, error) {
 	return cachePath, nil
 }
 
+func resolveNativeInputPath(fileURL, localPath string) (string, error) {
+	inputPath := strings.TrimSpace(localPath)
+	if inputPath != "" {
+		if info, err := os.Stat(inputPath); err == nil && !info.IsDir() {
+			return inputPath, nil
+		}
+	}
+	if strings.TrimSpace(fileURL) == "" {
+		return "", errors.New("素材没有可用的本地路径或下载地址")
+	}
+	return downloadAssetToCache(fileURL)
+}
+
+// ExportRetouchedImageNative 使用 Rust 引擎从原始素材执行全分辨率精修导出。
+func (a *App) ExportRetouchedImageNative(
+	fileURL string,
+	localPath string,
+	outputPath string,
+	settingsJSON string,
+) error {
+	if strings.TrimSpace(outputPath) == "" || strings.TrimSpace(settingsJSON) == "" {
+		return os.ErrInvalid
+	}
+	inputPath, err := resolveNativeInputPath(fileURL, localPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return err
+	}
+	code, detail := CallExportImageV2(inputPath, outputPath, settingsJSON)
+	if code != 0 {
+		if detail == "" {
+			detail = "原生图像引擎执行失败"
+		}
+		return fmt.Errorf("%s（错误码 %d）", detail, code)
+	}
+	return nil
+}
+
 // ExportRetouchedImage 导出精修图片，返回 0 表示成功，负数表示错误码
 func (a *App) ExportRetouchedImage(
 	fileURL string,
@@ -230,16 +271,9 @@ func (a *App) ExportRetouchedImage(
 	slimFace float64,
 	lutFile string,
 ) int32 {
-	inputPath := localPath
-	if inputPath == "" || func() bool { _, err := os.Stat(inputPath); return err != nil }() {
-		if fileURL == "" {
-			return -104
-		}
-		cachedPath, err := downloadAssetToCache(fileURL)
-		if err != nil {
-			return -105
-		}
-		inputPath = cachedPath
+	inputPath, err := resolveNativeInputPath(fileURL, localPath)
+	if err != nil {
+		return -105
 	}
 
 	// 再次确认文件是否存在
