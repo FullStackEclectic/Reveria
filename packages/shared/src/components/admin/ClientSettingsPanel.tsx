@@ -8,6 +8,7 @@ interface ClientSettings {
   site_announcement: string;
   upstream_api_url: string;
   upstream_api_key: string;
+  upstream_api_key_configured?: boolean;
   allow_user_register: boolean;
   gift_credits_on_register: number;
   price_rate: number;
@@ -22,6 +23,7 @@ export function ClientSettingsPanel({ onSettingsSaved }: ClientSettingsPanelProp
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
     async function loadSettings() {
@@ -55,6 +57,23 @@ export function ClientSettingsPanel({ onSettingsSaved }: ClientSettingsPanelProp
       setMessage("保存配置失败：" + (err as Error).message);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleTestUpstream() {
+    if (!settings) return;
+    setIsTesting(true);
+    setMessage("");
+    try {
+      const res = await postJson<{ success?: boolean; message?: string }>("/api/admin/settings/test-upstream", {
+        upstream_api_url: settings.upstream_api_url,
+        upstream_api_key: settings.upstream_api_key,
+      });
+      setMessage(res.message || "主站网关联调成功");
+    } catch (err) {
+      setMessage("联调失败：" + (err as Error).message);
+    } finally {
+      setIsTesting(false);
     }
   }
 
@@ -145,7 +164,7 @@ export function ClientSettingsPanel({ onSettingsSaved }: ClientSettingsPanelProp
                 type="password"
                 value={settings?.upstream_api_key || ""}
                 onChange={(e) => setSettings(settings ? { ...settings, upstream_api_key: e.target.value } : null)}
-                placeholder="填入上游渠道密钥 sk-..."
+                placeholder={settings?.upstream_api_key_configured ? "已配置，留空表示不修改" : "填入上游渠道密钥 sk-..."}
                 style={{
                   height: "38px",
                   width: "100%",
@@ -156,12 +175,28 @@ export function ClientSettingsPanel({ onSettingsSaved }: ClientSettingsPanelProp
                   outline: "none"
                 }}
                 autoComplete="new-password"
-                required
               />
             </div>
           </div>
 
-          <div style={{ borderTop: "1px solid var(--rv-color-border-thin)", paddingTop: "16px", marginTop: "4px", display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ borderTop: "1px solid var(--rv-color-border-thin)", paddingTop: "16px", marginTop: "4px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <button
+              type="button"
+              disabled={isSaving || isTesting}
+              onClick={() => void handleTestUpstream()}
+              style={{
+                background: "#ffffff",
+                color: "var(--rv-color-text-main)",
+                border: "1px solid var(--rv-color-border-thin)",
+                borderRadius: "6px",
+                padding: "8px 16px",
+                fontSize: "12px",
+                fontWeight: "700",
+                cursor: "pointer",
+              }}
+            >
+              {isTesting ? "正在联调..." : "测试主站连通"}
+            </button>
             <button
               type="submit"
               disabled={isSaving}

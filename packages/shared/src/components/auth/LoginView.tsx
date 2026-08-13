@@ -2,6 +2,8 @@ import React, { FormEvent, useState } from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
 import { API_BASE } from "../../utils";
 import { PRIVACY_POLICY, TERMS_OF_SERVICE } from "../../legalTexts";
+import { BrandMark } from "../common/BrandMark";
+import { useSiteBrand } from "../../hooks/useSiteBrand";
 import "./LoginView.css";
 
 interface LoginViewProps {
@@ -33,6 +35,7 @@ export function LoginView({
   isModal = false,
   onClose,
 }: LoginViewProps) {
+  const site = useSiteBrand();
   // 服务条款勾选状态（仿美图设计室大厂合规规范）
   const [agreementChecked, setAgreementChecked] = useState(false);
   const [legalDoc, setLegalDoc] = useState<null | "terms" | "privacy">(null);
@@ -54,11 +57,8 @@ export function LoginView({
           
           {/* 顶部 Logo 栏 */}
           <div className="visual-logo-row">
-            <div className="visual-logo-mark">R</div>
-            <div>
-              <span className="visual-logo-text">Reveria</span>
-              <span className="visual-logo-sub">创意交付工作台</span>
-            </div>
+            <BrandMark site={site} />
+            <span className="visual-logo-sub">{site.site_tagline}</span>
           </div>
           
           {/* 立体层叠卡片堆 (仿美图设计室，倾斜 3D 浮雕交互) */}
@@ -107,7 +107,7 @@ export function LoginView({
           
           <div className="form-inner-content">
             <h2 className="form-main-title">
-              {loginMode === "register" ? "创建您的 Reveria 账号" : "欢迎登录 Reveria"}
+              {loginMode === "register" ? `创建您的 ${site.site_title} 账号` : `欢迎登录 ${site.site_title}`}
             </h2>
             
             {/* 极简横线切换 TAB */}

@@ -433,7 +433,10 @@ func CancelTask(c *gin.Context) {
 		return
 	}
 	originalStatus := task.Status
-	claimed := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, originalStatus).Update("status", "settling")
+	leaseUntil := time.Now().Add(settlementLeaseDuration)
+	claimed := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, originalStatus).Updates(map[string]any{
+		"status": "settling", "worker_id": taskWorkerID, "lease_until": leaseUntil,
+	})
 	if claimed.Error != nil || claimed.RowsAffected != 1 {
 		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "任务状态已变化，请刷新后重试"})
 		return
@@ -446,16 +449,21 @@ func CancelTask(c *gin.Context) {
 	billingSvc := service.GetBillingService()
 	releaseReason := fmt.Sprintf("任务 %s 取消，原路退回冻结积分", taskID.String())
 	if err := billingSvc.RefundCredits(creatorID, task.WorkspaceID, task.EstimatedCredits, releaseReason, &task); err != nil {
-		database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Update("status", originalStatus)
+		database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Updates(map[string]any{
+			"status": originalStatus, "worker_id": nil, "lease_until": nil,
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "任务取消退款失败: " + err.Error()})
 		return
 	}
-	task.Status = "cancelled"
-	task.CompletedAt = ptrTime(time.Now())
-	if err := database.DB.Save(&task).Error; err != nil {
+	now := time.Now()
+	if err := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Updates(map[string]any{
+		"status": "cancelled", "completed_at": now, "worker_id": nil, "lease_until": nil,
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "任务取消状态保存失败"})
 		return
 	}
+	task.Status = "cancelled"
+	task.CompletedAt = &now
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "任务取消及退额成功", "data": task})
 }
 

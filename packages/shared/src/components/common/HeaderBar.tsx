@@ -4,6 +4,8 @@ import {
   ChevronDown, History, Coins, Settings, LogOut 
 } from "lucide-react";
 import { AppView, UserSummary } from "../../types";
+import { BrandMark } from "./BrandMark";
+import { useSiteBrand } from "../../hooks/useSiteBrand";
 
 interface HeaderBarProps {
   currentUser: UserSummary | null;
@@ -40,6 +42,7 @@ export function HeaderBar({
   setIsLoginModalOpen,
   setLoginCallback,
 }: HeaderBarProps) {
+  const site = useSiteBrand();
   const isNoSidebar = ((activeView === "projects" && projectsViewMode === "detail") || activeView === "admin") && currentUser !== null;
 
   return (
@@ -65,8 +68,7 @@ export function HeaderBar({
           className="header-brand" 
           onClick={() => handleViewChange("square")}
         >
-          <div className="brand-logo-icon">R</div>
-          <span className="brand-logo-text">Reveria</span>
+          <BrandMark site={site} />
         </div>
       </div>
       

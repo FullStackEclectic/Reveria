@@ -210,7 +210,14 @@ type AuditLog struct {
 type ClientSettings struct {
 	ID                      uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
 	SiteTitle               string     `gorm:"type:varchar(160);default:'Reveria AI 算力中心';not null" json:"site_title"`
+	SiteTagline             string     `gorm:"type:varchar(180);default:'';not null" json:"site_tagline"`
+	SiteDescription         string     `gorm:"type:varchar(320);default:'';not null" json:"site_description"`
 	SiteAnnouncement        string     `gorm:"type:text;default:'';not null" json:"site_announcement"`
+	PublicOrigin            string     `gorm:"type:varchar(255);default:'';not null" json:"public_origin"`
+	LogoURL                 string     `gorm:"type:varchar(512);default:'';not null" json:"logo_url"`
+	FaviconURL              string     `gorm:"type:varchar(512);default:'';not null" json:"favicon_url"`
+	BrandColor              string     `gorm:"type:varchar(16);default:'';not null" json:"brand_color"`
+	ContactEmail            string     `gorm:"type:varchar(120);default:'';not null" json:"contact_email"`
 	UpstreamAPIURL          string     `gorm:"type:varchar(255);not null" json:"upstream_api_url"`
 	UpstreamAPIKey          string     `gorm:"type:text;not null" json:"upstream_api_key"`
 	AllowUserRegister       bool       `gorm:"default:true;not null" json:"allow_user_register"`

@@ -81,6 +81,7 @@
 .visual-logo-row {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   z-index: 10;
@@ -107,6 +108,7 @@
 
 .visual-logo-sub {
   display: block;
+  flex-basis: 100%;
   font-size: 9px;
   font-weight: 700;
   color: #64748b;

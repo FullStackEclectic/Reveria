@@ -18,6 +18,7 @@ func registerAdminRoutes(auth *gin.RouterGroup) {
 
 	admin.GET("/settings", handler.GetClientSettings)
 	admin.POST("/settings", handler.UpdateClientSettings)
+	admin.POST("/settings/test-upstream", handler.TestUpstreamGateway)
 
 	// 分站管理员特权及财务对账接口
 	admin.GET("/users", handler.ListAdminUsers)

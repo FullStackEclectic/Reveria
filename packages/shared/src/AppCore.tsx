@@ -42,6 +42,7 @@ import { HeaderBar } from "./components/common/HeaderBar";
 import { MainRouter } from "./components/common/MainRouter";
 import { useAuth } from "./hooks/useAuth";
 import { useInviteFlow } from "./hooks/useInviteFlow";
+import { useSiteBrand } from "./hooks/useSiteBrand";
 import { useOrderFlow } from "./hooks/useOrderFlow";
 // Dialog/Modal components
 // Dialog/Modal components
@@ -136,6 +137,7 @@ export function AppCore() {
     activeWorkspace,
     setAdminMessage,
   });
+  useSiteBrand();
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("reveria.sidebarCollapsed");

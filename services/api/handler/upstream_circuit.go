@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -67,4 +68,14 @@ func failTaskFromUpstream(taskID uuid.UUID, statusCode int, errorCode, message s
 		message = upstreamCircuitMessage
 	}
 	handleTaskFailure(taskID, errorCode, message)
+}
+
+func failTextTaskFromLLM(taskID uuid.UUID, err error) {
+	statusCode := 0
+	code := "UPSTREAM_LLM_FAILED"
+	if errors.Is(err, errUpstreamPaymentRequired) {
+		statusCode = http.StatusPaymentRequired
+		code = "GATEWAY_402"
+	}
+	failTaskFromUpstream(taskID, statusCode, code, err.Error())
 }

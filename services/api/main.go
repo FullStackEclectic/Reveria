@@ -200,7 +200,10 @@ func initDefaultSettings() {
 		settings := model.ClientSettings{
 			ID:                    uuid.New(),
 			SiteTitle:             siteTitle,
+			SiteTagline:           strings.TrimSpace(os.Getenv("REVERIA_SITE_TAGLINE")),
+			SiteDescription:       strings.TrimSpace(os.Getenv("REVERIA_SITE_DESCRIPTION")),
 			SiteAnnouncement:      strings.TrimSpace(os.Getenv("REVERIA_SITE_ANNOUNCEMENT")),
+			PublicOrigin:          strings.TrimSpace(os.Getenv("REVERIA_PUBLIC_ORIGIN")),
 			UpstreamAPIURL:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_URL")),
 			UpstreamAPIKey:        strings.TrimSpace(os.Getenv("REVERIA_UPSTREAM_API_KEY")),
 			AllowUserRegister:     !isProductionEnv(),

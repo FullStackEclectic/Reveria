@@ -1,0 +1,167 @@
+.mk-page {
+  min-height: 100vh;
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.mk-nav,
+.mk-hero,
+.mk-grid,
+.mk-foot,
+.mk-announce {
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.mk-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 28px;
+  padding-bottom: 12px;
+}
+
+.mk-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+}
+
+.mk-logo {
+  height: 28px;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.mk-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--rv-color-primary, #0f766e);
+  color: #fff;
+  font-weight: 800;
+}
+
+.mk-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.mk-links a {
+  color: #475569;
+  text-decoration: none;
+}
+
+.mk-announce {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 13px;
+}
+
+.mk-hero {
+  padding-top: 64px;
+  padding-bottom: 40px;
+}
+
+.mk-kicker {
+  margin: 0 0 12px;
+  color: var(--rv-color-primary, #0f766e);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.mk-hero h1 {
+  margin: 0 0 16px;
+  font-size: 44px;
+  line-height: 1.15;
+}
+
+.mk-lead {
+  max-width: 640px;
+  margin: 0 0 28px;
+  font-size: 18px;
+  line-height: 1.7;
+  color: #475569;
+}
+
+.mk-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mk-cta,
+.mk-cta-ghost {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mk-cta {
+  background: var(--rv-color-primary, #0f766e);
+  color: #fff;
+}
+
+.mk-cta-ghost {
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  background: #fff;
+}
+
+.mk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding-bottom: 64px;
+}
+
+.mk-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.mk-card h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.mk-card p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.mk-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 40px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.mk-foot a {
+  color: inherit;
+}

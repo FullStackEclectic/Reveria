@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io"
@@ -31,6 +32,11 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	task = claimedTask
 	log.Printf("[TaskSucceeded] 任务 %s 生成成功，开始本地化下载...", task.ID)
 
+	if !renewSettlementLease(task.ID) {
+		log.Printf("[TaskSucceeded] 任务 %s 已失去结算租约，停止落盘", task.ID)
+		return
+	}
+
 	downloadClient := &http.Client{
 		Transport: insecureTransport,
 		Timeout:   60 * time.Second,
@@ -46,6 +52,10 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	createdAssetCount := 0
 	// 循环下载每一个生成的图片，落地并存入资产库
 	for idx, url := range upstreamURLs {
+		if !renewSettlementLease(task.ID) {
+			log.Printf("[TaskSucceeded] 任务 %s 已失去结算租约，停止落盘", task.ID)
+			return
+		}
 		if url == "" {
 			continue
 		}
@@ -241,17 +251,22 @@ func handleTaskSuccess(task model.GenerationTask, upstreamURLs []string) {
 	}
 
 	// 4. 通过统一账务服务完成正式结算，避免不同任务类型形成两套账务语义。
-	task.Status = "succeeded"
-	task.OutputPayload = &lastMetaStr
-	task.CompletedAt = ptrTime(time.Now())
-	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
 	if task.UserID == nil {
 		failClaimedTask(task, "TASK_USER_MISSING", "生成任务缺少创建用户")
 		return
 	}
 	billingSvc := service.GetBillingService()
+	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
 	if err := billingSvc.SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, consumeReason, &task); err != nil {
 		log.Printf("[TaskSucceeded] 任务 %s 结算事务失败，将保持 settling 并重试: %v", task.ID, err)
+		releaseSettlementLease(task.ID, "settling")
+		return
+	}
+	now := time.Now()
+	if err := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Updates(map[string]any{
+		"status": "succeeded", "output_payload": lastMetaStr, "completed_at": now, "worker_id": nil, "lease_until": nil,
+	}).Error; err != nil {
+		log.Printf("[TaskSucceeded] 任务 %s 结算完成但回写终态失败: %v", task.ID, err)
 		return
 	}
 	log.Printf("[TaskSucceeded] 任务 %s 结算完成，已归档资产。", task.ID)
@@ -353,21 +368,21 @@ func failClaimedTask(task model.GenerationTask, errorCode string, errorMsg strin
 	refundReason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", task.ID.String())
 	err := billingSvc.RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, refundReason, &task)
 	if err != nil {
+		if errors.Is(err, service.ErrAlreadySettled) {
+			log.Printf("[TaskFailed] 任务 %s 已结算，忽略退款", task.ID)
+			return
+		}
 		log.Printf("[TaskFailed] 积分退回失败，任务保持 refunding: %v", err)
-		task.Status = "refunding"
-		task.ErrorCode = &errorCode
-		task.ErrorMessage = &errorMsg
-		database.DB.Save(&task)
+		now := time.Now()
+		database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status IN ?", task.ID, []string{"settling", "refunding"}).Updates(map[string]any{
+			"status": "refunding", "error_code": errorCode, "error_message": errorMsg,
+			"worker_id": nil, "lease_until": now,
+		})
 		return
 	}
 
 	cleanupTaskAssets(task.ID)
-
-	task.Status = "failed"
-	task.ErrorCode = &errorCode
-	task.ErrorMessage = &errorMsg
-	task.CompletedAt = ptrTime(time.Now())
-	database.DB.Save(&task)
+	markTaskTerminal(task.ID, "settling", "failed", ptrString(errorCode), ptrString(errorMsg))
 
 	log.Printf("[TaskFailed] 任务 %s 退款流程闭环完成。", task.ID)
 }

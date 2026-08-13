@@ -12,7 +12,10 @@ import (
 
 func sanitizedClientSettings(settings model.ClientSettings) gin.H {
 	return gin.H{
-		"id": settings.ID, "site_title": settings.SiteTitle, "site_announcement": settings.SiteAnnouncement,
+		"id": settings.ID, "site_title": settings.SiteTitle, "site_tagline": settings.SiteTagline,
+		"site_description": settings.SiteDescription, "site_announcement": settings.SiteAnnouncement,
+		"public_origin": settings.PublicOrigin, "logo_url": settings.LogoURL, "favicon_url": settings.FaviconURL,
+		"brand_color": settings.BrandColor, "contact_email": settings.ContactEmail,
 		"allow_user_register": settings.AllowUserRegister, "gift_credits_on_register": settings.GiftCreditsOnRegister,
 		"price_rate": settings.PriceRate, "upstream_api_url": settings.UpstreamAPIURL,
 		"upstream_api_key": "", "upstream_api_key_configured": strings.TrimSpace(settings.UpstreamAPIKey) != "",
@@ -56,8 +59,36 @@ func UpdateClientSettings(c *gin.Context) {
 	keyChanged := strings.TrimSpace(req.UpstreamAPIKey) != ""
 	urlChanged := strings.TrimSpace(req.UpstreamAPIURL) != "" && req.UpstreamAPIURL != settings.UpstreamAPIURL
 
-	settings.SiteTitle = req.SiteTitle
+	publicOrigin, err := sanitizePublicOrigin(req.PublicOrigin)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	logoURL, err := sanitizePublicAssetURL(req.LogoURL, "Logo")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	faviconURL, err := sanitizePublicAssetURL(req.FaviconURL, "Favicon")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	brandColor, err := sanitizeBrandColor(req.BrandColor)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	settings.SiteTitle = strings.TrimSpace(req.SiteTitle)
+	settings.SiteTagline = strings.TrimSpace(req.SiteTagline)
+	settings.SiteDescription = strings.TrimSpace(req.SiteDescription)
 	settings.SiteAnnouncement = req.SiteAnnouncement
+	settings.PublicOrigin = publicOrigin
+	settings.LogoURL = logoURL
+	settings.FaviconURL = faviconURL
+	settings.BrandColor = brandColor
+	settings.ContactEmail = strings.TrimSpace(req.ContactEmail)
 	settings.UpstreamAPIURL = req.UpstreamAPIURL
 	if keyChanged {
 		settings.UpstreamAPIKey = strings.TrimSpace(req.UpstreamAPIKey)

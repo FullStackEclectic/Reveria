@@ -70,11 +70,10 @@ func resolveTaskPollingSettings(task model.GenerationTask, settings model.Client
 func callUpstreamGateway(ctx context.Context, task model.GenerationTask, settings model.ClientSettings) {
 	// 更新任务状态为 running
 	progressJSON := `{"progress_text":"已提交请求，等待 AI 响应..."}`
-	database.DB.Model(&task).Updates(map[string]any{
-		"status":         "running",
-		"started_at":     time.Now(),
-		"output_payload": &progressJSON,
-	})
+	if !markTaskRunning(task.ID, progressJSON) {
+		log.Printf("[callUpstreamGateway] 任务 %s 已离开 dispatching，跳过上游调用", task.ID)
+		return
+	}
 
 	// 准备发包给网关
 	var upstreamURL string
@@ -126,7 +125,11 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 		prompt, _ := payload["prompt"].(string)
 
 		messages := buildConversationMessages(task, prompt)
-		responseMsg, promptTokens, completionTokens := callUpstreamLLMWithMessages(messages, gatewayModelName, settings)
+		responseMsg, promptTokens, completionTokens, llmErr := callUpstreamLLMWithMessages(messages, gatewayModelName, settings)
+		if llmErr != nil {
+			failTextTaskFromLLM(task.ID, llmErr)
+			return
+		}
 		totalTokens := promptTokens + completionTokens
 
 		// 根据模型指定的计费方式进行计费 (per_token 按 Token 百万折算，per_use 按次固定扣除)
@@ -180,6 +183,10 @@ func callUpstreamGateway(ctx context.Context, task model.GenerationTask, setting
 		if task.UserID == nil {
 			failClaimedTask(task, "TASK_USER_MISSING", "文本任务缺少创建用户")
 			return
+		}
+		if err := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
+			Update("output_payload", outStr).Error; err != nil {
+			log.Printf("[TextTask] 任务 %s 写入输出失败: %v", task.ID, err)
 		}
 		task.OutputPayload = &outStr
 		consumeReason := fmt.Sprintf("AI 文本生成任务完成结算 (Total Tokens: %d, 实际消耗: %f 积分)", totalTokens, actualCostFloat)
@@ -752,174 +759,4 @@ func compressReferenceImage(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
-}
-
-func buildConversationMessages(task model.GenerationTask, currentPrompt string) []upstreamChatMessage {
-	messages := make([]upstreamChatMessage, 0, 41)
-	var input struct {
-		Messages []upstreamChatMessage `json:"messages"`
-	}
-	_ = json.Unmarshal([]byte(task.InputPayload), &input)
-	if len(input.Messages) > 0 {
-		start := 0
-		if len(input.Messages) > 40 {
-			start = len(input.Messages) - 40
-		}
-		for _, message := range input.Messages[start:] {
-			role := strings.TrimSpace(message.Role)
-			content := strings.TrimSpace(message.Content)
-			if (role != "user" && role != "assistant") || content == "" {
-				continue
-			}
-			contentRunes := []rune(content)
-			if len(contentRunes) > 32768 {
-				content = string(contentRunes[:32768])
-			}
-			messages = append(messages, upstreamChatMessage{Role: role, Content: content})
-		}
-	} else if task.ConversationID != nil && strings.TrimSpace(*task.ConversationID) != "" {
-		var previousTasks []model.GenerationTask
-		database.DB.
-			Where(
-				"project_id = ? AND conversation_id = ? AND task_type = ? AND status = ? AND id <> ? AND created_at < ?",
-				task.ProjectID,
-				*task.ConversationID,
-				"text",
-				"succeeded",
-				task.ID,
-				task.CreatedAt,
-			).
-			Order("created_at desc").
-			Limit(20).
-			Find(&previousTasks)
-
-		for index := len(previousTasks) - 1; index >= 0; index-- {
-			previous := previousTasks[index]
-			var input map[string]any
-			if json.Unmarshal([]byte(previous.InputPayload), &input) != nil {
-				continue
-			}
-			prompt, _ := input["prompt"].(string)
-			prompt = strings.TrimSpace(prompt)
-			if prompt == "" || previous.OutputPayload == nil {
-				continue
-			}
-
-			var output map[string]any
-			if json.Unmarshal([]byte(*previous.OutputPayload), &output) != nil {
-				continue
-			}
-			answer, _ := output["output"].(string)
-			if strings.TrimSpace(answer) == "" {
-				answer, _ = output["summary"].(string)
-			}
-			answer = strings.TrimSpace(answer)
-			if answer == "" {
-				continue
-			}
-
-			messages = append(messages,
-				upstreamChatMessage{Role: "user", Content: prompt},
-				upstreamChatMessage{Role: "assistant", Content: answer},
-			)
-		}
-	}
-
-	messages = append(messages, upstreamChatMessage{Role: "user", Content: currentPrompt})
-	return messages
-}
-
-// pollUpstreamTask 轮询 12ZX-AI 异步任务进度
-func pollUpstreamTask(ctx context.Context, task model.GenerationTask, upstreamTaskID string, settings model.ClientSettings) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	timeout := time.NewTimer(15 * time.Minute) // 视频生成最长等待 15 分钟
-	defer timeout.Stop()
-
-	pollURL := fmt.Sprintf("%s/v1/tasks/%s", settings.UpstreamAPIURL, upstreamTaskID)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeout.C:
-			handleTaskFailure(task.ID, "TIMEOUT", "生成任务等待超时")
-			return
-		case <-ticker.C:
-			if !renewTaskLease(task.ID) {
-				return
-			}
-			req, err := http.NewRequestWithContext(ctx, "GET", pollURL, nil)
-			if err != nil {
-				continue
-			}
-			req.Header.Set("Authorization", "Bearer "+settings.UpstreamAPIKey)
-
-			client := &http.Client{
-				Transport: insecureTransport,
-				Timeout:   10 * time.Second,
-			}
-			resp, err := client.Do(req)
-			if err != nil {
-				continue
-			}
-
-			respBytes, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				if resp.StatusCode == http.StatusPaymentRequired {
-					failTaskFromUpstream(task.ID, resp.StatusCode, fmt.Sprintf("GATEWAY_%d", resp.StatusCode), upstreamCircuitMessage)
-					return
-				}
-				continue
-			}
-
-			var taskData map[string]any
-			if err := json.Unmarshal(respBytes, &taskData); err != nil {
-				continue
-			}
-
-			status, _ := taskData["status"].(string)
-			// 12ZX-AI 状态一般是 success / failed / processing
-			if status == "success" || status == "succeeded" {
-				var urls []string
-				if resURL, ok := taskData["result_url"].(string); ok && resURL != "" {
-					urls = append(urls, resURL)
-				} else if dataList, ok := taskData["data"].([]any); ok && len(dataList) > 0 {
-					for _, item := range dataList {
-						if m, ok := item.(map[string]any); ok {
-							if u, _ := m["url"].(string); u != "" {
-								urls = append(urls, u)
-							}
-						}
-					}
-				}
-				if len(urls) > 0 {
-					handleTaskSuccess(task, urls)
-					return
-				}
-			} else if status == "failed" || status == "fail" {
-				reason, _ := taskData["error_message"].(string)
-				if reason == "" {
-					reason, _ = taskData["message"].(string)
-				}
-				handleTaskFailure(task.ID, "GATEWAY_TASK_FAILED", "上游厂商生成失败: "+reason)
-				return
-			} else {
-				// processing 或者 running 状态，写回实时进度
-				progressText := "上游正在努力渲染多图场景中，请稍候..."
-				if pct, ok := taskData["progress"].(float64); ok {
-					progressText = fmt.Sprintf("AI 正在绘制画面 (进度 %.0f%%)...", pct)
-				} else if pctStr, ok := taskData["progress"].(string); ok {
-					progressText = fmt.Sprintf("AI 正在绘制画面 (进度 %s)...", pctStr)
-				}
-				progressJSON := fmt.Sprintf(`{"progress_text":%q}`, progressText)
-				database.DB.Model(&model.GenerationTask{}).
-					Where("id = ? AND status = ? AND worker_id = ?", task.ID, "running", taskWorkerID).
-					Update("output_payload", progressJSON)
-			}
-		}
-	}
 }

@@ -18,6 +18,11 @@ func SeedPricingRules() {
 		credits  int64
 	}
 	seeds := []seed{
+		{name: "文本生成", taskType: "text", credits: 2},
+		{name: "图像生成", taskType: "image_generation", credits: 10},
+		{name: "文生图", taskType: "text_to_image", credits: 10},
+		{name: "视频生成", taskType: "video_generation", credits: 40},
+		{name: "图生视频", taskType: "image_to_video", credits: 40},
 		{name: "智能消除", taskType: "image_inpainting", credits: 5},
 		{name: "智能抠图", taskType: "image_background_removal", credits: 6},
 		{name: "AI 变清晰", taskType: "image_upscale", credits: 8},

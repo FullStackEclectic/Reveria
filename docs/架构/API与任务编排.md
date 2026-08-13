@@ -33,6 +33,7 @@ Wails 桌面端 / Next.js 网页端
 - `GET /auth/me`
 - `POST /auth/logout`
 - `GET /version`
+- `GET /site`（公开品牌：标题、简介、Logo、对外域名；不含上游密钥）
 - `GET /workspaces` / `POST /workspaces`
 - `POST /workspaces/:workspace_id/invitations`
 - `POST /invitations/accept`
@@ -96,11 +97,14 @@ Wails 桌面端 / Next.js 网页端
    -> 事务锁定 workspace 额度并冻结积分，写入 credit_transaction
    -> 写入 generation_task（pending）
 2. 分站调用 12ZX-AI
-   -> 若上游返回 402：当前任务失败并退款，同时打开全站熔断，后续生成一律 402，直到站长在系统设置中恢复
+   -> 仅当任务仍为 dispatching/pending 时才改为 running；已取消或结算中的任务不会被救活
+   -> 若上游返回 402：当前任务失败并退款，同时打开全站熔断，后续生成一律 402，直到站长在系统设置中恢复（文本任务同样走失败退款，不会把错误正文当成功结果结算）
    -> 若上游 401 或其他错误：仅失败当前任务并退款
    -> 成功则记录 upstream_task_id，状态 running
 3. API 侧 Worker 轮询上游任务
    -> 成功后把结果下载到 REVERIA_STORAGE_DIR，写 asset，结算冻结积分
+   -> 结算/退款持有租约，过期后才由 worker 重试，避免与原协程抢跑
+   -> SettleCredits / RefundCredits 按任务流水幂等，不会双扣或双退
    -> 结算失败保持 settling 并自动重试，不会把已落盘成片当失败删掉
    -> 退款失败保持 refunding 并自动重试，成功后再标记 failed
 4. 前端轮询 GET /api/tasks/:id 刷新画布 / 精修结果

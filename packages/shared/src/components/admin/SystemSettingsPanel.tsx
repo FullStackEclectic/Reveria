@@ -1,11 +1,19 @@
 import React, { FormEvent, useEffect, useState } from "react";
-import { Save, RefreshCw, Users, ShieldAlert, Laptop } from "lucide-react";
+import { Save, RefreshCw, ShieldAlert, Laptop } from "lucide-react";
 import { getJson, postJson } from "../../utils";
+import { clearPublicSiteCache } from "../../hooks/useSiteBrand";
 
 interface ClientSettings {
   id: string;
   site_title: string;
+  site_tagline: string;
+  site_description: string;
   site_announcement: string;
+  public_origin: string;
+  logo_url: string;
+  favicon_url: string;
+  brand_color: string;
+  contact_email: string;
   allow_user_register: boolean;
   gift_credits_on_register: number;
   price_rate: number;
@@ -69,6 +77,7 @@ export function SystemSettingsPanel({ onSettingsSaved }: SystemSettingsPanelProp
     try {
       const res = await postJson<any>("/api/admin/settings", settings);
       setSettings(res.data || settings);
+      clearPublicSiteCache();
       setMessage("站点全局设置已保存成功！");
       if (onSettingsSaved) {
         onSettingsSaved();
@@ -213,6 +222,85 @@ export function SystemSettingsPanel({ onSettingsSaved }: SystemSettingsPanelProp
                     background: "#ffffff",
                     lineHeight: "1.5"
                   }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>分站对外域名 (Public Origin)</label>
+                  <input
+                    type="url"
+                    value={settings?.public_origin || ""}
+                    onChange={(e) => setSettings(settings ? { ...settings, public_origin: e.target.value } : null)}
+                    placeholder="https://studio.example.com"
+                    style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>品牌色 (#RRGGBB)</label>
+                  <input
+                    type="text"
+                    value={settings?.brand_color || ""}
+                    onChange={(e) => setSettings(settings ? { ...settings, brand_color: e.target.value } : null)}
+                    placeholder="#0f766e"
+                    style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>站点副标题 (SEO / 登录页)</label>
+                <input
+                  type="text"
+                  value={settings?.site_tagline || ""}
+                  onChange={(e) => setSettings(settings ? { ...settings, site_tagline: e.target.value } : null)}
+                  placeholder="创意交付工作台"
+                  style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>公开简介 (搜索引擎描述)</label>
+                <textarea
+                  value={settings?.site_description || ""}
+                  onChange={(e) => setSettings(settings ? { ...settings, site_description: e.target.value } : null)}
+                  placeholder="面向传媒工作室的 AI 创意生产与图像精修平台"
+                  maxLength={320}
+                  style={{ minHeight: "64px", width: "100%", padding: "10px 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", resize: "vertical", background: "#ffffff", lineHeight: "1.5" }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>Logo URL</label>
+                  <input
+                    type="text"
+                    value={settings?.logo_url || ""}
+                    onChange={(e) => setSettings(settings ? { ...settings, logo_url: e.target.value } : null)}
+                    placeholder="https://... 或 /api/files/logo.png"
+                    style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>Favicon URL</label>
+                  <input
+                    type="text"
+                    value={settings?.favicon_url || ""}
+                    onChange={(e) => setSettings(settings ? { ...settings, favicon_url: e.target.value } : null)}
+                    placeholder="https://.../favicon.ico"
+                    style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--rv-color-text-muted)" }}>对外联系邮箱</label>
+                <input
+                  type="email"
+                  value={settings?.contact_email || ""}
+                  onChange={(e) => setSettings(settings ? { ...settings, contact_email: e.target.value } : null)}
+                  placeholder="hello@studio.example.com"
+                  style={{ height: "38px", width: "100%", padding: "0 12px", borderRadius: "6px", border: "1px solid var(--rv-color-border-thin)", fontSize: "12px", outline: "none", background: "#ffffff" }}
                 />
               </div>
             </div>

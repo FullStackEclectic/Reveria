@@ -153,9 +153,13 @@ func TestTextModel(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "无法加载上游配置"})
 		return
 	}
-	response, _, _ := callUpstreamLLM("仅回复 OK", req.ModelID, settings)
-	if response == "" || strings.Contains(response, "失败") || strings.Contains(response, "错误") || strings.Contains(response, "超时") {
-		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": response})
+	response, _, _, err := callUpstreamLLM("仅回复 OK", req.ModelID, settings)
+	if err != nil || response == "" || strings.Contains(response, "失败") || strings.Contains(response, "错误") || strings.Contains(response, "超时") {
+		message := response
+		if err != nil {
+			message = err.Error()
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": message})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "文字模型连通正常"})

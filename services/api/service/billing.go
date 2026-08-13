@@ -1,8 +1,17 @@
 package service
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"reveria/services/api/model"
+)
+
+var (
+	// ErrAlreadySettled 任务冻结积分已结转为消费，不能再退款。
+	ErrAlreadySettled = errors.New("任务已结算，无法退款")
+	// ErrAlreadyRefunded 任务冻结积分已退回，不能再结算。
+	ErrAlreadyRefunded = errors.New("任务已退款，无法结算")
 )
 
 // BillingService 统一账务计费服务接口

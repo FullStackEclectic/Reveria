@@ -65,7 +65,7 @@ export default function AdminPage() {
       setCurrentUser={setCurrentUser}
       onBack={() => {
         if (typeof window !== "undefined") {
-          window.location.href = "/";
+          window.location.href = "/app";
         }
       }}
     />

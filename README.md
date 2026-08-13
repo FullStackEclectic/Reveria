@@ -69,7 +69,7 @@ pnpm dev:all
 ```
 启动脚本会增量构建 Rust release DLL；未安装 Cargo 时桌面端仍可启动，但图像导出会回退到 WebGL。
 * **后端 API**：默认监听在 `http://127.0.0.1:4100`。本机开发未配置 `DATABASE_TYPE` 时会生成 SQLite 文件 `reveria.db` 并自动迁移；正式部署须改为 PostgreSQL。
-* **网页端与商业管理后台**：可通过浏览器访问主页 `http://localhost:3000` 以及超级管理员独立控制台 `http://localhost:3000/admin`。
+* **网页端与商业管理后台**：营销页 `http://localhost:3000`，工作台 `http://localhost:3000/app`，超管控制台 `http://localhost:3000/admin`。
 * **Wails 桌面端**：桌面上会自动弹出应用视窗，其对应的热重载调试地址为 `http://localhost:1420`。
 * **桌面端本地 API**：`wails dev` / `pnpm dev:all` 在未设置 `VITE_REVERIA_API_BASE` 时会自动连接 `http://localhost:4100`，与 Vite 开发页保持同站以正确携带认证 Cookie；生产构建仍必须显式设置云端 API 地址。
 

@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -74,14 +75,14 @@ func RunBriefAnalysis(c *gin.Context) {
 	// 2. 调用 12ZX-AI 大语言模型进行 Brief 提取
 	prompt := fmt.Sprintf("请分析以下创意大纲，只返回 JSON：{\"summary\":\"\",\"audience\":[],\"directions\":[],\"risks\":[]}。内容: %s", req.Brief)
 
-	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	responseMsg, _, _, err := callUpstreamLLM(prompt, "", settings)
 	var output struct {
 		Summary    string   `json:"summary"`
 		Audience   []string `json:"audience"`
 		Directions []string `json:"directions"`
 		Risks      []string `json:"risks"`
 	}
-	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+	if err != nil || decodeStructuredResponse(responseMsg, &output) != nil {
 		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "需求分析失败退回积分", nil)
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的需求分析结构"})
 		return
@@ -130,9 +131,9 @@ func RunBrandStyleExtract(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("提取品牌设计规范，只返回 JSON：{\"brand_name\":%q,\"tone_of_voice\":\"\",\"colors\":[],\"visual_keywords\":[],\"style_prompt\":\"\"}。描述: %s", req.BrandName, req.Description)
-	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	responseMsg, _, _, err := callUpstreamLLM(prompt, "", settings)
 	var output map[string]any
-	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+	if err != nil || decodeStructuredResponse(responseMsg, &output) != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的品牌风格结构"})
 		return
 	}
@@ -172,9 +173,9 @@ func RunCreativeDirections(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("根据以下信息生成 3 个广告创意方向，只返回 JSON：{\"directions\":[{\"title\":\"\",\"concept\":\"\",\"visual_idea\":\"\"}]}。内容: %s", req.Brief)
-	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	responseMsg, _, _, err := callUpstreamLLM(prompt, "", settings)
 	var output map[string]any
-	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+	if err != nil || decodeStructuredResponse(responseMsg, &output) != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的创意方向结构"})
 		return
 	}
@@ -214,9 +215,9 @@ func RunShortVideoScriptStoryboard(c *gin.Context) {
 	_ = database.DB.First(&settings)
 
 	prompt := fmt.Sprintf("为以下主题生成短视频分镜，只返回 JSON：{\"script_title\":\"\",\"script_brief\":\"\",\"shots\":[{\"shot_number\":1,\"duration_sec\":0,\"visual\":\"\",\"audio\":\"\",\"prompt\":\"\"}]}。主题: %s", req.Brief)
-	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	responseMsg, _, _, err := callUpstreamLLM(prompt, "", settings)
 	var output map[string]any
-	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+	if err != nil || decodeStructuredResponse(responseMsg, &output) != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的分镜结构"})
 		return
 	}
@@ -250,11 +251,13 @@ func decodeStructuredResponse(response string, target any) error {
 }
 
 // callUpstreamLLM 发包调用 12ZX-AI 大语言模型，返回生成文本及 token 消耗状况 (content, promptTokens, completionTokens)
-func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSettings) (string, int, int) {
+func callUpstreamLLM(prompt string, targetModel string, settings model.ClientSettings) (string, int, int, error) {
 	return callUpstreamLLMWithMessages([]upstreamChatMessage{{Role: "user", Content: prompt}}, targetModel, settings)
 }
 
-func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel string, settings model.ClientSettings) (string, int, int) {
+var errUpstreamPaymentRequired = errors.New("上游网关欠费")
+
+func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel string, settings model.ClientSettings) (string, int, int, error) {
 	var apiURL string
 	modelName := "deepseek-chat"
 
@@ -285,7 +288,7 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 	bodyBytes, _ := json.Marshal(reqBody)
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
-		return "本地客户端网络初始化失败", 0, 0
+		return "", 0, 0, fmt.Errorf("本地客户端网络初始化失败: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -297,7 +300,7 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "调用主网关超时，大模型生成失败: " + err.Error(), 0, 0
+		return "", 0, 0, fmt.Errorf("调用主网关超时，大模型生成失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -305,7 +308,11 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 
 	if resp.StatusCode != http.StatusOK {
 		recordUpstreamHTTPStatus(resp.StatusCode)
-		return fmt.Sprintf("主网关生成大模型文本错误，HTTP 状态码: %d", resp.StatusCode), 0, 0
+		msg := fmt.Sprintf("主网关生成大模型文本错误，HTTP 状态码: %d", resp.StatusCode)
+		if resp.StatusCode == http.StatusPaymentRequired {
+			return "", 0, 0, fmt.Errorf("%w: %s", errUpstreamPaymentRequired, msg)
+		}
+		return "", 0, 0, errors.New(msg)
 	}
 
 	type Choice struct {
@@ -325,10 +332,10 @@ func callUpstreamLLMWithMessages(messages []upstreamChatMessage, targetModel str
 
 	var chatResp ChatResp
 	if err := json.Unmarshal(respBytes, &chatResp); err == nil && len(chatResp.Choices) > 0 {
-		return chatResp.Choices[0].Message.Content, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens
+		return chatResp.Choices[0].Message.Content, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, nil
 	}
 
-	return "主网关返回数据解析错误", 0, 0
+	return "", 0, 0, errors.New("主网关返回数据解析错误")
 }
 
 // XiaohongshuCoverBatchRequest 小红书封面请求结构
@@ -391,9 +398,9 @@ func RunXiaohongshuCoverBatch(c *gin.Context) {
 	}
 
 	prompt := fmt.Sprintf("根据项目需求设计 %d 个封面，只返回 JSON：{\"covers\":[{\"title\":\"\",\"subtitle\":\"\",\"layout\":\"\",\"visual_prompt\":\"\",\"negative_prompt\":\"\",\"notes\":\"\"}]}。风格: %s。内容: %s", count, styleStr, req.Brief)
-	responseMsg, _, _ := callUpstreamLLM(prompt, "", settings)
+	responseMsg, _, _, err := callUpstreamLLM(prompt, "", settings)
 	var output map[string]any
-	if err := decodeStructuredResponse(responseMsg, &output); err != nil {
+	if err != nil || decodeStructuredResponse(responseMsg, &output) != nil {
 		_ = billingSvc.RefundCredits(actorID, req.WorkspaceID, costCredits, "封面分析失败退回积分", nil)
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "上游未返回合法的封面方案结构"})
 		return

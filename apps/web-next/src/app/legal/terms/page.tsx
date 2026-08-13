@@ -1,7 +1,10 @@
-"use client";
-
-import { TERMS_OF_SERVICE } from "@reveria/shared";
+import type { Metadata } from "next";
+import { TERMS_OF_SERVICE } from "@reveria/shared/src/legalTexts";
 import "@reveria/shared/src/styles.css";
+
+export const metadata: Metadata = {
+  title: "用户协议",
+};
 
 export default function TermsPage() {
   return (

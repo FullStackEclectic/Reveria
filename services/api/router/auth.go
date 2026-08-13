@@ -19,6 +19,7 @@ func registerAuthPublicRoutes(api *gin.RouterGroup) {
 		api.POST("/auth/dev-login", handler.DevLogin)
 	}
 	api.GET("/version", handler.GetBuildVersion)
+	api.GET("/site", handler.GetPublicSite)
 }
 
 // registerAuthProtectedRoutes 注册需要鉴权的认证与工作区接口

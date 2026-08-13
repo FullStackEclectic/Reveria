@@ -22,7 +22,10 @@ var (
 	taskWorkerID   = uuid.NewString()
 )
 
-const taskLeaseDuration = 30 * time.Second
+const (
+	taskLeaseDuration       = 30 * time.Second
+	settlementLeaseDuration = 90 * time.Second
+)
 
 // StartTaskWorker 从数据库恢复并分发任务，数据库记录是队列的持久化事实来源。
 func StartTaskWorker(ctx context.Context) {
@@ -120,61 +123,84 @@ func renewTaskLease(taskID uuid.UUID) bool {
 }
 
 func recoverStaleSettlements() {
-	var tasks []model.GenerationTask
-	if err := database.DB.Where("status = ?", "settling").Limit(20).Find(&tasks).Error; err != nil {
-		return
-	}
-	for _, task := range tasks {
+	for _, task := range listExpiredBillingTasks("settling") {
+		if !claimExpiredBillingTask(task.ID, "settling") {
+			continue
+		}
+		if err := database.DB.Where("id = ?", task.ID).First(&task).Error; err != nil {
+			continue
+		}
 		retrySettlingTask(task)
 	}
 }
 
 func retrySettlingTask(task model.GenerationTask) {
-	if task.TaskType == "text" && task.FrozenCredits == 0 && task.OutputPayload != nil {
+	hasConsume := taskHasTransaction(task.ID, "consume")
+	hasRefund := taskHasTransaction(task.ID, "refund")
+	if hasRefund && !hasConsume {
+		cleanupTaskAssets(task.ID)
+		code, message := fallbackError(task, "SETTLEMENT_INTERRUPTED", "任务已退款，结算中断")
+		markTaskTerminal(task.ID, "settling", "failed", code, message)
+		return
+	}
+
+	if task.FrozenCredits == 0 || hasConsume {
+		if task.TaskType == "text" && task.OutputPayload != nil {
+			if err := completeSettledTextTask(task); err != nil {
+				log.Printf("[TaskWorker] 恢复文本任务 %s 终态失败: %v", task.ID, err)
+			}
+			return
+		}
+		if hasConsume || taskHasAssets(task.ID) {
+			markTaskTerminal(task.ID, "settling", "succeeded", nil, nil)
+			return
+		}
+		markTaskTerminal(task.ID, "settling", "failed", ptrString("SETTLEMENT_INTERRUPTED"), ptrString("任务结算中断且未保存生成结果"))
+		return
+	}
+
+	if task.TaskType == "text" && task.OutputPayload != nil {
+		if err := settleClaimedTask(task, "AI 文本生成任务完成结算"); err != nil {
+			return
+		}
 		if err := completeSettledTextTask(task); err != nil {
 			log.Printf("[TaskWorker] 恢复文本任务 %s 终态失败: %v", task.ID, err)
 		}
 		return
 	}
-	var assetCount int64
-	if err := database.DB.Model(&model.Asset{}).Where("task_id = ?", task.ID).Count(&assetCount).Error; err != nil {
+
+	if !taskHasAssets(task.ID) {
+		failClaimedTask(task, "SETTLEMENT_INTERRUPTED", "任务结算中断且未保存生成结果，已执行补偿退款")
 		return
 	}
-	if assetCount == 0 {
-		result := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").Update("status", "running")
-		if result.Error == nil && result.RowsAffected == 1 {
-			handleTaskFailure(task.ID, "SETTLEMENT_INTERRUPTED", "任务结算中断且未保存生成结果，已执行补偿退款")
-		}
+	if err := settleClaimedTask(task, fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)); err != nil {
 		return
 	}
-	if task.FrozenCredits == 0 {
-		now := time.Now()
-		_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
-			Updates(map[string]any{"status": "succeeded", "completed_at": now}).Error
-		return
-	}
+	markTaskTerminal(task.ID, "settling", "succeeded", nil, nil)
+}
+
+func settleClaimedTask(task model.GenerationTask, reason string) error {
 	if task.UserID == nil {
 		log.Printf("[TaskWorker] 结算任务 %s 缺少用户，无法重试扣费", task.ID)
-		return
+		releaseSettlementLease(task.ID, "settling")
+		return fmt.Errorf("missing user")
 	}
-	consumeReason := fmt.Sprintf("AI 生成任务 %s 完成扣费", task.TaskType)
-	if err := service.GetBillingService().SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, consumeReason, &task); err != nil {
+	if err := service.GetBillingService().SettleCredits(*task.UserID, task.WorkspaceID, task.EstimatedCredits, reason, &task); err != nil {
 		log.Printf("[TaskWorker] 重试结算任务 %s 失败: %v", task.ID, err)
-		return
+		releaseSettlementLease(task.ID, "settling")
+		return err
 	}
-	now := time.Now()
-	if err := database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
-		Updates(map[string]any{"status": "succeeded", "completed_at": now}).Error; err != nil {
-		log.Printf("[TaskWorker] 结算成功但回写任务 %s 终态失败: %v", task.ID, err)
-	}
+	return nil
 }
 
 func recoverRefundingTasks() {
-	var tasks []model.GenerationTask
-	if err := database.DB.Where("status = ?", "refunding").Limit(20).Find(&tasks).Error; err != nil {
-		return
-	}
-	for _, task := range tasks {
+	for _, task := range listExpiredBillingTasks("refunding") {
+		if !claimExpiredBillingTask(task.ID, "refunding") {
+			continue
+		}
+		if err := database.DB.Where("id = ?", task.ID).First(&task).Error; err != nil {
+			continue
+		}
 		if task.FrozenCredits > 0 {
 			actorID := uuid.Nil
 			if task.UserID != nil {
@@ -182,23 +208,16 @@ func recoverRefundingTasks() {
 			}
 			reason := fmt.Sprintf("生成任务 %s 失败，原路退回冻结积分", task.ID.String())
 			if err := service.GetBillingService().RefundCredits(actorID, task.WorkspaceID, task.EstimatedCredits, reason, &task); err != nil {
-				log.Printf("[TaskWorker] 重试退款任务 %s 失败: %v", task.ID, err)
-				continue
+				if err != service.ErrAlreadySettled {
+					log.Printf("[TaskWorker] 重试退款任务 %s 失败: %v", task.ID, err)
+					releaseSettlementLease(task.ID, "refunding")
+					continue
+				}
 			}
 		}
 		cleanupTaskAssets(task.ID)
-		errorCode := "REFUND_RECOVERED"
-		errorMsg := "任务失败后的退款已补齐"
-		if task.ErrorCode != nil {
-			errorCode = *task.ErrorCode
-		}
-		if task.ErrorMessage != nil {
-			errorMsg = *task.ErrorMessage
-		}
-		now := time.Now()
-		_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "refunding").Updates(map[string]any{
-			"status": "failed", "error_code": errorCode, "error_message": errorMsg, "completed_at": now,
-		}).Error
+		code, message := fallbackError(task, "REFUND_RECOVERED", "任务失败后的退款已补齐")
+		markTaskTerminal(task.ID, "refunding", "failed", code, message)
 	}
 }
 
@@ -206,7 +225,7 @@ func completeSettledTextTask(task model.GenerationTask) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		result := tx.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, "settling").
-			Updates(map[string]any{"status": "succeeded", "completed_at": now})
+			Updates(map[string]any{"status": "succeeded", "completed_at": now, "worker_id": nil, "lease_until": nil})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -220,6 +239,90 @@ func completeSettledTextTask(task model.GenerationTask) error {
 		}
 		return tx.Where("task_id = ? AND output_index = ?", task.ID, 0).FirstOrCreate(&asset).Error
 	})
+}
+
+func listExpiredBillingTasks(status string) []model.GenerationTask {
+	var tasks []model.GenerationTask
+	now := time.Now()
+	if err := database.DB.Where("status = ? AND (lease_until IS NULL OR lease_until < ?)", status, now).
+		Order("created_at asc").Limit(20).Find(&tasks).Error; err != nil {
+		return nil
+	}
+	return tasks
+}
+
+func claimExpiredBillingTask(taskID uuid.UUID, status string) bool {
+	now := time.Now()
+	result := database.DB.Model(&model.GenerationTask{}).
+		Where("id = ? AND status = ? AND (lease_until IS NULL OR lease_until < ?)", taskID, status, now).
+		Updates(map[string]any{"worker_id": taskWorkerID, "lease_until": now.Add(settlementLeaseDuration)})
+	return result.Error == nil && result.RowsAffected == 1
+}
+
+func releaseSettlementLease(taskID uuid.UUID, status string) {
+	now := time.Now()
+	_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, status).
+		Updates(map[string]any{"worker_id": nil, "lease_until": now}).Error
+}
+
+func markTaskRunning(taskID uuid.UUID, progressJSON string) bool {
+	result := database.DB.Model(&model.GenerationTask{}).
+		Where("id = ? AND status IN ?", taskID, []string{"dispatching", "pending"}).
+		Updates(map[string]any{
+			"status":         "running",
+			"started_at":     time.Now(),
+			"output_payload": progressJSON,
+		})
+	return result.Error == nil && result.RowsAffected == 1
+}
+
+func renewSettlementLease(taskID uuid.UUID) bool {
+	result := database.DB.Model(&model.GenerationTask{}).
+		Where("id = ? AND status IN ? AND worker_id = ?", taskID, []string{"settling", "refunding"}, taskWorkerID).
+		Update("lease_until", time.Now().Add(settlementLeaseDuration))
+	return result.Error == nil && result.RowsAffected == 1
+}
+
+func markTaskTerminal(taskID uuid.UUID, fromStatus, toStatus string, errorCode, errorMsg *string) {
+	now := time.Now()
+	updates := map[string]any{
+		"status": toStatus, "completed_at": now, "worker_id": nil, "lease_until": nil,
+	}
+	if errorCode != nil {
+		updates["error_code"] = *errorCode
+	}
+	if errorMsg != nil {
+		updates["error_message"] = *errorMsg
+	}
+	_ = database.DB.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, fromStatus).Updates(updates).Error
+}
+
+func taskHasTransaction(taskID uuid.UUID, txType string) bool {
+	var n int64
+	if err := database.DB.Model(&model.CreditTransaction{}).
+		Where("task_id = ? AND transaction_type = ?", taskID, txType).
+		Count(&n).Error; err != nil {
+		return false
+	}
+	return n > 0
+}
+
+func taskHasAssets(taskID uuid.UUID) bool {
+	var n int64
+	if err := database.DB.Model(&model.Asset{}).Where("task_id = ?", taskID).Count(&n).Error; err != nil {
+		return false
+	}
+	return n > 0
+}
+
+func fallbackError(task model.GenerationTask, code, message string) (*string, *string) {
+	if task.ErrorCode != nil {
+		code = *task.ErrorCode
+	}
+	if task.ErrorMessage != nil {
+		message = *task.ErrorMessage
+	}
+	return ptrString(code), ptrString(message)
 }
 
 func dispatchPendingTasks(ctx context.Context) {
@@ -267,9 +370,10 @@ func dispatchPendingTasks(ctx context.Context) {
 }
 
 func claimTaskForSettlement(taskID uuid.UUID) (model.GenerationTask, bool) {
+	leaseUntil := time.Now().Add(settlementLeaseDuration)
 	result := database.DB.Model(&model.GenerationTask{}).
 		Where("id = ? AND status IN ?", taskID, []string{"pending", "dispatching", "running"}).
-		Updates(map[string]any{"status": "settling", "worker_id": nil, "lease_until": nil})
+		Updates(map[string]any{"status": "settling", "worker_id": taskWorkerID, "lease_until": leaseUntil})
 	if result.Error != nil || result.RowsAffected != 1 {
 		return model.GenerationTask{}, false
 	}
